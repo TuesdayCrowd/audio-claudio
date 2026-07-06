@@ -1,4 +1,6 @@
-# CLAUDE.md — Audio Claudio
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ***Audio Claudio*** — *audiō Claudiō*, "I hear, by means of Claude" (ablative
 of instrument, as is proper). A piano transcriber built in open collaboration
@@ -11,6 +13,26 @@ transcribed piece can be played back through a synthesized piano. Public domain
 
 This file is both the **project constitution** and the **build specification**.
 Claude Code: read all of it before touching anything.
+
+---
+
+## Where the project is right now (read this first)
+
+The build specification below (§6) describes the *finished* system; the
+repository does not contain it yet. Before running any `dotnet` command, check
+what actually exists on disk:
+
+- If there is no solution or `src/` tree (verify with `ls src` or
+  `find . -name '*.csproj'`), the project is at **Step 0 — Scaffold**, and the
+  `dotnet` commands under *Commands* below will fail until that scaffold lands.
+  Start at **§6 Step 0** and work the steps in order — §1 rule 3: one step at a
+  time, each *Verify* green and committed before the next begins.
+- The toolchain is present: **.NET 10 SDK (LTS)** is installed. `DECISIONS.md`
+  does not exist yet — create it the first time a *Design decision* is resolved
+  (§1 rule 2), and record every NuGet package's license there (§1 rule 7).
+- **Keep this section honest.** As steps land, update the current-step note
+  here so the next Claude Code instance knows where to pick up without
+  re-deriving it from the tree.
 
 ---
 
