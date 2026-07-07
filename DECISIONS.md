@@ -20,9 +20,23 @@ no copyleft anywhere in the graph (§1 rule 7).
 
 ## Design decisions
 
-_None yet. Step 0 lists no design decision. The first forks are Step 2 (frame
-delivery model: pull vs. push) and Step 3 (FFT: hand-rolled radix-2 vs. NWaves);
-each will be recorded here when its step is reached._
+**Step 2 — frame delivery model: pull** (`IEnumerable<Frame> Frames { get; }`).
+Consumer-driven; clean for files/tests (`source.Frames.ToList()`); no threads,
+no callbacks, deterministic ordering by construction. The live mic (Step 10)
+bridges the device callback into this via a bounded `Channel<Frame>` rather
+than the port being pushed to directly. Resolved by Cornelius 2026-07-07.
+
+**Step 2 — PCM quantisation convention** (implementation note, not a design
+fork): the WAV writer/reader pair is made an exact inverse pair on the
+quantisation grid rather than approximately equal. Writer: `q = round(x *
+2^(bits-1))`, clamped to the signed range (`2^15` for 16-bit, `2^23` for
+24-bit); reader: `x' = q / 2^(bits-1)`. Because both sides share the same
+scale and rounding rule, `read(write(x')) == x'` bit-for-bit for any
+already-quantised `x'`, which is what makes the round-trip tests exact rather
+than tolerance-based.
+
+Step 3 (FFT: hand-rolled radix-2 vs. NWaves) remains open and will be recorded
+here when that step is reached.
 
 ## Tooling substitutions (Step 0 wrinkles)
 
