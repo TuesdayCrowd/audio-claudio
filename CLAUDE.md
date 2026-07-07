@@ -27,15 +27,17 @@ hand-rolled WAV adapter + signal generator with `Frame`/`FrameParameters`/`Frami
 `PitchEstimate`, `YinOptions`, `YinPitchDetector` (Step 4, ±10¢ over MIDI 33–96, zero octave
 errors); and onset detection + note segmentation — `SpectralFlux`, `OnsetDetector`,
 `FrameObservation`, `NoteSegmenter` (Step 5, with a real-chain integration test). `dotnet build`/
-`dotnet test` green (157 tests; 4 `Slow` CsCheck/integration suites). Recorded decisions: frame
-delivery = **pull**; FFT = **hand-rolled radix-2**.
+`dotnet test` green (157 tests; 4 `Slow` suites); and grid quantization to `Score` — `Tempo`,
+`TimeSignature`, `Subdivision`, `QuantizationGrid`, `ScoreElement`/`Measure`/`Score`, `Quantizer`
+(Step 6, idempotent + bar-conserving). `dotnet build`/`dotnet test` green (201 tests). Recorded
+decisions: frame delivery = **pull**; FFT = **hand-rolled radix-2**; ties = **keep structural
+bar-split** (`ScoreElement.TiedToNext`).
 
-- **Next is §6 Step 6 — grid quantization to `Score`.** It carries a *Design decision* Cornelius
-  owns (§1 rule 2): the "ties beyond MVP" interpretation — whether `ScoreElement.TiedToNext`
-  (structural bar-splitting) is kept or the corpus is constrained so notes never cross barlines.
-  Surface it before implementing. Work the steps in order (§1 rule 3). The plans and the
-  authoritative API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note
-  and the `docs/plans/README.md` status table honest as steps land.
+- **Next is §6 Step 7 — MIDI export via DryWetMIDI** (the first Infrastructure adapter; also ships
+  the MIDI reader Steps 8–9 consume). No design decision, but it adds the DryWetMIDI NuGet package —
+  record its MIT license in `DECISIONS.md` (§1 rule 7). Work the steps in order (§1 rule 3). The
+  plans and the authoritative API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep
+  this note and `docs/plans/README.md` honest as steps land.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
