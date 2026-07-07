@@ -40,11 +40,19 @@ under `fixtures/soundfont/`. Build/test green (225 tests). Recorded decisions al
 **GeneralUser GS** committed; render golden = **tolerance + spectral** (not byte-exact — MeltySynth SIMD
 mixdown isn't bit-identical across ARM64/x64).
 
-- **Next is §6 Step 9 — the closed loop** (the headline: generate → synthesize → transcribe → assert `≈ id`
-  on a constrained corpus, the project's trial balance). It assembles the whole pipeline as `TranscriptionPipeline`
-  and wires the `transcribe` CLI command. No design decision. Work the steps in order (§1 rule 3). Plans +
-  authoritative API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note and
-  `docs/plans/README.md` honest as steps land.
+The closed loop (Step 9) — `TranscriptionPipeline : ITranscriber` (Application, injected `IFourierTransform`)
+composing Steps 3–6; the `transcribe` CLI (raw.mid + score.mid; lazy SoundFont); and the strict-R9.2
+property suite. Recorded decision: the closed-loop corpus is **constrained to physically-audible note
+durations** (a piano's high notes decay before a long declared duration elapses — `synthesize` is lossy
+for duration there). On that corpus, count/pitch/onset/duration all hold strictly; count/pitch/onset are
+separately proven across the full MIDI 33–96 range. Known documented limitation: a rare (~0.4%) YIN
+octave-error / onset-miss residual on real piano audio (the nightly discovers + quarantines it, R9.3) —
+the Phase-2 pYIN upgrade (§8) is its fix, not an MVP task. Build/test green (248 tests).
+
+- **Next is §6 Step 10 — live microphone capture** (PortAudioSharp2 as one more `IAudioSource` adapter over
+  the already-proven pipeline). Live mic + the loopback acceptance are inherently manual (no audio device in
+  CI); build + unit-test the adapter with fakes, document the manual acceptance. No design decision. Work the
+  steps in order (§1 rule 3). Plans + `docs/plans/CONTRACTS.md` live in `docs/plans/`; keep this note honest.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
