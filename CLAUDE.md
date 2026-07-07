@@ -31,13 +31,15 @@ errors); and onset detection + note segmentation — `SpectralFlux`, `OnsetDetec
 `TimeSignature`, `Subdivision`, `QuantizationGrid`, `ScoreElement`/`Measure`/`Score`, `Quantizer`
 (Step 6, idempotent + bar-conserving). `dotnet build`/`dotnet test` green (201 tests). Recorded
 decisions: frame delivery = **pull**; FFT = **hand-rolled radix-2**; ties = **keep structural
-bar-split** (`ScoreElement.TiedToNext`).
+bar-split** (`ScoreElement.TiedToNext`). MIDI I/O (Step 7) — `IScoreWriter`/`INoteEventWriter` ports +
+`DryWetMidiWriter`/`MidiFileReader` in Infrastructure (DryWetMIDI 8.0.3 MIT). Build/test green (208 tests).
 
-- **Next is §6 Step 7 — MIDI export via DryWetMIDI** (the first Infrastructure adapter; also ships
-  the MIDI reader Steps 8–9 consume). No design decision, but it adds the DryWetMIDI NuGet package —
-  record its MIT license in `DECISIONS.md` (§1 rule 7). Work the steps in order (§1 rule 3). The
-  plans and the authoritative API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep
-  this note and `docs/plans/README.md` honest as steps land.
+- **Next is §6 Step 8 — synthesis and playback (MeltySynth).** No design decision, but it adds the
+  MeltySynth + PortAudioSharp2 NuGet packages (record MIT licenses, §1 rule 7) AND commits a
+  freely-licensed GM piano SoundFont fixture under `fixtures/soundfont/` with its license — that asset
+  may need a human (fetch/license). Work the steps in order (§1 rule 3). Plans + authoritative API
+  reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note and `docs/plans/README.md`
+  honest as steps land.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
