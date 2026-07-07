@@ -31,7 +31,7 @@ that consumes another step's types.
 | 5 | [Onset detection & note segmentation](2026-07-05-step-05-onset-detection-and-segmentation.md) | `feat(domain): onset detection and note segmentation` | ✅ Done (on `main`, 157 tests; real-chain integration test) |
 | 6 | [Quantization to Score](2026-07-05-step-06-quantization.md) | `feat(domain): grid quantization to Score` | ✅ Done (on `main`, 201 tests; idempotent + bar-conserving; ties = **structural split**) |
 | 7 | [MIDI export & reader](2026-07-05-step-07-midi-export.md) | `feat(infra): MIDI export via DryWetMIDI` | ✅ Done (on `main`, 208 tests; DryWetMIDI 8.0.3 MIT; round-trip exact/±1 tick) |
-| 8 | [Synthesis & playback (MeltySynth)](2026-07-05-step-08-synthesis-and-playback.md) | `feat(infra): MeltySynth rendering and playback` | Not started |
+| 8 | [Synthesis & playback (MeltySynth)](2026-07-05-step-08-synthesis-and-playback.md) | `feat(infra): MeltySynth rendering and playback` | ✅ Done (on `main`, 225 tests; GeneralUser GS committed; tolerance + spectral golden) |
 | 9 | [The closed loop + `transcribe` command](2026-07-05-step-09-closed-loop.md) | `test: closed-loop synthesize→transcribe property suite` | Not started |
 | 10 | [Live microphone capture](2026-07-05-step-10-live-capture.md) | `feat(infra): live capture adapter and listen command` | Not started |
 | 11 | [MusicXML emission (+ trio completion)](2026-07-05-step-11-musicxml-emission.md) | `feat(infra): MusicXML writer with bar-conservation property` | Not started |
