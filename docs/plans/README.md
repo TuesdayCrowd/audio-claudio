@@ -25,7 +25,7 @@ that consumes another step's types.
 |---|------|---------------|--------|
 | 0 | [Scaffold & the dependency rule](2026-07-05-step-00-scaffold-and-dependency-rule.md) | `chore: scaffold solution, dependency rule, CI` | ✅ Done (on `main`, CI green) |
 | 1 | [Domain primitives — pitch math & sample time](2026-07-05-step-01-domain-primitives.md) | `feat(domain): pitch math and integer sample time` | ✅ Done (on `main`, 63 tests) |
-| 2 | [Audio source port & WAV adapter](2026-07-05-step-02-audio-source-and-wav-adapter.md) ⚠ | `feat: IAudioSource port, WAV adapter, deterministic signal generator` | Not started |
+| 2 | [Audio source port & WAV adapter](2026-07-05-step-02-audio-source-and-wav-adapter.md) | `feat: IAudioSource port, WAV adapter, deterministic signal generator` | ✅ Done (on `main`, 89 tests; delivery = **pull**) |
 | 3 | [Spectral front end](2026-07-05-step-03-spectral-front-end.md) ⚠ | `feat(domain): windowed spectral front end` | Not started |
 | 4 | [Monophonic pitch detection (YIN)](2026-07-05-step-04-monophonic-pitch-detection.md) | `feat(domain): YIN pitch detection with cents-accuracy properties` | Not started |
 | 5 | [Onset detection & note segmentation](2026-07-05-step-05-onset-detection-and-segmentation.md) | `feat(domain): onset detection and note segmentation` | Not started |

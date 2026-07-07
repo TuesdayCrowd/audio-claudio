@@ -127,6 +127,9 @@ public static class Framing
 {
     public static IReadOnlyList<Frame> Split(float[] samples, SampleRate rate, FrameParameters p, long startSample = 0);
     // startSample = index of samples[0] in the wider stream, so each Frame's Start is absolute (default 0).
+    // Trailing-frame convention (pinned in Step 2): one frame per hop position with start < length;
+    // the final frame is ZERO-PADDED to size N (never dropped), so every input sample appears in a
+    // frame. Frame count = ceil(length / hop). Step 3's Hann window tapers the padded tail to ~0.
 }
 
 // AudioClaudio.Application.Ports
