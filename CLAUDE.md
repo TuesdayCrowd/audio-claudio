@@ -18,18 +18,19 @@ Claude Code: read all of it before touching anything.
 
 ## Where the project is right now (read this first)
 
-**Steps 0–2 are complete and on `main`.** The four-project solution + dependency-rule
-guards + CI + `DECISIONS.md` (Step 0); the Domain primitives `Pitch`,
-`PitchMath.CentsBetween`, `SampleRate`, `SamplePosition`/`SampleDuration`, `NoteEvent`
-(Step 1); and the `IAudioSource` **pull** port + hand-rolled WAV adapter + deterministic
-signal generator, with `Frame`/`FrameParameters`/`Framing` (Step 2). `dotnet build` and
-`dotnet test` are green (89 tests). Recorded decision: frame delivery = **pull**.
+**Steps 0–3 are complete and on `main`.** Step 0 scaffold + guards + CI + `DECISIONS.md`;
+the Domain primitives `Pitch`, `PitchMath.CentsBetween`, `SampleRate`,
+`SamplePosition`/`SampleDuration`, `NoteEvent` (Step 1); the `IAudioSource` **pull** port +
+hand-rolled WAV adapter + signal generator with `Frame`/`FrameParameters`/`Framing`
+(Step 2); and the spectral front end — Hann window, hand-rolled radix-2 FFT (`Radix2Fft`),
+`MagnitudeSpectrum`, `SpectralFrontEnd` (Step 3). `dotnet build` and `dotnet test` are green
+(112 tests). Recorded decisions: frame delivery = **pull**; FFT = **hand-rolled radix-2**.
 
-- **Next is §6 Step 3 — the spectral front end (Hann window + FFT).** It carries a
-  *Design decision* Cornelius owns (FFT: hand-rolled radix-2 vs. NWaves — §1 rule 2);
-  either sits behind the Domain interface `IFourierTransform`, injected into the Step 9
-  pipeline, so the dependency rule holds under either. Work the steps in order (§1 rule
-  3: one at a time, each *Verify* green and committed before the next begins).
+- **Next is §6 Step 4 — monophonic pitch detection (YIN).** No design decision this step.
+  Work the steps in order (§1 rule 3: one at a time, each *Verify* green and committed
+  before the next begins). The step-by-step plans and the authoritative API reference
+  (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note and the
+  `docs/plans/README.md` status table honest as steps land.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
