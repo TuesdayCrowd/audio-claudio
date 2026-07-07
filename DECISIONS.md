@@ -45,6 +45,12 @@ NWaves (MIT) — deferred; if adopted for Phase 2 resampling, its adapter goes
 in `AudioClaudio.Infrastructure`, never Domain, per R0.2. No new NuGet
 package, so no license row above. Resolved by Cornelius 2026-07-07.
 
+**Step 6 — "ties beyond MVP" (R6.1): KEEP structural bar-splitting.**
+`ScoreElement.TiedToNext` cuts a note at a barline (a notation necessity +
+bar-conservation R6.4); "beyond MVP" excludes only spelling a note's snapped
+duration as a tie-chain of standard values (Step 6 stores integer
+`LengthTicks`; Step 11 spells glyphs). Resolved by Cornelius 2026-07-07.
+
 ## Tooling substitutions (Step 0 wrinkles)
 
 Two SDK-behavior surprises surfaced while scaffolding on .NET 10 SDK
