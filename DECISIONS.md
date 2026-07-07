@@ -35,8 +35,15 @@ scale and rounding rule, `read(write(x')) == x'` bit-for-bit for any
 already-quantised `x'`, which is what makes the round-trip tests exact rather
 than tolerance-based.
 
-Step 3 (FFT: hand-rolled radix-2 vs. NWaves) remains open and will be recorded
-here when that step is reached.
+**Step 3 — FFT: hand-rolled radix-2** (`Radix2Fft` in `AudioClaudio.Domain`),
+dependency-free. Zero dependencies; keeps `AudioClaudio.Domain` strictly
+BCL-only (R0.2); full `double` precision. Correctness is guarded by two
+independent checks: Parseval's theorem (time/frequency energy conservation)
+and a bin-by-bin cross-check against a naive O(N²) direct DFT reference
+(computed only in the test project, never shipped). Alternative rejected:
+NWaves (MIT) — deferred; if adopted for Phase 2 resampling, its adapter goes
+in `AudioClaudio.Infrastructure`, never Domain, per R0.2. No new NuGet
+package, so no license row above. Resolved by Cornelius 2026-07-07.
 
 ## Tooling substitutions (Step 0 wrinkles)
 
