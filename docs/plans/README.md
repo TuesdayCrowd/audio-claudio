@@ -28,7 +28,7 @@ that consumes another step's types.
 | 2 | [Audio source port & WAV adapter](2026-07-05-step-02-audio-source-and-wav-adapter.md) | `feat: IAudioSource port, WAV adapter, deterministic signal generator` | ✅ Done (on `main`, 89 tests; delivery = **pull**) |
 | 3 | [Spectral front end](2026-07-05-step-03-spectral-front-end.md) | `feat(domain): windowed spectral front end` | ✅ Done (on `main`, 112 tests; FFT = **hand-rolled radix-2**) |
 | 4 | [Monophonic pitch detection (YIN)](2026-07-05-step-04-monophonic-pitch-detection.md) | `feat(domain): YIN pitch detection with cents-accuracy properties` | ✅ Done (on `main`, 138 tests; ±10¢ over MIDI 33–96, 0 octave errors) |
-| 5 | [Onset detection & note segmentation](2026-07-05-step-05-onset-detection-and-segmentation.md) | `feat(domain): onset detection and note segmentation` | Not started |
+| 5 | [Onset detection & note segmentation](2026-07-05-step-05-onset-detection-and-segmentation.md) | `feat(domain): onset detection and note segmentation` | ✅ Done (on `main`, 157 tests; real-chain integration test) |
 | 6 | [Quantization to Score](2026-07-05-step-06-quantization.md) ⚠ | `feat(domain): grid quantization to Score` | Not started |
 | 7 | [MIDI export & reader](2026-07-05-step-07-midi-export.md) | `feat(infra): MIDI export via DryWetMIDI` | Not started |
 | 8 | [Synthesis & playback (MeltySynth)](2026-07-05-step-08-synthesis-and-playback.md) | `feat(infra): MeltySynth rendering and playback` | Not started |

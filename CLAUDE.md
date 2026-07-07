@@ -25,14 +25,17 @@ hand-rolled WAV adapter + signal generator with `Frame`/`FrameParameters`/`Frami
 (Step 2); the spectral front end — Hann window, hand-rolled radix-2 FFT (`Radix2Fft`),
 `MagnitudeSpectrum`, `SpectralFrontEnd` (Step 3); and YIN monophonic pitch detection —
 `PitchEstimate`, `YinOptions`, `YinPitchDetector` (Step 4, ±10¢ over MIDI 33–96, zero octave
-errors). `dotnet build`/`dotnet test` green (138 tests; 2 `Slow` CsCheck suites). Recorded
-decisions: frame delivery = **pull**; FFT = **hand-rolled radix-2**.
+errors); and onset detection + note segmentation — `SpectralFlux`, `OnsetDetector`,
+`FrameObservation`, `NoteSegmenter` (Step 5, with a real-chain integration test). `dotnet build`/
+`dotnet test` green (157 tests; 4 `Slow` CsCheck/integration suites). Recorded decisions: frame
+delivery = **pull**; FFT = **hand-rolled radix-2**.
 
-- **Next is §6 Step 5 — onset detection and note segmentation.** No design decision this step.
-  Work the steps in order (§1 rule 3: one at a time, each *Verify* green and committed before
-  the next begins). The step-by-step plans and the authoritative API reference
-  (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note and the
-  `docs/plans/README.md` status table honest as steps land.
+- **Next is §6 Step 6 — grid quantization to `Score`.** It carries a *Design decision* Cornelius
+  owns (§1 rule 2): the "ties beyond MVP" interpretation — whether `ScoreElement.TiedToNext`
+  (structural bar-splitting) is kept or the corpus is constrained so notes never cross barlines.
+  Surface it before implementing. Work the steps in order (§1 rule 3). The plans and the
+  authoritative API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note
+  and the `docs/plans/README.md` status table honest as steps land.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
