@@ -22,13 +22,15 @@ Claude Code: read all of it before touching anything.
 the Domain primitives `Pitch`, `PitchMath.CentsBetween`, `SampleRate`,
 `SamplePosition`/`SampleDuration`, `NoteEvent` (Step 1); the `IAudioSource` **pull** port +
 hand-rolled WAV adapter + signal generator with `Frame`/`FrameParameters`/`Framing`
-(Step 2); and the spectral front end — Hann window, hand-rolled radix-2 FFT (`Radix2Fft`),
-`MagnitudeSpectrum`, `SpectralFrontEnd` (Step 3). `dotnet build` and `dotnet test` are green
-(112 tests). Recorded decisions: frame delivery = **pull**; FFT = **hand-rolled radix-2**.
+(Step 2); the spectral front end — Hann window, hand-rolled radix-2 FFT (`Radix2Fft`),
+`MagnitudeSpectrum`, `SpectralFrontEnd` (Step 3); and YIN monophonic pitch detection —
+`PitchEstimate`, `YinOptions`, `YinPitchDetector` (Step 4, ±10¢ over MIDI 33–96, zero octave
+errors). `dotnet build`/`dotnet test` green (138 tests; 2 `Slow` CsCheck suites). Recorded
+decisions: frame delivery = **pull**; FFT = **hand-rolled radix-2**.
 
-- **Next is §6 Step 4 — monophonic pitch detection (YIN).** No design decision this step.
-  Work the steps in order (§1 rule 3: one at a time, each *Verify* green and committed
-  before the next begins). The step-by-step plans and the authoritative API reference
+- **Next is §6 Step 5 — onset detection and note segmentation.** No design decision this step.
+  Work the steps in order (§1 rule 3: one at a time, each *Verify* green and committed before
+  the next begins). The step-by-step plans and the authoritative API reference
   (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note and the
   `docs/plans/README.md` status table honest as steps land.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
