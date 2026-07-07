@@ -49,10 +49,17 @@ separately proven across the full MIDI 33–96 range. Known documented limitatio
 octave-error / onset-miss residual on real piano audio (the nightly discovers + quarantines it, R9.3) —
 the Phase-2 pYIN upgrade (§8) is its fix, not an MVP task. Build/test green (248 tests).
 
-- **Next is §6 Step 10 — live microphone capture** (PortAudioSharp2 as one more `IAudioSource` adapter over
-  the already-proven pipeline). Live mic + the loopback acceptance are inherently manual (no audio device in
-  CI); build + unit-test the adapter with fakes, document the manual acceptance. No design decision. Work the
-  steps in order (§1 rule 3). Plans + `docs/plans/CONTRACTS.md` live in `docs/plans/`; keep this note honest.
+Live capture (Step 10) — `PortAudioAudioSource : IAudioSource, IDisposable` (device callback → bounded
+`Channel<Frame>` bridge, same frame contract as WAV), a genuinely INCREMENTAL live feed
+(`TranscriptionPipeline.StreamNotes` is a lazy causal onset→pitch iterator, ~41 ms latency), and the
+`listen` command (prints notes live, writes raw+quantized MIDI on stop; MusicXML seam null until Step 11).
+The real device path is manual acceptance (no audio device in CI). Build/test green (264 tests).
+
+- **Next is §6 Step 11 — MusicXML emission** (the last Infrastructure adapter): hand-rolled `MusicXmlScoreWriter :
+  IScoreWriter`, a **byte-exact golden** (MusicXML is deterministic text — no float/platform issue), the
+  bar-conservation property, and wiring `score.musicxml` into both `transcribe` (Step 9) and `listen` (Step 10).
+  MuseScore load is a manual check recorded in `DECISIONS.md`. No design decision. Work the steps in order
+  (§1 rule 3). Plans + `docs/plans/CONTRACTS.md` live in `docs/plans/`; keep this note honest.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it

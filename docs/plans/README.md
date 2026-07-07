@@ -33,7 +33,7 @@ that consumes another step's types.
 | 7 | [MIDI export & reader](2026-07-05-step-07-midi-export.md) | `feat(infra): MIDI export via DryWetMIDI` | ✅ Done (on `main`, 208 tests; DryWetMIDI 8.0.3 MIT; round-trip exact/±1 tick) |
 | 8 | [Synthesis & playback (MeltySynth)](2026-07-05-step-08-synthesis-and-playback.md) | `feat(infra): MeltySynth rendering and playback` | ✅ Done (on `main`, 225 tests; GeneralUser GS committed; tolerance + spectral golden) |
 | 9 | [The closed loop + `transcribe` command](2026-07-05-step-09-closed-loop.md) | `test: closed-loop synthesize→transcribe property suite` | ✅ Done (on `main`, 248 tests; strict R9.2 on audible-duration corpus; count/pitch/onset across MIDI 33–96) |
-| 10 | [Live microphone capture](2026-07-05-step-10-live-capture.md) | `feat(infra): live capture adapter and listen command` | Not started |
+| 10 | [Live microphone capture](2026-07-05-step-10-live-capture.md) | `feat(infra): live capture adapter and listen command` | ✅ Done (on `main`, 264 tests; incremental live emission ~41 ms; device path manual) |
 | 11 | [MusicXML emission (+ trio completion)](2026-07-05-step-11-musicxml-emission.md) | `feat(infra): MusicXML writer with bar-conservation property` | Not started |
 | 12 | [README, polish, ship v0.1.0](2026-07-05-step-12-readme-and-ship.md) | `docs: README; v0.1.0` | Not started |
 
