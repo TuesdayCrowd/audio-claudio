@@ -9,23 +9,35 @@ var rate = new SampleRate(44100);
 if (args.Length == 0)
     return Usage();
 
+// SoundFont/synth construction is LAZY (Step 9): `transcribe` never touches a synthesizer, so it
+// must run with no .sf2 present. Only `render`/`play` resolve and construct it, on first use.
 string? soundFontOption = TryReadOption(args, "--soundfont");
-string soundFontPath = SoundFontLocator.Resolve(soundFontOption);
-var synthesizer = new MeltySynthSynthesizer(soundFontPath);
+var synthesizer = new Lazy<MeltySynthSynthesizer>(() => new MeltySynthSynthesizer(SoundFontLocator.Resolve(soundFontOption)));
 
 switch (args[0])
 {
+    case "transcribe" when args.Length >= 2:
+        {
+            // claudio transcribe <in.wav> --tempo N [--out-dir .]
+            double tempo = double.Parse(
+                TryReadOption(args, "--tempo")
+                    ?? throw new ArgumentException("transcribe requires --tempo <bpm>"),
+                System.Globalization.CultureInfo.InvariantCulture);
+            string outDir = TryReadOption(args, "--out-dir") ?? ".";
+            TranscribeCommand.Run(args[1], tempo, outDir);
+            return 0;
+        }
     case "render" when args.Length >= 3:
         {
             // Step 7 reader: load the committed/source MIDI into domain NoteEvents.
             var notes = MidiFileReader.ReadFile(args[1], rate).Events;
-            RenderCommand.RenderToWav(notes, synthesizer, rate, args[2]);
+            RenderCommand.RenderToWav(notes, synthesizer.Value, rate, args[2]);
             return 0;
         }
     case "play" when args.Length >= 2:
         {
             var notes = MidiFileReader.ReadFile(args[1], rate).Events;
-            PlayCommand.Play(notes, synthesizer, rate);
+            PlayCommand.Play(notes, synthesizer.Value, rate);
             return 0;
         }
     default:
@@ -34,7 +46,9 @@ switch (args[0])
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: claudio <render|play> <in.mid> [<out.wav>] [--soundfont <path>]");
+    Console.Error.WriteLine("usage: claudio <transcribe|render|play> ...");
+    Console.Error.WriteLine("  transcribe <in.wav> --tempo <bpm> [--out-dir <dir>]   -> raw.mid, score.mid");
+    Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     return 1;
 }
 

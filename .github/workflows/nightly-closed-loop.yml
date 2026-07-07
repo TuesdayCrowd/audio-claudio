@@ -1,0 +1,31 @@
+name: nightly-closed-loop
+
+# Runs a large, unpinned-seed sample of the closed loop — a discovery/fuzzing job, not a gate.
+# The audible-capped corpus passes strict R9.2 the vast majority of the time; at 1000 cases the
+# nightly is expected to occasionally surface the rare PRE-EXISTING pitch/count residual (a YIN
+# octave error or a dropped-note onset miss — NOT a duration or corpus problem; see DECISIONS.md,
+# "Step 9 — The closed loop"). A failure uploads the quarantined MIDI+WAV for triage and promotion
+# into fixtures/regressions/ (R9.3); it is not a signal that the build is broken.
+on:
+  schedule:
+    - cron: "0 5 * * *"   # 05:00 UTC daily
+  workflow_dispatch: {}
+
+jobs:
+  closed-loop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Nightly closed loop (large corpus)
+        run: dotnet test --filter "Category=Slow"
+        env:
+          CLOSED_LOOP_CASES: "1000"
+      - name: Upload quarantine artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: closed-loop-quarantine
+          path: artifacts/closed-loop-quarantine/

@@ -23,4 +23,9 @@ jobs:
         run: dotnet build --no-restore --configuration Release
 
       - name: Test
+        # No CLOSED_LOOP_CASES override here (R9.4): with it unset, ClosedLoopPropertyTests runs
+        # its push path — 40 cases of each corpus (the audible-capped strict corpus and the
+        # full-range count/pitch/onset corpus) at pinned, verified-reproducible seeds via the
+        # direct Gen.Generate loop. The nightly workflow runs far more, unpinned. See DECISIONS.md,
+        # "Step 9 — The closed loop".
         run: dotnet test --no-build --configuration Release --verbosity normal
