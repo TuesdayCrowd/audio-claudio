@@ -18,21 +18,23 @@ Claude Code: read all of it before touching anything.
 
 ## Where the project is right now (read this first)
 
-The build specification below (§6) describes the *finished* system; the
-repository does not contain it yet. Before running any `dotnet` command, check
-what actually exists on disk:
+**Steps 0 and 1 are complete and on `main`.** The four-project solution, the
+dependency-rule guards, CI, and `DECISIONS.md` (Step 0) are in place, and the
+Domain primitives — `Pitch`, `PitchMath.CentsBetween`, `SampleRate`,
+`SamplePosition`/`SampleDuration`, `NoteEvent` (Step 1) — are implemented with
+property tests. `dotnet build` and `dotnet test` are green (63 tests).
 
-- If there is no solution or `src/` tree (verify with `ls src` or
-  `find . -name '*.csproj'`), the project is at **Step 0 — Scaffold**, and the
-  `dotnet` commands under *Commands* below will fail until that scaffold lands.
-  Start at **§6 Step 0** and work the steps in order — §1 rule 3: one step at a
-  time, each *Verify* green and committed before the next begins.
-- The toolchain is present: **.NET 10 SDK (LTS)** is installed. `DECISIONS.md`
-  does not exist yet — create it the first time a *Design decision* is resolved
-  (§1 rule 2), and record every NuGet package's license there (§1 rule 7).
-- **Keep this section honest.** As steps land, update the current-step note
-  here so the next Claude Code instance knows where to pick up without
-  re-deriving it from the tree.
+- **Next is §6 Step 2 — the audio source port and the WAV adapter.** It carries a
+  *Design decision* Cornelius owns (frame delivery: pull vs. push — §1 rule 2); the
+  plans default to pull. Work the steps in order (§1 rule 3: one at a time, each
+  *Verify* green and committed before the next begins).
+- **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
+  index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
+  cross-step API reference (exact type names, signatures, namespaces) — follow it
+  when a step consumes another step's types. Toolchain: **.NET 10 SDK (LTS)**.
+- **Keep this section honest.** As steps land, update this note (and the
+  `docs/plans/README.md` status table) so the next Claude Code instance knows where
+  to pick up without re-deriving it from the tree.
 
 ---
 
