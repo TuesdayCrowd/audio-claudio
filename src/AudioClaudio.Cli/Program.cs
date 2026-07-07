@@ -1,6 +1,10 @@
+using AudioClaudio.Application;
+using AudioClaudio.Application.UseCases;
 using AudioClaudio.Cli.Commands;
 using AudioClaudio.Cli.Composition;
 using AudioClaudio.Domain;
+using AudioClaudio.Domain.Spectral;
+using AudioClaudio.Infrastructure.Audio;
 using AudioClaudio.Infrastructure.Midi;
 using AudioClaudio.Infrastructure.Synthesis;
 
@@ -40,14 +44,43 @@ switch (args[0])
             PlayCommand.Play(notes, synthesizer.Value, rate);
             return 0;
         }
+    case "listen":
+        {
+            // claudio listen --tempo N [--out-dir .]
+            // The composition root — the ONLY place adapters are constructed (Section 7) and
+            // Ctrl+C is wired. The mic is just one more IAudioSource; the live print streams from
+            // pipeline.StreamNotes; the accurate files come from pipeline.Transcribe on stop.
+            int tempo = int.Parse(
+                TryReadOption(args, "--tempo")
+                    ?? throw new ArgumentException("listen requires --tempo <bpm>"),
+                System.Globalization.CultureInfo.InvariantCulture);
+            string outDir = TryReadOption(args, "--out-dir") ?? ".";
+            const int SampleRateHz = 44100, FrameSize = 1024, Hop = 256;
+
+            var settings = TranscriptionSettings.ForTempo(tempo) with { FrameSize = FrameSize, Hop = Hop };
+            var pipeline = new TranscriptionPipeline(settings, new Radix2Fft()); // Domain FFT (Step 3 Option A)
+
+            using var micSource = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
+            var midiWriter = new DryWetMidiWriter(); // implements INoteEventWriter + IScoreWriter
+            var session = new LiveTranscriptionSession(pipeline.StreamNotes, pipeline.Transcribe);
+            // musicXmlWriter stays null until Step 11 registers `new MusicXmlScoreWriter()` here — zero change to `listen`.
+            var listen = new ListenCommand(session, midiWriter, midiWriter, Console.WriteLine);
+
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; micSource.Stop(); cts.Cancel(); };
+            micSource.Start();
+            listen.Run(micSource, tempo, outDir, cts.Token);
+            return 0;
+        }
     default:
         return Usage();
 }
 
 static int Usage()
 {
-    Console.Error.WriteLine("usage: claudio <transcribe|render|play> ...");
+    Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
     Console.Error.WriteLine("  transcribe <in.wav> --tempo <bpm> [--out-dir <dir>]   -> raw.mid, score.mid");
+    Console.Error.WriteLine("  listen --tempo <bpm> [--out-dir <dir>]                -> live; raw.mid, score.mid on Ctrl+C");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     return 1;
 }

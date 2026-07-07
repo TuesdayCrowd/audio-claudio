@@ -21,6 +21,9 @@ no copyleft anywhere in the graph (§1 rule 7).
 | `MeltySynth` | `AudioClaudio.Infrastructure` | `dotnet add package MeltySynth --version 2.4.1` | MIT | 2026-07-07 |
 | `PortAudioSharp2` (+ bundled native `org.k2fsa.portaudio.runtime.*`) | `AudioClaudio.Infrastructure` | `dotnet add package PortAudioSharp2 --version 1.0.6` | Apache-2.0 | 2026-07-07 |
 
+*(PortAudioSharp2 was first added in Step 8 for `PortAudioPlayer` output; Step 10 reuses the
+same package for `PortAudioAudioSource` microphone input — no new dependency.)*
+
 ## Design decisions
 
 **Step 2 — frame delivery model: pull** (`IEnumerable<Frame> Frames { get; }`).
@@ -436,3 +439,105 @@ capped corpus and the full-range count/pitch/onset corpus. The
 deliberately — reproducibility does not matter there (R9.3's discovery intent),
 and `Sample`'s shrinking is a genuine benefit for producing a smaller,
 easier-to-triage failing case to quarantine.
+
+## Step 10 — Live microphone capture
+
+No new NuGet package (`PortAudioSharp2` was already added in Step 8 for output;
+Step 10 reuses it for input — license row above updated to note both roles).
+
+### Frame delivery: the Step 2 pull + bounded `Channel<Frame>` bridge, realized
+
+The Step 2 design decision (pull `IEnumerable<Frame> Frames`) explicitly deferred
+the live-mic mechanism to "a bounded `Channel<Frame>` rather than the port being
+pushed to directly." Step 10 implements exactly that, split so the risky part is
+tiny and the device-free part is fully testable:
+
+- `FrameAccumulator` (Infrastructure/Capture) — pure reframing: mono samples in
+  arbitrary-sized pushes out as complete overlapping frames of size N at hop H,
+  each stamped with a running `SamplePosition` (a **sample count from the stream**,
+  never a clock read — non-negotiable 2). `Flush` emits the trailing zero-padded
+  frame(s) at end-of-stream.
+- `CaptureFrameStream` (Infrastructure/Capture) — downmix (interleaved→mono mean)
+  + the bounded-channel bridge exposed as the `IAudioSource.Frames` pull property.
+  The real-time producer calls `Submit` only (non-blocking `TryWrite`); a full
+  buffer is **counted** (`DroppedFrameCount`), never silently swallowed.
+- `PortAudioAudioSource` (Infrastructure/Audio) — the ONLY device code: it opens
+  the PortAudio input stream lazily in `Start()` and marshals the callback's
+  `IntPtr` block into `CaptureFrameStream.Submit`. Construction is device-free, so
+  the whole downmix/reframe/bridge path is exercised in CI through the internal
+  `OnAudioBlock` seam; `Start()`/the native callback are covered by manual
+  acceptance only (no audio device exists in CI/sandbox).
+
+**Frame-tail contract (R10.1).** The live path emits the SAME frames as
+`WavAudioSource` for the same audio, byte-for-byte — including the end-of-stream
+convention: `Framing.Split` (Step 2) zero-pads the final partial frame rather than
+dropping it (`ceil(length/hop)` frames), so `CaptureFrameStream.Complete()` flushes
+a matching zero-padded tail. This is proven device-free by
+`CaptureWavEquivalenceTests` (frames identical; full transcription identical
+through both sources). *(The Step 10 plan's illustrative `FrameAccumulator`
+pseudocode dropped the tail; it was corrected to the real Step 2 contract per
+CONTRACTS §2 and §1 rule 8 — fix the code to the pinned invariant.)*
+
+### `BoundedChannelFullMode.Wait` is load-bearing, not decorative
+
+`CaptureFrameStream` only ever calls the synchronous `TryWrite` (the audio thread
+must never block), so it is tempting to think `FullMode` is dead. It is not:
+verified empirically (a throwaway `BoundedChannel<int>` probe) that `FullMode`
+governs `TryWrite` too. Under `Wait`, `TryWrite` returns `false` on a full channel
+and leaves it untouched — which is exactly what lets us detect and **count** the
+overflow. Under `DropNewest`/`DropOldest`/`DropWrite`, `TryWrite` always returns
+`true` and the channel silently evicts a frame internally, pinning
+`DroppedFrameCount` at zero forever — the "swallow the error" failure the
+constitution's Error-Handling rule forbids. So `Wait` is chosen deliberately.
+
+### Live `StreamNotes` is genuinely incremental (not a batch alias)
+
+`TranscriptionPipeline.StreamNotes` was a Step 9 stopgap (`=> Transcribe(source).
+RawEvents`), which cannot "print detected notes as they occur" (R10.3): over a live
+mic it would never return. Step 10 reimplements it as a lazy, causal iterator that
+pulls frames one at a time and yields a note shortly after each onset:
+
+- per frame: `SpectralFrontEnd` magnitude, one `YinPitchDetector` estimate, and the
+  half-wave-rectified spectral flux vs. the previous frame (`SpectralFlux`'s
+  definition, one pair);
+- a **scale-invariant ratio** onset peak-picker (flux stands out from its local mean
+  by the multiplier) with a running-max silence floor — the batch detector's
+  global-max normalization is not available causally, and is actively wrong for a
+  live stream: the first note (whole frame inside the note) makes one outsized flux
+  spike that would bury every later mid-frame onset;
+- an onset→pitch **state machine**: a confirmed onset is only emitted once a single
+  voiced pitch has SUSTAINED a few frames. This is load-bearing — YIN reads
+  *unvoiced* on the partial attack frames (pitch locks a few frames late), and a
+  note *offset* makes its own broadband flux spike (spectral leakage from truncating
+  the tone) that would otherwise be a false onset but goes unvoiced immediately.
+  Same principle as the batch segmenter's flicker floor (R5.3).
+
+The live feed is a **low-latency preview**; the accurate output files come from the
+batch `Transcribe` run on the buffered session audio on stop (`LiveTranscriptionSession`
+tees frames to a buffer, then batch-transcribes it). The two paths agree on count,
+pitch, and onset for clean signals but the live feed reports a *provisional*
+duration (the batch owns note-off). *(This changed one Step 9 test,
+`PipelineIntegrationTests`, which had asserted `StreamNotes == Transcribe.RawEvents`
+byte-for-byte — an identity that only held because of the stopgap and is
+incompatible with genuine incrementality; it now asserts agreement on count/pitch/
+onset. CONTRACTS §9 always described `StreamNotes` as the incremental live feed.)*
+
+### Latency (R10.2 — measured/documented, not asserted)
+
+`LatencyBudget.WorstCaseAlgorithmicMs` computes the ONSET-detection latency
+(`frameSize + lookahead·hop`): at the live defaults (44.1 kHz, N=1024, H=256,
+lookahead=3) that is **~41 ms**, asserted < 150 ms by `LatencyBudgetTests`. The
+NOTE-EMISSION latency additionally waits `minVoiced` hops for the pitch to sustain
+(~5 frames ≈ 29 ms) and then the PortAudio input buffer + OS scheduling on top —
+still comfortably inside the R10.2 ~150 ms budget, but the true end-to-end figure is
+a hardware measurement (the loopback procedure in the README), not a promise.
+
+### R10.3 MusicXML ordering tension — the injected-writer seam
+
+R10.3 lists MusicXML among `listen`'s stop-outputs, but the MusicXML writer is a
+Step 11 deliverable and §1 rule 3 forbids implementing a future step now. `ListenCommand`
+takes an OPTIONAL `IScoreWriter? musicXmlWriter` that stays `null` until Step 11
+registers `new MusicXmlScoreWriter()` in the composition root — at which point
+`score.musicxml` is emitted with zero change to `listen`. The seam (and the "written
+iff a writer is supplied" behavior) is proven now by `ListenCommandTests`; only the
+adapter is deferred. `raw.mid` + `score.mid` are fully delivered in Step 10.

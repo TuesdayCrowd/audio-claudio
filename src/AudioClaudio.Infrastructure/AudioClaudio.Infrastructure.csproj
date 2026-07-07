@@ -17,4 +17,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Lets AudioClaudio.Tests drive PortAudioAudioSource's device-free callback
+         seam (OnAudioBlock) directly, without opening a real device (no device
+         exists in CI/sandbox) or without widening the seam to public. -->
+    <InternalsVisibleTo Include="AudioClaudio.Tests" />
+  </ItemGroup>
+
 </Project>

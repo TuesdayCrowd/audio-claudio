@@ -51,9 +51,16 @@ public sealed class PipelineIntegrationTests
         }
     }
 
+    // StreamNotes is the genuinely-incremental live feed (Step 10, R10.3) — a causal detector that
+    // emits a note at its ONSET with a PROVISIONAL duration, NOT a batch alias of Transcribe. So it
+    // agrees with the batch pass on the things the live view exists to show — how many notes, their
+    // pitches, and their onset timing — but NOT on finalized duration (only the batch pass refines
+    // that). (Before Step 10 this test asserted byte-identical equality; that only held because
+    // StreamNotes was a stopgap `=> Transcribe(...).RawEvents`, which cannot print notes as they
+    // occur. CONTRACTS §9 always defined StreamNotes as the incremental live feed.)
     [Trait("Category", "Fast")]
     [Fact]
-    public void Pipeline_streams_the_same_raw_events_as_Transcribe()
+    public void Pipeline_streams_notes_incrementally_agreeing_with_batch_on_pitch_and_onset()
     {
         var rate = new SampleRate(44100);
         float[] pcm = SignalGenerator.HarmonicStack(
@@ -72,7 +79,12 @@ public sealed class PipelineIntegrationTests
             using var source2 = WavAudioSource.FromFile(wav, new FrameParameters(2048, 512));
             var transcribed = pipeline.Transcribe(source2).RawEvents;
 
-            Assert.Equal(transcribed, streamed);
+            Assert.Equal(transcribed.Count, streamed.Count);
+            for (int i = 0; i < transcribed.Count; i++)
+            {
+                Assert.Equal(transcribed[i].Pitch.MidiNumber, streamed[i].Pitch.MidiNumber);
+                Assert.Equal(transcribed[i].Onset.Samples, streamed[i].Onset.Samples);
+            }
         }
         finally
         {

@@ -25,6 +25,17 @@ public sealed record TranscriptionSettings
     /// <summary>Minimum spacing between accepted onsets, in frames → `OnsetDetectorOptions.MinGapFrames`.</summary>
     public int OnsetMinGapFrames { get; init; } = 3;
 
+    /// <summary>
+    /// Bounded look-ahead, in frames, that the LIVE incremental detector
+    /// (<c>TranscriptionPipeline.StreamNotes</c>, Step 10) waits after a candidate frame
+    /// before confirming its spectral-flux peak is a local maximum — the sole reason the
+    /// live path has any latency at all beyond filling one frame. Keep it small: it is the
+    /// dominant term in the key-strike→note latency budget (R10.2), and 3 frames at
+    /// 1024/256/44.1 kHz is ~41 ms (see <c>LatencyBudget</c>). It does NOT affect the batch
+    /// <c>Transcribe</c> path, whose peak-picker has the whole signal in hand.
+    /// </summary>
+    public int OnsetLookaheadFrames { get; init; } = 3;
+
     /// <summary>Flicker floor as milliseconds; converted to integer samples at the edge → `NoteSegmenterOptions.MinNoteDuration` (R5.3).</summary>
     public double MinNoteMilliseconds { get; init; } = 50.0;
 

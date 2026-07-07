@@ -99,10 +99,275 @@ public sealed class TranscriptionPipeline : ITranscriber
     }
 
     /// <summary>
-    /// Incremental note feed for the live `listen` view (Step 10). For the MVP this simply
-    /// surfaces the raw events of a full pass; Step 10 iterates it as notes are produced.
+    /// Incremental, low-latency note feed for the live <c>listen</c> view (Step 10, R10.3).
+    /// Genuinely lazy and causal: it pulls frames from <paramref name="source"/> ONE AT A TIME
+    /// and <c>yield return</c>s a <see cref="NoteEvent"/> shortly after each note is detected — it
+    /// is deliberately NOT a batch dump. <see cref="Transcribe"/> is the accurate whole-signal pass
+    /// the live session runs on stop for the output files, and it alone owns duration refinement.
+    /// Here a live note is reported at its ONSET with the detected pitch and a PROVISIONAL duration
+    /// (the flicker-floor minimum) — the live print wants the pitch and timing of the attack, not a
+    /// finalized note-off.
+    ///
+    /// Mechanism (causal analogues of the batch Step 5 blocks, so no detection logic is duplicated
+    /// in the capture adapter — R10.4). Per frame: Hann+FFT magnitude (<see cref="SpectralFrontEnd"/>),
+    /// one YIN estimate (<see cref="YinPitchDetector"/>), and the half-wave-rectified spectral flux
+    /// vs. the previous frame (<see cref="SpectralFlux"/>'s definition, one pair). Then a two-stage
+    /// onset→pitch machine:
+    ///  * <b>onset peak</b> — a candidate frame <c>c</c> is confirmed once <c>c + lookahead</c> has
+    ///    arrived if its flux is a local maximum, stands out from its local mean by
+    ///    <c>multiplier</c> (a scale-invariant RATIO — the batch's global-max normalization is not
+    ///    available causally), clears a running-max silence floor, and is <c>MinGapFrames</c> past
+    ///    the last onset. This opens a <i>pending</i> onset;
+    ///  * <b>pitch settle + sustain</b> — the note is emitted only once a single voiced pitch has
+    ///    SUSTAINED <c>minVoiced</c> frames past the onset. This is load-bearing: YIN reads
+    ///    <i>unvoiced</i> on the partial attack frames (the pitch locks a few frames late), and a
+    ///    note OFFSET makes its own flux spike (broadband leakage from truncating the tone) that
+    ///    would otherwise be a false onset — but that "note" goes unvoiced immediately, so it never
+    ///    sustains and is dropped. Same principle as the batch segmenter's flicker floor (R5.3).
+    /// Latency: the onset is <i>known</i> within one frame + <c>lookahead</c> hops (~41 ms at the
+    /// live defaults — see <c>LatencyBudget</c>); the note is <i>emitted</i> once its pitch has
+    /// sustained, adding <c>minVoiced</c> hops (well under the R10.2 150 ms budget). Deterministic:
+    /// every tie-break is defined and there is no clock read.
     /// </summary>
-    public IEnumerable<NoteEvent> StreamNotes(IAudioSource source) => Transcribe(source).RawEvents;
+    public IEnumerable<NoteEvent> StreamNotes(IAudioSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        var frontEnd = new SpectralFrontEnd(_settings.FrameSize, _fft);
+        var yinOptions = new YinOptions(threshold: _settings.YinThreshold);
+
+        // Reuse the Domain onset defaults (window/delta/radius) so the live picker's shape
+        // matches the batch OnsetDetector exactly — only the multiplier and min-gap are
+        // settings-driven (as in Transcribe). No magic numbers.
+        var onsetDefaults = new OnsetDetectorOptions
+        {
+            ThresholdMultiplier = _settings.OnsetThreshold,
+            MinGapFrames = _settings.OnsetMinGapFrames,
+        };
+        int window = onsetDefaults.ThresholdWindowFrames;
+        double delta = onsetDefaults.ThresholdDelta;
+        int radius = Math.Max(0, onsetDefaults.LocalMaxRadiusFrames);
+        double multiplier = onsetDefaults.ThresholdMultiplier;
+        int minGap = onsetDefaults.MinGapFrames;
+        int stabilityFrames = Math.Max(1, _settings.StabilityFrames);
+        int lookahead = Math.Max(radius, _settings.OnsetLookaheadFrames);
+
+        // A live note must show a single voiced pitch SUSTAINED this many frames before it is
+        // emitted — enough to clear the attack transient and reject a note-offset's flux leakage,
+        // small enough to stay well inside the R10.2 latency budget.
+        int minVoiced = Math.Max(stabilityFrames + 1, 5);
+        int hardCap = window + minVoiced; // give up on a pending onset that never locks a pitch
+
+        var flux = new List<double>();
+        var observations = new List<FrameObservation>();
+        double maxFlux = 0.0;
+        int lastOnset = int.MinValue / 2; // no previous onset; avoids sentinel-subtraction overflow
+        IReadOnlyList<double>? previousMagnitudes = null; // prior frame's magnitudes (distinct array each frame)
+
+        // Pure peak test on RAW flux (a local function cannot yield): is candidate frame c a
+        // spectral-flux onset? A scale-invariant RATIO threshold (stands out from its local mean by
+        // `multiplier`) replaces the batch's global-max normalization — not available causally, and
+        // actively wrong here: the first note (starting at sample 0, a whole frame inside the note)
+        // makes one huge flux spike, while every later note starts mid-frame from a silence gap and
+        // ramps in over two frames at ~half that magnitude, so normalizing against the first spike
+        // buries the genuine later onsets. A running-max FLOOR rejects near-silence numerical blips.
+        // Pitch is NOT decided here — the pending state machine below owns that.
+        bool IsOnsetPeak(int c, int available)
+        {
+            if (maxFlux <= 0.0)
+            {
+                return false;
+            }
+
+            double value = flux[c];
+
+            // Local maximum: strictly greater than left neighbours, >= right neighbours
+            // (first frame of a plateau wins — matches OnsetDetector, non-negotiable 3).
+            for (int j = c - radius; j <= c + radius; j++)
+            {
+                if (j < 0 || j > available || j == c)
+                {
+                    continue;
+                }
+
+                double neighbour = flux[j];
+                if (j < c && value <= neighbour)
+                {
+                    return false;
+                }
+
+                if (j > c && value < neighbour)
+                {
+                    return false;
+                }
+            }
+
+            // Prominence: exceed `multiplier` times the local mean over as much of
+            // [c-window, c+window] as has arrived (causal ratio test — scale-invariant).
+            double sum = 0.0;
+            int count = 0;
+            for (int j = c - window; j <= c + window; j++)
+            {
+                if (j < 0 || j > available)
+                {
+                    continue;
+                }
+
+                sum += flux[j];
+                count++;
+            }
+
+            double localMean = count > 0 ? sum / count : 0.0;
+            if (value < multiplier * localMean)
+            {
+                return false;
+            }
+
+            // Silence floor: reject tiny flux blips in near-silence (their local ratio can be large
+            // even though nothing was played). `delta` is a fraction of the loudest onset so far.
+            return value >= delta * maxFlux;
+        }
+
+        // Emit a live note at its ONSET with the sustained pitch and a PROVISIONAL duration (the
+        // flicker-floor minimum); the batch pass owns the finalized note-off.
+        NoteEvent MakeNote(Pitch pitch, int onsetFrame)
+        {
+            SamplePosition onset = observations[onsetFrame].Start;
+            long provisional = Math.Max(1, (long)Math.Round(_settings.MinNoteMilliseconds / 1000.0 * onset.Rate.Hz));
+            return new NoteEvent(pitch, onset, new SampleDuration(provisional, onset.Rate), NoteEvent.DefaultVelocity);
+        }
+
+        int pendingOnset = -1; // an onset whose flux peak is confirmed but whose pitch is still settling
+        int i = -1;
+        foreach (Frame frame in source.Frames)
+        {
+            i++;
+
+            MagnitudeSpectrum spectrum = frontEnd.Analyze(frame);
+            IReadOnlyList<double> magnitudes = spectrum.Magnitudes; // distinct array per frame — safe to retain
+
+            double f = 0.0;
+            for (int k = 0; k < magnitudes.Count; k++)
+            {
+                double prev = previousMagnitudes is not null && k < previousMagnitudes.Count ? previousMagnitudes[k] : 0.0;
+                double diff = magnitudes[k] - prev;
+                if (diff > 0.0)
+                {
+                    f += diff; // half-wave-rectified spectral flux (SpectralFlux.Compute, one pair)
+                }
+            }
+
+            flux.Add(f);
+            if (f > maxFlux)
+            {
+                maxFlux = f;
+            }
+
+            previousMagnitudes = magnitudes;
+
+            PitchEstimate estimate = YinPitchDetector.Detect(frame, yinOptions);
+            observations.Add(new FrameObservation(frame.Start, GuardedPitchFromEstimate(estimate), Rms(frame.Samples)));
+
+            // (1) Onset peak: confirm the candidate `lookahead` frames back. A fresh peak opens a
+            // pending onset; any still-unconfirmed pending is abandoned (it never sustained).
+            int candidate = i - lookahead;
+            if (candidate >= 0 && candidate - lastOnset >= minGap && IsOnsetPeak(candidate, i))
+            {
+                lastOnset = candidate;
+                pendingOnset = candidate;
+            }
+
+            // (2) Pitch settle + sustain: emit once a single voiced pitch has held `minVoiced`
+            // frames past the onset; drop the pending if the voicing dies too short (leakage /
+            // flicker) or never locks within the cap.
+            if (pendingOnset >= 0)
+            {
+                if (SustainedPitch(observations, pendingOnset, i, minVoiced) is { } pitch)
+                {
+                    yield return MakeNote(pitch, pendingOnset);
+                    pendingOnset = -1;
+                }
+                else
+                {
+                    bool currentVoiced = observations[i].Pitch is not null;
+                    bool seenVoiced = AnyVoiced(observations, pendingOnset, i);
+                    if ((seenVoiced && !currentVoiced) || (i - pendingOnset > hardCap))
+                    {
+                        pendingOnset = -1;
+                    }
+                }
+            }
+        }
+
+        // Flush at end-of-stream: scan the final `lookahead` frames for a late onset, then emit a
+        // still-pending note under a relaxed bar (cut short by the stop, not spurious).
+        for (int c = Math.Max(0, i - lookahead + 1); c <= i; c++)
+        {
+            if (c - lastOnset >= minGap && IsOnsetPeak(c, i))
+            {
+                lastOnset = c;
+                pendingOnset = c;
+            }
+        }
+
+        if (pendingOnset >= 0 && SustainedPitch(observations, pendingOnset, i, stabilityFrames) is { } tail)
+        {
+            yield return MakeNote(tail, pendingOnset);
+        }
+    }
+
+    /// <summary>
+    /// The first voiced pitch whose run of consecutive same-pitch frames reaches
+    /// <paramref name="minRun"/> within <c>[onset, available]</c>, or null. The live detector's
+    /// "the pitch has settled and sustained" test (a causal cousin of <see cref="NoteSegmenter"/>'s
+    /// stability rule): a wrong pitch flickering during the attack never reaches the run length.
+    /// </summary>
+    private static Pitch? SustainedPitch(
+        IReadOnlyList<FrameObservation> frames, int onset, int available, int minRun)
+    {
+        Pitch runPitch = default;
+        int runLength = 0;
+        for (int j = onset; j <= available && j < frames.Count; j++)
+        {
+            if (frames[j].Pitch is { } p)
+            {
+                if (runLength > 0 && p.MidiNumber == runPitch.MidiNumber)
+                {
+                    runLength++;
+                }
+                else
+                {
+                    runPitch = p;
+                    runLength = 1;
+                }
+
+                if (runLength >= minRun)
+                {
+                    return runPitch;
+                }
+            }
+            else
+            {
+                runLength = 0;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>True if any frame in <c>[onset, available]</c> carries a voiced pitch.</summary>
+    private static bool AnyVoiced(IReadOnlyList<FrameObservation> frames, int onset, int available)
+    {
+        for (int j = onset; j <= available && j < frames.Count; j++)
+        {
+            if (frames[j].Pitch is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Converts a YIN estimate to a domain <see cref="Pitch"/>, guarding the case
