@@ -100,4 +100,78 @@ public class ListenCommandTests
             if (Directory.Exists(dirB)) Directory.Delete(dirB, recursive: true);
         }
     }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void InvokesOnLiveNoteForEveryLiveNoteAndOnFinalScoreOnceWithTheBatchScore()
+    {
+        var notes = new[] { Note(60, 0), Note(62, 22050) };
+        var midi = new SpyMidiWriter();
+        var liveNotes = new List<int>();
+        Score? finalScore = null;
+        string dir = Path.Combine(Path.GetTempPath(), $"claudio_listen_{Guid.NewGuid():N}");
+        try
+        {
+            var cmd = new ListenCommand(Session(notes), midi, midi, _ => { }, musicXmlWriter: null,
+                                        onLiveNote: n => liveNotes.Add(n.Pitch.MidiNumber),
+                                        onFinalScore: s => finalScore = s);
+            var result = cmd.Run(new FakeSource(), tempoBpm: 120, outDir: dir);
+
+            Assert.Equal(new[] { 60, 62 }, liveNotes);      // fired once per live note, in order
+            Assert.NotNull(finalScore);
+            Assert.Equal(result.Score, finalScore);          // the BATCH score, not a live approximation
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    // The optional live-view hooks must never be able to break CORE listen (transcribe + write the
+    // MIDI/MusicXML trio). A hook that throws on every note -- e.g. the live server died mid-session
+    // -- must still let Run complete, still write all three files, and still fire onFinalScore.
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void AThrowingOnLiveNoteHookStillWritesTheFileTrioAndFiresOnFinalScore()
+    {
+        var notes = new[] { Note(60, 0), Note(62, 22050) };
+        var midi = new SpyMidiWriter();
+        var xml = new SpyScoreWriter();
+        Score? finalScore = null;
+        string dir = Path.Combine(Path.GetTempPath(), $"claudio_listen_{Guid.NewGuid():N}");
+        try
+        {
+            var cmd = new ListenCommand(Session(notes), midi, midi, _ => { }, musicXmlWriter: xml,
+                                        onLiveNote: _ => throw new InvalidOperationException("view died"),
+                                        onFinalScore: s => finalScore = s);
+
+            var result = cmd.Run(new FakeSource(), tempoBpm: 120, outDir: dir); // must not throw
+
+            Assert.True(File.Exists(Path.Combine(dir, "raw.mid")));         // core output intact
+            Assert.True(File.Exists(Path.Combine(dir, "score.mid")));
+            Assert.True(File.Exists(Path.Combine(dir, "score.musicxml")));
+            Assert.Equal(1, midi.EventWrites);
+            Assert.Equal(1, midi.ScoreWrites);
+            Assert.Equal(1, xml.Writes);
+            Assert.NotNull(finalScore);                                     // onFinalScore still fired
+            Assert.Equal(result.Score, finalScore);
+            Assert.Equal(2, result.Events.Count);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    // The two ORIGINAL tests above construct ListenCommand without onLiveNote/onFinalScore --
+    // this confirms both new hooks are genuinely optional and behavior is unaffected when absent.
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void OnLiveNoteAndOnFinalScoreDefaultToNullWithoutError()
+    {
+        var notes = new[] { Note(60, 0) };
+        var midi = new SpyMidiWriter();
+        string dir = Path.Combine(Path.GetTempPath(), $"claudio_listen_{Guid.NewGuid():N}");
+        try
+        {
+            var cmd = new ListenCommand(Session(notes), midi, midi, _ => { }); // no new params at all
+            var result = cmd.Run(new FakeSource(), tempoBpm: 120, outDir: dir);
+            Assert.Single(result.Events);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
 }

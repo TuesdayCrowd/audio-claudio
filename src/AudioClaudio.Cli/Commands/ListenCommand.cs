@@ -14,6 +14,15 @@ namespace AudioClaudio.Cli.Commands;
 /// (when a writer is supplied — Step 11) MusicXML. Writers are Stream-based
 /// (CONTRACTS §7/§11); this composition-layer command opens the FileStreams and
 /// calls them. Capture and detection code stay untouched (R10.3/R10.4).
+///
+/// <paramref name="onLiveNote"/>/<paramref name="onFinalScore"/> (live-notation view, Phase-2
+/// §8 item 3) are OPTIONAL hooks, both null by default, so every existing caller/test is
+/// unaffected. They exist because the live device's note stream is enumerated EXACTLY ONCE, by
+/// this class's own call to <see cref="LiveTranscriptionSession.Run"/> -- a second, independent
+/// consumer of the same live source is not possible (see the live-notation design doc).
+/// <c>onLiveNote</c> fires once per note, at the same moment as the console print;
+/// <c>onFinalScore</c> fires once, after the accurate batch <see cref="Score"/> is computed,
+/// with THAT (not a live approximation) score.
 /// </summary>
 public sealed class ListenCommand
 {
@@ -22,16 +31,21 @@ public sealed class ListenCommand
     private readonly IScoreWriter _scoreWriter;     // DryWetMidiWriter (quantized MIDI)
     private readonly IScoreWriter? _musicXmlWriter; // MusicXmlScoreWriter; null until Step 11 registers it
     private readonly Action<string> _print;
+    private readonly Action<NoteEvent>? _onLiveNote;
+    private readonly Action<Score>? _onFinalScore;
 
     public ListenCommand(LiveTranscriptionSession session,
                          INoteEventWriter rawWriter, IScoreWriter scoreWriter,
-                         Action<string> print, IScoreWriter? musicXmlWriter = null)
+                         Action<string> print, IScoreWriter? musicXmlWriter = null,
+                         Action<NoteEvent>? onLiveNote = null, Action<Score>? onFinalScore = null)
     {
         _session = session;
         _rawWriter = rawWriter;
         _scoreWriter = scoreWriter;
         _print = print;
         _musicXmlWriter = musicXmlWriter;
+        _onLiveNote = onLiveNote;
+        _onFinalScore = onFinalScore;
     }
 
     public LiveSessionResult Run(IAudioSource source, int tempoBpm, string outDir,
@@ -43,7 +57,13 @@ public sealed class ListenCommand
         // The live print streams notes incrementally; the returned result is the ACCURATE
         // batch transcription of the session's audio (R10.3) — that is what the files below use.
         // tempoBpm still denominates the raw-performance MIDI's tempo map (INoteEventWriter).
-        var result = _session.Run(source, n => _print(FormatNote(n)), ct);
+        var result = _session.Run(source, n =>
+        {
+            _print(FormatNote(n));
+            SafeInvokeHook(_onLiveNote, n, "onLiveNote");
+        }, ct);
+        SafeInvokeHook(_onFinalScore, result.Score, "onFinalScore");
+
         var tempo = new Tempo(tempoBpm);
 
         string rawPath = Path.Combine(outDir, "raw.mid");
@@ -62,6 +82,28 @@ public sealed class ListenCommand
             _print($"Wrote {xmlPath}.");
         }
         return result;
+    }
+
+    // The live-view hooks are OPTIONAL and drive a best-effort side channel (the browser sheet).
+    // A misbehaving hook -- e.g. the live server died mid-session -- must NEVER propagate out and
+    // abort the session before the raw.mid/score.mid/score.musicxml trio is written, which is the
+    // CORE job of `listen` (R10.3). So each hook is invoked defensively: on failure, report via the
+    // existing print delegate and carry on.
+    private void SafeInvokeHook<T>(Action<T>? hook, T argument, string hookName)
+    {
+        if (hook is null)
+        {
+            return;
+        }
+
+        try
+        {
+            hook(argument);
+        }
+        catch (Exception ex)
+        {
+            _print($"live view: {hookName} hook failed ({ex.Message}); continuing.");
+        }
     }
 
     private static string FormatNote(NoteEvent n) =>

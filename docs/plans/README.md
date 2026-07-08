@@ -43,7 +43,7 @@ that consumes another step's types.
 
 | Feature | Design | Plan | Status |
 |---|---|---|---|
-| **Live incremental notation** (`listen --view`) — the growing score rendered in a browser via OpenSheetMusicDisplay as the mic is played (`CLAUDE.md` §8 item 3) | [design](2026-07-07-live-notation-design.md) | [plan](2026-07-07-live-notation-plan.md) | 📐 Designed |
+| **Live incremental notation** (`listen --view`) — the growing score rendered in a browser via OpenSheetMusicDisplay as the mic is played (`CLAUDE.md` §8 item 3) | [design](2026-07-07-live-notation-design.md) | [plan](2026-07-07-live-notation-plan.md) | ✅ Built (on `main`, 331 tests; OSMD 2.0.0 BSD-3 vendored). Browser render = manual check (pending). |
 
 Executed with `superpowers:executing-plans`, same discipline as the numbered steps (its requirement IDs are local `LV1–LV8`, since it's Phase 2, not part of §6). Decisions recorded: mic input (MIDI rejected), browser tab (webview rejected), `HttpListener` + SSE (ASP.NET rejected), OSMD vendored (BSD-3).
 

@@ -13,4 +13,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Static web assets for claudio listen's live-notation view flag. Copied verbatim; no
+         build step, no bundler: the OSMD bundle is vendored, not built (see DECISIONS.md).
+         The glob is evaluated at build time, so Task 4's index.html/app.js are picked up
+         automatically once they exist; no second csproj edit needed later. -->
+    <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

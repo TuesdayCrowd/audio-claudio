@@ -587,3 +587,191 @@ loads and renders in MuseScore `<version>` (checked `<date>`)" line R11.2 calls 
 R11.2's *stability* half is fully proven (the byte-identical golden test,
 `EmitsByteIdenticalGoldenForTwinkleFixture`, plus the LF/no-BOM determinism guard); its
 *"loads cleanly in MuseScore"* half rests on the schema-conformance review above, not a GUI run.
+
+## Live notation view (`listen --view`, Phase-2 §8 item 3)
+
+No new NuGet package: `LiveNotationServer` is built entirely on
+`System.Net.HttpListener`, `System.Net.Sockets.TcpListener`, and
+`System.Threading.Channels` (all BCL); `LiveScoreProjector` is pure Domain-only
+Application code. See `docs/plans/2026-07-07-live-notation-design.md` for the
+full design record and rationale for each decision below; this section records
+only the vendoring and execution-time facts.
+
+### Vendored asset: OpenSheetMusicDisplay (OSMD)
+- Version: **2.0.0** — the latest stable release on npm at execution time
+  (`dist-tags.latest`), not a floating `@latest` reference; pinned explicitly
+  in the fetch URL.
+- Source URL: `https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@2.0.0/build/opensheetmusicdisplay.min.js`
+  (jsDelivr's npm mirror — fetched once, at execution time, and committed; never
+  referenced live from the served page).
+- File: `src/AudioClaudio.Cli/wwwroot/osmd/opensheetmusicdisplay.min.js`
+  Size: **1,262,636 bytes** (~1.2 MiB), matching the CDN's reported
+  `content-length` exactly (byte-for-byte download, no truncation).
+  SHA-256: `6db4be76cfc1499cabe8bccb409ff0c261fe7aa22c002d93ed61f29817bf6f22`
+  Sanity-checked as real JavaScript, not a fetch-error page: starts with the
+  UMD wrapper comment `/*! For license information please see
+  opensheetmusicdisplay.min.js.LICENSE.txt */` followed by
+  `!function(t,e){"object"==typeof exports...` (`OsmdAssetTests`).
+- License: committed at `src/AudioClaudio.Cli/wwwroot/osmd/LICENSE-OSMD.txt` --
+  **BSD-3-Clause**, on the §1 rule 7 allow-list (MIT/Apache-2.0/BSD/MPL-2.0);
+  no copyleft. Confirmed three independent ways: the package's own
+  `package.json` (`"license": "BSD-3-Clause"`), GitHub's repository license
+  detector (`spdx_id: "BSD-3-Clause"`), and the npm registry's published
+  metadata for this exact version. **Deviation worth noting:** the upstream
+  `LICENSE` file's own text (fetched verbatim from
+  `https://raw.githubusercontent.com/opensheetmusicdisplay/opensheetmusicdisplay/2.0.0/LICENSE`
+  and reproduced byte-for-byte in the committed file) does not itself contain
+  the literal word "BSD" anywhere — it is the bare 3-clause permission text
+  with no named header. A short identification header (source URL, version,
+  and the three-way confirmation above) was added *above* the verbatim text,
+  changing none of the legal wording, so the license is honestly identifiable
+  at a glance and `OsmdAssetTests.OsmdLicenseFileIsCommittedAndIsBsd`'s
+  content check is truthful rather than accidentally passing/failing on a
+  wording coincidence.
+- No new NuGet package; no npm/Node toolchain introduced anywhere in this
+  repo. Served as a static asset by `LiveNotationServer` (Infrastructure),
+  exactly like the GeneralUser GS SoundFont is a committed static asset
+  served by MeltySynth (Step 8).
+- Network access, download, and license fetch all succeeded on the first
+  attempt; no fallback or stub bundle was needed.
+
+### `LiveScoreProjector` — Application, pure
+`AudioClaudio.Application.UseCases.LiveScoreProjector` imports only
+`AudioClaudio.Domain` (`NoteEvent`, `Score`, `Quantizer`, `QuantizationGrid`);
+no I/O, no clock, no HTTP. It is push-shaped (`Add(NoteEvent) : Score`), not a
+pull over `IAudioSource`, because the live device's frame channel drains
+exactly once and `LiveTranscriptionSession.Run` already owns that drain — see
+the design doc's "Note on the projector's shape" for the full argument
+(a second independent enumeration would race the existing one over the same
+bounded channel).
+
+### `LiveNotationServer` — Infrastructure, `HttpListener` + hand-rolled SSE
+Bound to `http://localhost:<port>/` only (never the `+`/`*` wildcard forms),
+so no URL-ACL reservation or elevated privileges are needed on Windows. Each
+`/events` connection owns its own capacity-1, drop-oldest
+`System.Threading.Channels.Channel<string>` outbox — the same non-blocking
+idiom `CaptureFrameStream` (Step 10) uses for live audio frames, applied here
+so a slow browser can never block `PublishScore`. A late-joining client is
+enqueued the most-recently-published payload the moment it connects, before
+anything else, so it sees the current sheet immediately rather than a blank
+page. Tested entirely via an in-process `System.Net.Http.HttpClient` — no
+browser, no real device.
+
+### Deviations from the plan's literal code (found by actually running it)
+
+Four small, mechanical-to-substantive fixes were needed to make the plan's own
+illustrative code compile and pass; each is recorded here per the "fix the
+code, not the assertion" spirit of §1 rule 8, applied to the plan text itself:
+
+1. **csproj comment couldn't contain `--`.** The plan's Task 1 `<Content>`
+   comment includes `` `listen --view` `` and prose double-hyphens; XML
+   comments forbid `--` anywhere in the body (MSB4025). Reworded to avoid the
+   literal flag spelling and switched prose dashes to em dashes — no
+   behavioral change, the glob and `CopyToOutputDirectory` are unchanged.
+2. **`TcpListener.LocalEndPoint` does not exist.** `FreeTcpPort.Find()`'s
+   plan text reads `probe.LocalEndPoint` (capital P, matching `Socket`'s
+   property); `TcpListener`'s actual BCL member is `LocalEndpoint` (lowercase
+   p) — a real, if easily confused, BCL naming inconsistency. Fixed to
+   `probe.LocalEndpoint`; confirmed by the four Part-A tests passing
+   (including the free-port-uniqueness one, which exercises this line
+   directly).
+3. **`Assert.Single(x.Where(...))` trips this repo's own analyzer gate.**
+   `LiveScoreProjectorTests`' first test used the `Where`-then-`Single` form;
+   `TreatWarningsAsErrors` (`Directory.Build.props`) turns the xUnit analyzer
+   `xUnit2031` into a build error here (no other test in the suite had
+   happened to use this form before). Changed to the suggested
+   `Assert.Single(collection, predicate)` overload — same assertion, no
+   change in what's tested.
+4. **SSE header flush — a genuine concurrency bug, not a typo.** The plan's
+   `HandleSseAsync` set `ContentType`/`SendChunked` and went straight to
+   enqueueing/pumping, writing nothing until the connection's outbox had a
+   score to send. `HttpListenerResponse` does not transmit its status
+   line/headers to the client until the *first byte* is written to
+   `OutputStream` — so a client that connects via
+   `HttpClient.GetAsync(..., ResponseHeadersRead)` **before** any
+   `PublishScore` call has ever happened would block forever waiting for
+   headers that the server never sends. This was not caught by reading the
+   code; it was caught by actually running the tests:
+   `PublishScoreDeliversBase64MusicXmlToAConnectedClient` and
+   `BroadcastsToAllConnectedClients` (both connect before publishing) each
+   hung for the full 100 s `HttpClient` default timeout and failed;
+   `LateJoiningClientImmediatelyReceivesTheCurrentScore` (publishes *before*
+   connecting, so the immediate late-join enqueue triggers the first write)
+   passed, which pinpointed the exact mechanism. Fix: `HandleSseAsync` now
+   writes and flushes a leading SSE comment line (`: connected\n\n`) the
+   moment a client connects, before it is added to `_connections` — valid
+   per the SSE wire format (lines starting with `:` are comments), silently
+   ignored by a real browser `EventSource`, and already transparently
+   skipped by the test suite's `ReadSseDataLineAsync` helper (which loops
+   until it sees a `data:` line) with no test-side change needed. All seven
+   `LiveNotationServerTests` then pass in well under a second.
+
+### Robustness hardening (post-review) — the optional view must never break core `listen`
+
+A correctness review (no blocker/major) asked for three small robustness fixes,
+all upholding one principle: the OPTIONAL `--view` side channel must never break
+CORE `listen` (transcribe + write `raw.mid`/`score.mid`/`score.musicxml`) or leak
+a connection. All three landed with no new dependency and the dependency rule
+intact:
+
+1. **Hook isolation in `ListenCommand`.** `_onLiveNote`/`_onFinalScore` are now
+   invoked through a private `SafeInvokeHook<T>` that try/catches each call and,
+   on failure, reports via the existing `_print` delegate and continues — so a
+   hook whose live server died mid-session can never propagate out and abort the
+   session before the file trio is written. Proven by
+   `ListenCommandTests.AThrowingOnLiveNoteHookStillWritesTheFileTrioAndFiresOnFinalScore`
+   (a hook that throws on every note; Run still completes, all three files are
+   written, `onFinalScore` still fires).
+2. **`server.Start()` guarded in `Program.cs`.** The `--view` path wraps
+   `Start()` in try/catch; on failure (the documented ephemeral-port bind race,
+   or a locked-down environment) it warns to stderr and runs plain `listen`,
+   leaving the hooks null so nothing is ever wired to a server that never
+   started. Browser-open remains best-effort (its own try/catch). The 1 s
+   final-flush wait now keys off `onFinalScore is not null` (the precise "view
+   was actually wired" signal) rather than merely "server object exists."
+3. **Request pipeline guarded in `LiveNotationServer`.** `HandleRequestAsync`'s
+   body is wrapped in try/catch with a `finally` that is now the SINGLE close
+   point for `ctx.Response` on every path (static success, 404, SSE end) — so a
+   client that disconnects before the SSE preamble flush can neither leak the
+   response nor raise an unobserved task exception. The catch swallows only the
+   expected disconnect/shutdown types (`HttpListenerException`, `IOException`,
+   `ObjectDisposedException`); any other exception is left to propagate as the
+   real defect it would be. The two per-method `ctx.Response.Close()` calls were
+   removed from `ServeStaticFileAsync` in favor of that one guaranteed close.
+4. **Static-path containment hardened.** The web-root containment check now
+   compares the resolved path against the root WITH a trailing directory
+   separator (`IsInsideWebRoot`), so a sibling directory like `<root>-evil/`
+   cannot pass a bare `StartsWith("<root>")` prefix test.
+
+### Accepted trade-offs (reviewed, deliberately left as-is)
+Two reviewer nits are acceptable for a single-user, localhost-only, once-per-
+session tool and were intentionally NOT changed:
+- **`Dispose()` does not await the accept loop.** It stops/closes the
+  `HttpListener` without awaiting the fire-and-forget `_acceptLoop`, so an
+  in-flight `GetContextAsync` may still be unwinding as `Dispose` returns. It is
+  handled cleanly by the accept loop's `catch (...) when (!_listener.IsListening)`
+  guard (the pending call throws, sees the listener closed, and returns). A full
+  await/quiesce handshake would be over-engineering here.
+- **The final-flush wait is a fixed 1 s sleep.** After the session ends,
+  `Program.cs` sleeps one second (only when the view was actually wired) to let
+  the final accurate-score SSE push reach the browser before the process exits,
+  rather than a confirmation handshake. A fixed heuristic is fine for this
+  context; the browser's `EventSource` also auto-reconnects and re-fetches the
+  current state (the late-join path) if it ever misses the last push.
+
+### Manual acceptance (Task 6) — NOT performed; recorded honestly
+Per the same honesty standard as Step 10's mic-loopback note and Step 11's
+MuseScore gap: **this execution environment has no audio input device and no
+browser**, so the by-ear/by-eye acceptance script in
+`docs/plans/2026-07-07-live-notation-plan.md` Task 6 (run `listen --tempo 100
+--view`, confirm the browser opens and notes render live, confirm late-join
+and the final-score snap on Ctrl+C, confirm plain `listen` is unchanged) has
+**not** been run. Writing a "checked on <OS/browser> (checked <date>)" line
+without that having actually happened would be a fabricated record. What
+stands in its place, automated and green: `LiveScoreProjectorTests` (the
+projection logic), `LiveNotationServerTests` (the HTTP/SSE server end-to-end
+via `HttpClient`, including late-join and multi-client broadcast), and
+`WebAssetContentTests` (the served HTML/JS reference the right paths and call
+the right OSMD APIs). **Action item for Cornelius:** run Task 6's script on a
+machine with a working microphone and default browser, then replace this note
+with the literal acceptance line the plan's Task 6 asks for.
