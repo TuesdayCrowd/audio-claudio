@@ -60,3 +60,8 @@ nunit-*.xml
 out/
 *.wav
 !fixtures/**/*.wav
+# The transcribe/listen output trio when --out-dir defaults to "." (repo root).
+# Exact names — the committed fixtures are two-bar.mid / twinkle.musicxml, so unaffected.
+raw.mid
+score.mid
+score.musicxml

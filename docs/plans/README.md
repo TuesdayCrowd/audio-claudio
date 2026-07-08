@@ -39,6 +39,14 @@ that consumes another step's types.
 
 ⚠ = the step carries a **decision gate** for Cornelius (see below).
 
+## Beyond v0.1.0 — Phase 2 (designed, not yet built)
+
+| Feature | Design | Plan | Status |
+|---|---|---|---|
+| **Live incremental notation** (`listen --view`) — the growing score rendered in a browser via OpenSheetMusicDisplay as the mic is played (`CLAUDE.md` §8 item 3) | [design](2026-07-07-live-notation-design.md) | [plan](2026-07-07-live-notation-plan.md) | 📐 Designed |
+
+Executed with `superpowers:executing-plans`, same discipline as the numbered steps (its requirement IDs are local `LV1–LV8`, since it's Phase 2, not part of §6). Decisions recorded: mic input (MIDI rejected), browser tab (webview rejected), `HttpListener` + SSE (ASP.NET rejected), OSMD vendored (BSD-3).
+
 ## Decision gates Cornelius owns (`CLAUDE.md` §1 rule 2)
 
 These are **not** silently resolved in the plans. Present the trade-off, get the
