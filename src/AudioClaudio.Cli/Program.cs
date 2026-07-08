@@ -13,6 +13,9 @@ using AudioClaudio.Infrastructure.Synthesis;
 
 var rate = new SampleRate(44100);
 
+var logBuffer = new System.Text.StringBuilder();
+Console.SetOut(new AudioClaudio.Cli.Composition.TeeTextWriter(Console.Out, logBuffer));
+
 if (args.Length == 0)
     return Usage();
 
@@ -32,6 +35,7 @@ switch (args[0])
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
             bool noteNames = Array.IndexOf(args, "--note-names") >= 0;
             TranscribeCommand.Run(args[1], tempo, outDir, noteNames);
+            File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
             return 0;
         }
     case "render" when args.Length >= 3:
@@ -114,6 +118,11 @@ switch (args[0])
 
                 if (estimateTempo)
                     Console.WriteLine($"Estimated tempo: {result.Score.Tempo.BeatsPerMinute:F0} BPM.");
+
+                // Written LAST so the log captures every line above, including the estimated tempo.
+                string log = logBuffer.ToString();
+                File.WriteAllText(Path.Combine(archiveDir, "log.txt"), log);
+                File.WriteAllText(Path.Combine(outDir, "log.txt"), log);
             }
 
             LiveNotationServer? server = null;
@@ -167,6 +176,7 @@ switch (args[0])
                         lock (gate) { opts = pendingOptions; }
 
                         string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+                        logBuffer.Clear();
                         server.PublishClear(); // blank the staff for the new recording
                         var cleared = SessionOutputArchive.CleanLatest(outDir);
                         if (cleared.Count > 0)
@@ -209,6 +219,7 @@ switch (args[0])
                                                     musicXmlWriter: musicXml);
                     using var cts = new CancellationTokenSource();
                     Console.CancelKeyPress += (_, e) => { e.Cancel = true; micSource.Stop(); cts.Cancel(); };
+                    logBuffer.Clear();
                     micSource.Start();
                     var result = listen.Run(micSource, (int)Math.Round(tempoBpm), outDir, cts.Token);
                     FinalizeRecording(result, timestamp, record, skipSilence);

@@ -59,6 +59,28 @@ public class SessionOutputArchiveTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public void CleanLatest_also_deletes_a_log_txt_in_the_root()
+    {
+        string dir = NewTempDir();
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string log = Path.Combine(dir, "log.txt");
+            File.WriteAllText(log, "previous take's console output");
+
+            var deleted = SessionOutputArchive.CleanLatest(dir);
+
+            Assert.False(File.Exists(log));
+            Assert.Contains(log, deleted);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public void Archive_copies_top_level_output_files_into_the_timestamp_folder_and_leaves_originals_in_place()
     {
         string dir = NewTempDir();
@@ -83,6 +105,30 @@ public class SessionOutputArchiveTests
                 Assert.True(File.Exists(Path.Combine(archiveDir, name)));  // and a copy lands in the archive
             }
             Assert.False(File.Exists(Path.Combine(archiveDir, "notes.txt"))); // non-matching extension not archived
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Archive_does_not_copy_log_txt()
+    {
+        string dir = NewTempDir();
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string mid = Path.Combine(dir, "raw.mid");
+            string log = Path.Combine(dir, "log.txt");
+            File.WriteAllText(mid, "mid");
+            File.WriteAllText(log, "console output");
+
+            string archiveDir = SessionOutputArchive.Archive(dir, "20260708_1400");
+
+            Assert.True(File.Exists(Path.Combine(archiveDir, "raw.mid")));
+            Assert.False(File.Exists(Path.Combine(archiveDir, "log.txt")));
         }
         finally
         {

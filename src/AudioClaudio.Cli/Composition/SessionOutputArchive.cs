@@ -30,6 +30,12 @@ public static class SessionOutputArchive
                 File.Delete(file);
                 deleted.Add(file);
             }
+
+        // log.txt isn't in OutputPatterns (Archive must NOT copy it -- the CLI writes it directly
+        // into the archive folder), so it needs its own cleanup here to clear the prior take's log.
+        string log = Path.Combine(outDir, "log.txt");
+        if (File.Exists(log)) { File.Delete(log); deleted.Add(log); }
+
         return deleted;
     }
 
