@@ -157,6 +157,13 @@ construction. The note list printed while listening is a low-latency
 come from an accurate whole-signal batch pass over the session's recorded
 audio, not the live preview.
 
+- **Output files.** The out-dir root always holds the LATEST session's
+  `raw.mid`/`score.mid`/`score.musicxml` (plus `--record`'s `input.wav`/
+  `recreation.wav`) at the same stable filenames, so tools can always point at
+  the same paths. On start, `listen` clears any previous run's `*.mid`/
+  `*.musicxml`/`*.wav` from the out-dir root (top-level only, so earlier
+  archives are untouched); on stop, that same set is additionally copied into
+  `<out-dir>/<YYYYMMDD_HHMM>/`, timestamped by when the session started.
 - **`--record`.** Pass `--record` to additionally write `input.wav` (the real
   captured microphone audio, reconstructed losslessly from the same frames
   the session already buffers) and `recreation.wav` (the raw transcription

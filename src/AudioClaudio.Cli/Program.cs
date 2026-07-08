@@ -58,6 +58,14 @@ switch (args[0])
                     ?? throw new ArgumentException("listen requires --tempo <bpm>"),
                 System.Globalization.CultureInfo.InvariantCulture);
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
+            // Session archiving: the out-dir root always holds the LATEST run's files at stable paths;
+            // each session is copied into a start-timestamped subfolder on stop (folder = when recording
+            // STARTED). Reading the wall clock here is a composition-root concern (the domain stays clock-free).
+            string sessionTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmm", System.Globalization.CultureInfo.InvariantCulture);
+            Directory.CreateDirectory(outDir);
+            var cleared = SessionOutputArchive.CleanLatest(outDir);
+            if (cleared.Count > 0)
+                Console.WriteLine($"Cleared {cleared.Count} previous output file(s) from {outDir}.");
             bool view = Array.IndexOf(args, "--view") >= 0;
             bool record = Array.IndexOf(args, "--record") >= 0;
             const int SampleRateHz = 44100, FrameSize = 1024, Hop = 256;
@@ -144,6 +152,9 @@ switch (args[0])
 
             if (onFinalScore is not null)
                 Thread.Sleep(TimeSpan.FromSeconds(1)); // view was wired: let the final SSE push reach the browser
+
+            string archiveDir = SessionOutputArchive.Archive(outDir, sessionTimestamp);
+            Console.WriteLine($"Archived this session to {archiveDir}.");
             return 0;
         }
     default:

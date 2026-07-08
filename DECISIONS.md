@@ -829,3 +829,22 @@ defeating the comparison's purpose.
 `Program.cs`'s existing `Lazy<MeltySynthSynthesizer>` (already lazy since Step 9, so
 `transcribe` never needs a `.sf2`) rather than adding a second construction path —
 plain `listen` still runs with no SoundFont on disk, unaffected.
+
+## CLI — `listen` session archiving (latest + timestamped copies, 2026-07-08)
+
+**The out-dir root always holds the latest run's output at stable paths.** `listen`
+clears the previous session's `*.mid`/`*.musicxml`/`*.wav` from the out-dir root on
+start (top-level only, via `SessionOutputArchive.CleanLatest`) — non-recursive, so any
+earlier timestamped archive subfolders are left alone — and then writes this session's
+files at the same familiar names (`raw.mid`, `score.mid`, `score.musicxml`, and
+`--record`'s `input.wav`/`recreation.wav`), so tools and scripts can always point at the
+same filenames. On stop, once every file has been written, `SessionOutputArchive.Archive`
+COPIES (not moves) that same top-level set into `<out-dir>/<YYYYMMDD_HHMM>/`, timestamped
+by when the session STARTED — the latest files stay in the root; the timestamped folder
+is an archived snapshot of that session.
+
+**The wall-clock read for the folder name lives in `Program.cs`'s `listen` case, not in
+`SessionOutputArchive` or `ListenCommand`.** `SessionOutputArchive` takes the timestamp
+string as a parameter and never calls `DateTime.Now` itself; "now" enters only through
+the composition root, consistent with §4's non-negotiable that the domain never reads
+the wall clock.
