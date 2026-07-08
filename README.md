@@ -171,6 +171,12 @@ audio, not the live preview.
   waveform editor (e.g. Audacity) to compare the performance against what was
   transcribed. Omitted by default, so plain `listen` is unaffected and still
   never touches a SoundFont.
+- **`--skip-silence`.** Pass `--skip-silence` for continuous playback: it removes
+  pauses longer than ~500 ms from BOTH `input.wav` and `recreation.wav`, cutting
+  the same sample spans from each so the two stay aligned, while shorter musical
+  rests are left untouched. Implies `--record` (it only ever affects those two
+  WAVs) — `raw.mid`/`score.mid`/`score.musicxml` are never touched and keep the
+  true performance timing.
 - **Latency.** The worst-case *algorithmic* onset latency — key-strike to
   the onset being known — is about **41 ms** at the default live parameters
   (44.1 kHz, 1024-sample frame, 256-sample hop, look-ahead 3), measured and

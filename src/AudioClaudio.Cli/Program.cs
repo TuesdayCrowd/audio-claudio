@@ -49,7 +49,7 @@ switch (args[0])
         }
     case "listen":
         {
-            // claudio listen --tempo N [--out-dir .] [--view] [--record]
+            // claudio listen --tempo N [--out-dir .] [--view] [--record] [--skip-silence]
             // The composition root — the ONLY place adapters are constructed (Section 7) and
             // Ctrl+C is wired. The mic is just one more IAudioSource; the live print streams from
             // pipeline.StreamNotes; the accurate files come from pipeline.Transcribe on stop.
@@ -67,7 +67,8 @@ switch (args[0])
             if (cleared.Count > 0)
                 Console.WriteLine($"Cleared {cleared.Count} previous output file(s) from {outDir}.");
             bool view = Array.IndexOf(args, "--view") >= 0;
-            bool record = Array.IndexOf(args, "--record") >= 0;
+            bool skipSilence = Array.IndexOf(args, "--skip-silence") >= 0;
+            bool record = Array.IndexOf(args, "--record") >= 0 || skipSilence; // --skip-silence implies --record
             const int SampleRateHz = 44100, FrameSize = 1024, Hop = 256;
 
             var settings = TranscriptionSettings.ForTempo(tempo) with { FrameSize = FrameSize, Hop = Hop };
@@ -138,15 +139,30 @@ switch (args[0])
             // touches a SoundFont (Step 9's lazy-construction guarantee, R8.1).
             if (record)
             {
-                if (result.CapturedFrames.Count > 0)
+                float[] inputPcm = result.CapturedFrames.Count > 0
+                    ? Framing.ReconstructMono(result.CapturedFrames)
+                    : Array.Empty<float>();
+                IReadOnlyList<NoteEvent> recreationNotes = result.Events;
+
+                if (skipSilence)
+                {
+                    // Collapse pauses longer than 500 ms out of BOTH the audio and the notes on the same spans,
+                    // so input.wav and recreation.wav stay aligned but play as one continuous piece.
+                    var maxSilence = new SampleDuration(rate.Hz / 2, rate);
+                    var collapsed = SilenceCollapser.Collapse(result.Events, inputPcm, rate, maxSilence);
+                    inputPcm = collapsed.Audio;
+                    recreationNotes = collapsed.Notes;
+                }
+
+                if (inputPcm.Length > 0)
                 {
                     string inputPath = Path.Combine(outDir, "input.wav");
-                    WavFileWriter.Write(inputPath, Framing.ReconstructMono(result.CapturedFrames), result.CapturedFrames[0].Rate);
+                    WavFileWriter.Write(inputPath, inputPcm, rate);
                     Console.WriteLine($"Wrote {inputPath}.");
                 }
 
                 string recreationPath = Path.Combine(outDir, "recreation.wav");
-                RenderCommand.RenderToWav(result.Events, synthesizer.Value, rate, recreationPath);
+                RenderCommand.RenderToWav(recreationNotes, synthesizer.Value, rate, recreationPath);
                 Console.WriteLine($"Wrote {recreationPath}.");
             }
 
@@ -165,7 +181,7 @@ static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
     Console.Error.WriteLine("  transcribe <in.wav> --tempo <bpm> [--out-dir <dir>]   -> raw.mid, score.mid, score.musicxml");
-    Console.Error.WriteLine("  listen --tempo <bpm> [--out-dir <dir>] [--view] [--record]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; --view opens a browser sheet-music view; --record also writes input.wav + recreation.wav");
+    Console.Error.WriteLine("  listen --tempo <bpm> [--out-dir <dir>] [--view] [--record] [--skip-silence]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; --view opens a browser sheet-music view; --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record)");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     return 1;
 }

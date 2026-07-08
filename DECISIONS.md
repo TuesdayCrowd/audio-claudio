@@ -848,3 +848,18 @@ is an archived snapshot of that session.
 string as a parameter and never calls `DateTime.Now` itself; "now" enters only through
 the composition root, consistent with §4's non-negotiable that the domain never reads
 the wall clock.
+
+## CLI — `listen --skip-silence` (continuous playback, 2026-07-08)
+
+**Collapses leading/inter-note/trailing silences longer than 500 ms down to 500 ms**,
+cutting the SAME sample spans from the captured audio and the re-timed notes so
+`input.wav` and `recreation.wav` stay aligned on a shared timeline; gaps at or under
+500 ms survive untouched, so the piece's own phrasing/rhythm is kept. The collapsing
+logic is a new pure `SilenceCollapser` in `AudioClaudio.Domain` — no I/O, deterministic,
+sorting notes by onset and shrinking each over-long gap (including the leading gap
+before the first note and the trailing gap after the last) down to the threshold.
+
+**`--skip-silence` implies `--record` and touches ONLY the two WAVs.** `raw.mid`,
+`score.mid`, and `score.musicxml` keep the true, un-collapsed performance timing —
+the notation is the faithful record of what was played; the continuous WAVs exist
+purely for listen-back, so only they are de-silenced.

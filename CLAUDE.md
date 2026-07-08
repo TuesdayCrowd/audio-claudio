@@ -605,7 +605,7 @@ Commit: `docs: README; v0.1.0`.
 
 ```
 claudio transcribe <in.wav> --tempo 120 [--out-dir .]   # → raw.mid, score.mid, score.musicxml
-claudio listen --tempo 100 [--record]                   # live; writes the same trio on stop; --record also writes input.wav + recreation.wav (each session also archived under <out-dir>/<YYYYMMDD_HHMMSS>/)
+claudio listen --tempo 100 [--record] [--skip-silence]  # live; writes the same trio on stop; --record also writes input.wav + recreation.wav (each session also archived under <out-dir>/<YYYYMMDD_HHMMSS>/); --skip-silence implies --record and collapses pauses >500ms in input.wav/recreation.wav only
 claudio play <file.mid>                                 # MeltySynth playback
 claudio render <file.mid> <out.wav>                     # deterministic render
 ```
