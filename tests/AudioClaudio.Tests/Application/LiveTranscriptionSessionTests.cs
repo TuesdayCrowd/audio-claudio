@@ -76,6 +76,26 @@ public class LiveTranscriptionSessionTests
         Assert.Equal(5, batchFrameCount); // all 5 frames were replayed to the batch transcription
     }
 
+    // The result surfaces the exact captured frames too (used by `listen --record` to write
+    // input.wav via Framing.ReconstructMono) — same frames, same order, independent of the
+    // batch note/score output.
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void ResultExposesTheCapturedFramesInOrder()
+    {
+        var frames = new List<Frame>();
+        for (int i = 0; i < 5; i++)
+            frames.Add(new Frame(new float[8], new SamplePosition(i * 8, Rate)));
+
+        // A stand-in for the real incremental detector: it fully drains the source's frames.
+        IEnumerable<NoteEvent> DrainingStream(IAudioSource s) { foreach (var _ in s.Frames) { } yield break; }
+
+        var session = new LiveTranscriptionSession(DrainingStream, _ => Batch(Array.Empty<NoteEvent>()));
+        var result = session.Run(new FrameListSource(frames), onNote: _ => { });
+
+        Assert.Equal(frames, result.CapturedFrames); // same frames, same order (reference equality)
+    }
+
     [Fact]
     [Trait("Category", "Fast")]
     public void StopsPrintingWhenCancellationRequested()

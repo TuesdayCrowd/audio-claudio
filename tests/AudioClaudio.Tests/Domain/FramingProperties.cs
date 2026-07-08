@@ -63,4 +63,40 @@ public class FramingProperties
         // a fixed seed up front so every CI run is deterministic from the start. If a genuine failure
         // surfaces, CsCheck prints a reproduction seed — replace the value here with it to lock the case.
     }
+
+    [Theory]
+    [Trait("Category", "Fast")]
+    [InlineData(1024, 256)]
+    [InlineData(2048, 512)]
+    [InlineData(512, 512)] // no overlap
+    public void ReconstructMono_inverts_Split_for_representative_frame_parameters(int size, int hop)
+    {
+        var rate = new SampleRate(44100);
+        const int length = 3000;
+        var signal = Enumerable.Range(0, length).Select(i => (i % 97) / 97f - 0.5f).ToArray();
+
+        var frames = Framing.Split(signal, rate, new FrameParameters(size, hop));
+        float[] reconstructed = Framing.ReconstructMono(frames);
+
+        Assert.True(reconstructed.Length >= length);
+        Assert.Equal(signal, reconstructed[..length]); // the real signal comes back exactly
+        Assert.All(reconstructed[length..], sample => Assert.Equal(0f, sample)); // Split's tail padding
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void ReconstructMono_of_empty_list_returns_empty_array()
+    {
+        Assert.Empty(Framing.ReconstructMono(Array.Empty<Frame>()));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void ReconstructMono_of_single_frame_returns_its_samples()
+    {
+        var rate = new SampleRate(44100);
+        var frame = new Frame(new float[] { 1f, 2f, 3f, 4f }, new SamplePosition(0, rate));
+
+        Assert.Equal(new float[] { 1f, 2f, 3f, 4f }, Framing.ReconstructMono(new[] { frame }));
+    }
 }

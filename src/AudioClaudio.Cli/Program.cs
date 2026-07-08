@@ -49,7 +49,7 @@ switch (args[0])
         }
     case "listen":
         {
-            // claudio listen --tempo N [--out-dir .] [--view]
+            // claudio listen --tempo N [--out-dir .] [--view] [--record]
             // The composition root — the ONLY place adapters are constructed (Section 7) and
             // Ctrl+C is wired. The mic is just one more IAudioSource; the live print streams from
             // pipeline.StreamNotes; the accurate files come from pipeline.Transcribe on stop.
@@ -59,6 +59,7 @@ switch (args[0])
                 System.Globalization.CultureInfo.InvariantCulture);
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
             bool view = Array.IndexOf(args, "--view") >= 0;
+            bool record = Array.IndexOf(args, "--record") >= 0;
             const int SampleRateHz = 44100, FrameSize = 1024, Hop = 256;
 
             var settings = TranscriptionSettings.ForTempo(tempo) with { FrameSize = FrameSize, Hop = Hop };
@@ -121,7 +122,25 @@ switch (args[0])
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; micSource.Stop(); cts.Cancel(); };
             micSource.Start();
-            listen.Run(micSource, tempo, outDir, cts.Token);
+            var result = listen.Run(micSource, tempo, outDir, cts.Token);
+
+            // --record (opt-in): also write the real captured audio and the transcription
+            // synthesized back, so the two can be loaded side by side (e.g. in Audacity) and
+            // compared. `synthesizer.Value` forces the Lazy here, so plain `listen` still never
+            // touches a SoundFont (Step 9's lazy-construction guarantee, R8.1).
+            if (record)
+            {
+                if (result.CapturedFrames.Count > 0)
+                {
+                    string inputPath = Path.Combine(outDir, "input.wav");
+                    WavFileWriter.Write(inputPath, Framing.ReconstructMono(result.CapturedFrames), result.CapturedFrames[0].Rate);
+                    Console.WriteLine($"Wrote {inputPath}.");
+                }
+
+                string recreationPath = Path.Combine(outDir, "recreation.wav");
+                RenderCommand.RenderToWav(result.Events, synthesizer.Value, rate, recreationPath);
+                Console.WriteLine($"Wrote {recreationPath}.");
+            }
 
             if (onFinalScore is not null)
                 Thread.Sleep(TimeSpan.FromSeconds(1)); // view was wired: let the final SSE push reach the browser
@@ -135,7 +154,7 @@ static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
     Console.Error.WriteLine("  transcribe <in.wav> --tempo <bpm> [--out-dir <dir>]   -> raw.mid, score.mid, score.musicxml");
-    Console.Error.WriteLine("  listen --tempo <bpm> [--out-dir <dir>] [--view]       -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; --view opens a browser sheet-music view");
+    Console.Error.WriteLine("  listen --tempo <bpm> [--out-dir <dir>] [--view] [--record]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; --view opens a browser sheet-music view; --record also writes input.wav + recreation.wav");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     return 1;
 }

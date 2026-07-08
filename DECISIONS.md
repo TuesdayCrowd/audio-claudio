@@ -806,3 +806,26 @@ on `deep-closed-loop.yml` or add a `push`/`pull_request` path filter on the dete
 files, and (if wanted) apply the residual-budget guard so a detection change goes
 green unless it worsens the residual. The harness already supports the large sample
 via `CLOSED_LOOP_CASES`; nothing in the test code was removed.
+
+## CLI — `listen --record` (real vs recreation audio, 2026-07-08)
+
+**Opt-in `--record` writes two extra WAVs, `input.wav` and `recreation.wav`, into
+`listen`'s output directory** — a by-ear correctness check: load both into a waveform
+editor (e.g. Audacity) and compare the real performance against what the pipeline
+heard. `input.wav` is reconstructed losslessly from the analysis frames the session
+already buffers for the batch transcription pass (`LiveTranscriptionSession`'s
+`FrameRecordingAudioSource`) — no second capture, no new device code; the only new
+Domain surface this adds is `Framing.ReconstructMono`, the exact inverse of the
+existing `Framing.Split`.
+
+**`recreation.wav` synthesizes the RAW (unquantized) events, not the quantized
+score.** Onsets in `result.Events` stay at the same sample-accurate positions as the
+performance that produced `input.wav`, so the two WAVs line up on a shared timeline;
+re-synthesizing the quantized `Score` instead would snap every onset to the tempo
+grid and let the recreation drift out of alignment with the real audio note by note,
+defeating the comparison's purpose.
+
+**The synthesizer/SoundFont is constructed only when `--record` is passed**, reusing
+`Program.cs`'s existing `Lazy<MeltySynthSynthesizer>` (already lazy since Step 9, so
+`transcribe` never needs a `.sf2`) rather than adding a second construction path —
+plain `listen` still runs with no SoundFont on disk, unaffected.

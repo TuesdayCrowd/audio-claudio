@@ -605,7 +605,7 @@ Commit: `docs: README; v0.1.0`.
 
 ```
 claudio transcribe <in.wav> --tempo 120 [--out-dir .]   # → raw.mid, score.mid, score.musicxml
-claudio listen --tempo 100                              # live; writes the same trio on stop
+claudio listen --tempo 100 [--record]                   # live; writes the same trio on stop; --record also writes input.wav + recreation.wav
 claudio play <file.mid>                                 # MeltySynth playback
 claudio render <file.mid> <out.wav>                     # deterministic render
 ```

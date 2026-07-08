@@ -127,7 +127,7 @@ commands:
 
 ```bash
 claudio transcribe <in.wav> --tempo 120 [--out-dir .]    # -> raw.mid, score.mid, score.musicxml
-claudio listen --tempo 100 [--out-dir .]                 # live; writes the same trio on Ctrl+C
+claudio listen --tempo 100 [--out-dir .] [--record]      # live; writes the same trio on Ctrl+C; --record also writes input.wav + recreation.wav
 claudio play <file.mid> [--soundfont <path>]             # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>] # deterministically render a MIDI file to WAV
 ```
@@ -157,6 +157,13 @@ construction. The note list printed while listening is a low-latency
 come from an accurate whole-signal batch pass over the session's recorded
 audio, not the live preview.
 
+- **`--record`.** Pass `--record` to additionally write `input.wav` (the real
+  captured microphone audio, reconstructed losslessly from the same frames
+  the session already buffers) and `recreation.wav` (the raw transcription
+  synthesized back to audio) into the output directory — load both into a
+  waveform editor (e.g. Audacity) to compare the performance against what was
+  transcribed. Omitted by default, so plain `listen` is unaffected and still
+  never touches a SoundFont.
 - **Latency.** The worst-case *algorithmic* onset latency — key-strike to
   the onset being known — is about **41 ms** at the default live parameters
   (44.1 kHz, 1024-sample frame, 256-sample hop, look-ahead 3), measured and

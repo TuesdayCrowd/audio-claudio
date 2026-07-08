@@ -7,7 +7,13 @@ using AudioClaudio.Domain;
 namespace AudioClaudio.Application.UseCases;
 
 /// <summary>The result of a live session: the accurate raw performance and its quantized score.</summary>
-public sealed record LiveSessionResult(IReadOnlyList<NoteEvent> Events, Score Score);
+public sealed record LiveSessionResult(IReadOnlyList<NoteEvent> Events, Score Score)
+{
+    /// <summary>The raw analysis frames captured during the live pass, in order — the exact audio
+    /// the transcriber heard, reassemblable via <see cref="AudioClaudio.Domain.Framing.ReconstructMono"/>
+    /// (used by `listen --record` to write input.wav). Empty unless the session captured audio.</summary>
+    public IReadOnlyList<Frame> CapturedFrames { get; init; } = Array.Empty<Frame>();
+}
 
 /// <summary>
 /// Orchestrates a live transcription with two clearly separated jobs (Step 10, R10.3):
@@ -57,7 +63,7 @@ public sealed class LiveTranscriptionSession
 
         // Accurate files: batch-transcribe exactly the frames the live pass consumed.
         TranscriptionResult batch = _transcribe(recorder.ToBufferedSource());
-        return new LiveSessionResult(batch.RawEvents, batch.Score);
+        return new LiveSessionResult(batch.RawEvents, batch.Score) { CapturedFrames = recorder.CapturedFrames };
     }
 
     /// <summary>
@@ -71,6 +77,9 @@ public sealed class LiveTranscriptionSession
         private readonly List<Frame> _captured = new();
 
         public FrameRecordingAudioSource(IAudioSource inner) => _inner = inner;
+
+        /// <summary>The frames captured so far, in the order they were yielded.</summary>
+        public IReadOnlyList<Frame> CapturedFrames => _captured;
 
         public IEnumerable<Frame> Frames
         {
