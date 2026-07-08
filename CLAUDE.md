@@ -73,13 +73,26 @@ browser tab as the piece is played. The optional `--view` flag cannot break plai
 + guarded server start). Manual acceptance PASSED (Cornelius, 2026-07-07 — staves built live from voice
 input, snapped correct on stop). Build/test green (331 tests).
 
-- **The v0.1.0 MVP is shipped; `v0.1.1` adds live incremental notation.** The lone open human follow-up is
-  the MuseScore GUI load check for the MusicXML golden (R11.2 — see `DECISIONS.md`), and even that is now
-  corroborated — OSMD renders the same `MusicXmlScoreWriter` output correctly in the browser. The by-ear
-  live-`listen` path is human-confirmed (voice through the mic, 2026-07-07). Phase-2 items (§8) — polyphony,
-  tempo estimation, pYIN pitch-hardening (fixes the rare ~0.4% octave residual), treble/bass split — are out
-  of scope. The step plans and the authoritative API reference (`docs/plans/CONTRACTS.md`) live in
-  `docs/plans/`; keep this note honest if work resumes.
+Recording + notation tooling — `v0.1.2`, a suite of `listen`/`transcribe` enhancements on top of the live
+view. `--record` writes `input.wav` (the captured mic audio, losslessly reconstructed via
+`Framing.ReconstructMono`) + `recreation.wav` (the transcription re-synthesized) for A/B comparison;
+`--skip-silence` collapses long inter-note pauses out of both, aligned, with a de-click tail fade
+(`SilenceCollapser`); `--note-names` prints scientific-pitch names (C4, F♯5) as MusicXML `<lyric>`s under
+each note; tempo is **auto-estimated** when `--tempo` is omitted (median inter-onset interval —
+`TempoEstimator`, Domain). Each session's files sit at stable paths in the out-dir root and are archived to
+`<out-dir>/<yyyyMMdd_HHmmss>/` with a `log.txt` of the run's console output. The `listen --view` page now
+drives **multiple browser-controlled recordings** (Start/Stop buttons) with per-take controls (Title,
+Record, Skip-silence, Note-names). Manual acceptance PASSED (Cornelius, 2026-07-08). Build/test green
+(367 tests). CI: node24 actions; the scheduled nightly closed-loop retired to an on-demand
+`deep-closed-loop` workflow.
+
+- **The v0.1.0 MVP is shipped; `v0.1.1` added live incremental notation; `v0.1.2` adds the recording +
+  notation tooling above.** The lone open human follow-up is the MuseScore GUI load check for the MusicXML
+  golden (R11.2 — see `DECISIONS.md`), corroborated by OSMD rendering the same `MusicXmlScoreWriter` output.
+  Remaining Phase-2 items (§8): polyphony; pYIN pitch-hardening (the rare ~0.4% octave residual, and the
+  live-frame low/high range limits ≈ MIDI 42–93 on real mic audio); treble/bass split; and a legato /
+  coarser-grid note-off for cleaner rhythm from uneven beginner playing. The step plans and the authoritative
+  API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note honest if work resumes.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
