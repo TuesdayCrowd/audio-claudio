@@ -164,6 +164,11 @@ audio, not the live preview.
   `*.musicxml`/`*.wav` from the out-dir root (top-level only, so earlier
   archives are untouched); on stop, that same set is additionally copied into
   `<out-dir>/<YYYYMMDD_HHMMSS>/`, timestamped by when the session started.
+- **`--view`.** Pass `--view` to open a live browser sheet-music view with Start/Stop
+  recording buttons: each Start begins a new recording (opens the mic) and each Stop
+  saves it into its own `<out-dir>/<YYYYMMDD_HHMMSS>/` (timestamp = when Start was
+  pressed) and freezes the displayed score. Ctrl+C exits at any time, auto-saving a
+  recording still in progress.
 - **`--record`.** Pass `--record` to additionally write `input.wav` (the real
   captured microphone audio, reconstructed losslessly from the same frames
   the session already buffers) and `recreation.wav` (the raw transcription

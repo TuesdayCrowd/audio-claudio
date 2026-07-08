@@ -863,3 +863,24 @@ before the first note and the trailing gap after the last) down to the threshold
 `score.mid`, and `score.musicxml` keep the true, un-collapsed performance timing —
 the notation is the faithful record of what was played; the continuous WAVs exist
 purely for listen-back, so only they are de-silenced.
+
+## CLI — browser-driven recording on `listen --view` (2026-07-08)
+
+**`--view` now shows Start/Stop buttons instead of recording for the whole process
+lifetime.** Each take is a fresh `PortAudioAudioSource` plus a fresh
+`LiveScoreProjector`, opened on Start and closed on Stop, then finalized (optionally
+writing `input.wav`/`recreation.wav`) and archived under its own Start timestamp —
+the same per-session archive path as before, just run once per take instead of once
+per process. `LiveNotationServer.PublishClear()` blanks the staff the moment Start is
+pressed; the last published score stays frozen on screen after Stop, until the next
+Start clears it.
+
+**Decisions made along the way:** Ctrl+C auto-saves a take still in progress rather
+than discarding it; the microphone is open only while a recording is active, not for
+the whole `listen --view` process lifetime; and the last take's score is left frozen
+on-screen (not blanked) between Stop and the next Start, so it stays readable.
+Server↔CLI coordination uses two primitives, both signalled from the `HttpListener`
+POST handlers: a `SemaphoreSlim` that Start releases and the CLI's recording loop
+waits on, and a mic-stop callback that Stop invokes directly. Neither the
+transcription pipeline nor the domain layer changed — this is composition-root
+wiring only.

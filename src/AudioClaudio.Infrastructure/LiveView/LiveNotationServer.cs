@@ -22,11 +22,17 @@ public sealed class LiveNotationServer : IDisposable
     private readonly object _gate = new();
     private readonly List<SseConnection> _connections = new();
     private readonly Func<Score, string> _toMusicXml;
-    private string? _latestBase64;
+    private (string Name, string Data)? _latest;
     private Task? _acceptLoop;
 
     public int Port { get; }
     public string BaseUrl { get; }
+
+    /// <summary>Invoked when a browser POSTs /record/start (the "start recording" button).</summary>
+    public Action? StartRequested { get; set; }
+
+    /// <summary>Invoked when a browser POSTs /record/stop (the "stop recording" button).</summary>
+    public Action? StopRequested { get; set; }
 
     public LiveNotationServer(string webRootPath, int port = 0, Func<Score, string>? scoreToMusicXml = null)
     {
@@ -52,17 +58,27 @@ public sealed class LiveNotationServer : IDisposable
     {
         string xml = _toMusicXml(score);
         string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(xml));
+        Broadcast(("score", base64), remembered: ("score", base64));
+    }
 
+    /// <summary>
+    /// Clear every connected view (the "start a new recording" transition) and forget the latest
+    /// score, so a client that joins while idle sees a blank staff rather than the previous take.
+    /// </summary>
+    public void PublishClear() => Broadcast(("clear", string.Empty), remembered: null);
+
+    private void Broadcast((string Name, string Data) message, (string Name, string Data)? remembered)
+    {
         SseConnection[] snapshot;
         lock (_gate)
         {
-            _latestBase64 = base64;
+            _latest = remembered;
             snapshot = _connections.ToArray();
         }
 
         foreach (SseConnection connection in snapshot)
         {
-            connection.Enqueue(base64);
+            connection.Enqueue(message);
         }
     }
 
@@ -89,6 +105,16 @@ public sealed class LiveNotationServer : IDisposable
         try
         {
             string path = ctx.Request.Url?.AbsolutePath ?? "/";
+
+            if (ctx.Request.HttpMethod == "POST" && (path == "/record/start" || path == "/record/stop"))
+            {
+                // Fire-and-forget control signal for the CLI's recording loop; a throwing handler must never
+                // break the HTTP response (the button just needs a 204 back).
+                try { (path == "/record/start" ? StartRequested : StopRequested)?.Invoke(); }
+                catch { /* ignore: the signal is best-effort */ }
+                ctx.Response.StatusCode = (int)HttpStatusCode.NoContent; // 204
+                return;
+            }
 
             if (path == "/events")
             {
@@ -135,9 +161,9 @@ public sealed class LiveNotationServer : IDisposable
         lock (_gate)
         {
             _connections.Add(connection);
-            if (_latestBase64 is not null)
+            if (_latest is { } latest)
             {
-                connection.Enqueue(_latestBase64); // late-joiner sync: current state, no fresh publish needed
+                connection.Enqueue(latest); // late-joiner sync: current state, no fresh publish needed
             }
         }
 
@@ -214,20 +240,20 @@ public sealed class LiveNotationServer : IDisposable
     private sealed class SseConnection
     {
         private readonly HttpListenerResponse _response;
-        private readonly Channel<string> _outbox = Channel.CreateBounded<string>(
+        private readonly Channel<(string Name, string Data)> _outbox = Channel.CreateBounded<(string Name, string Data)>(
             new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
 
         public SseConnection(HttpListenerResponse response) => _response = response;
 
-        public void Enqueue(string base64) => _outbox.Writer.TryWrite(base64);
+        public void Enqueue((string Name, string Data) message) => _outbox.Writer.TryWrite(message);
 
         public async Task PumpAsync(CancellationToken ct)
         {
             try
             {
-                await foreach (string base64 in _outbox.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+                await foreach ((string Name, string Data) message in _outbox.Reader.ReadAllAsync(ct).ConfigureAwait(false))
                 {
-                    byte[] bytes = Encoding.UTF8.GetBytes($"event: score\ndata: {base64}\n\n");
+                    byte[] bytes = Encoding.UTF8.GetBytes($"event: {message.Name}\ndata: {message.Data}\n\n");
                     await _response.OutputStream.WriteAsync(bytes, ct).ConfigureAwait(false);
                     await _response.OutputStream.FlushAsync(ct).ConfigureAwait(false);
                 }

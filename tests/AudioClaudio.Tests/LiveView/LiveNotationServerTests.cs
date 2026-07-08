@@ -83,6 +83,27 @@ public class LiveNotationServerTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PostToRecordStartAndStopInvokesTheCorrespondingCallback()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        bool startInvoked = false;
+        bool stopInvoked = false;
+        server.StartRequested = () => startInvoked = true;
+        server.StopRequested = () => stopInvoked = true;
+        server.Start();
+        using var http = new HttpClient();
+
+        var startResponse = await http.PostAsync(server.BaseUrl + "record/start", content: null);
+        var stopResponse = await http.PostAsync(server.BaseUrl + "record/stop", content: null);
+
+        Assert.True(startInvoked);
+        Assert.True(stopInvoked);
+        Assert.Equal(HttpStatusCode.NoContent, startResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, stopResponse.StatusCode);
+    }
+
     private static Score Fixture(params int[] midiNotes)
     {
         var rate = new SampleRate(44100);
@@ -112,6 +133,33 @@ public class LiveNotationServerTests
 
         Assert.NotNull(line);
         return Encoding.UTF8.GetString(Convert.FromBase64String(line!["data: ".Length..]));
+    }
+
+    private static async Task<(string EventName, string Data)> ReadSseFrameAsync(StreamReader reader, TimeSpan timeout)
+    {
+        // Same shape as ReadSseDataLineAsync, but also captures the preceding "event: <name>"
+        // line instead of assuming it is always "score" -- needed to tell a "clear" frame apart
+        // from a "score" frame.
+        string? eventName = null;
+        string? line;
+        do
+        {
+            var readTask = reader.ReadLineAsync();
+            if (await Task.WhenAny(readTask, Task.Delay(timeout)) != readTask)
+            {
+                throw new TimeoutException("No SSE line received in time.");
+            }
+
+            line = await readTask;
+            if (line is not null && line.StartsWith("event: ", StringComparison.Ordinal))
+            {
+                eventName = line["event: ".Length..];
+            }
+        } while (line is not null && !line.StartsWith("data: ", StringComparison.Ordinal));
+
+        Assert.NotNull(line);
+        Assert.NotNull(eventName);
+        return (eventName!, line!["data: ".Length..]);
     }
 
     [Fact]
@@ -168,5 +216,41 @@ public class LiveNotationServerTests
         string expected = new MusicXmlScoreWriter().WriteToString(score);
         Assert.Equal(expected, await ReadSseDataLineAsync(readerA, TimeSpan.FromSeconds(5)));
         Assert.Equal(expected, await ReadSseDataLineAsync(readerB, TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishClearSendsAClearEventToAConnectedClient()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        server.PublishClear();
+
+        (string eventName, string data) = await ReadSseFrameAsync(reader, TimeSpan.FromSeconds(5));
+        Assert.Equal("clear", eventName);
+        Assert.Equal(string.Empty, data);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task AfterPublishClearANewlyConnectedClientDoesNotReceiveAStaleScore()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        server.PublishScore(Fixture(60));
+        server.PublishClear();
+
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        // The late-joiner sync (see LateJoiningClientImmediatelyReceivesTheCurrentScore) forwards
+        // _latest to a fresh connection immediately -- PublishClear forgot it, so nothing should
+        // arrive here within a short timeout.
+        await Assert.ThrowsAsync<TimeoutException>(() => ReadSseDataLineAsync(reader, TimeSpan.FromMilliseconds(500)));
     }
 }

@@ -9,3 +9,22 @@ source.addEventListener("score", (event) => {
   const xml = atob(event.data);
   osmd.load(xml).then(() => osmd.render());
 });
+
+source.addEventListener("clear", () => {
+  osmd.clear();
+});
+
+const startButton = document.getElementById("start-recording");
+const stopButton = document.getElementById("stop-recording");
+
+startButton.addEventListener("click", async () => {
+  startButton.disabled = true;
+  stopButton.disabled = false;
+  await fetch("/record/start", { method: "POST" });
+});
+
+stopButton.addEventListener("click", async () => {
+  stopButton.disabled = true;
+  startButton.disabled = false;
+  await fetch("/record/stop", { method: "POST" });
+});

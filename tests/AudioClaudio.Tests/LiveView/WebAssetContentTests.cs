@@ -30,4 +30,25 @@ public class WebAssetContentTests
         Assert.Contains("osmd.render()", js);
         Assert.Contains("atob(", js); // base64 decode of the SSE payload (the SSE protocol decision)
     }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void IndexHtmlContainsTheRecordingControlButtons()
+    {
+        string html = File.ReadAllText(Path.Combine(WwwRoot, "index.html"));
+
+        Assert.Contains("id=\"start-recording\"", html);
+        Assert.Contains("id=\"stop-recording\"", html);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void AppJsPostsRecordingControlSignalsAndHandlesClear()
+    {
+        string js = File.ReadAllText(Path.Combine(WwwRoot, "app.js"));
+
+        Assert.Contains("\"/record/start\"", js);
+        Assert.Contains("\"/record/stop\"", js);
+        Assert.Contains("addEventListener(\"clear\"", js);
+    }
 }
