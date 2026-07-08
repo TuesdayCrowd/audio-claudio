@@ -21,12 +21,16 @@ public static class SilenceCollapser
     /// <param name="audio">Mono PCM the notes were transcribed from, at <paramref name="rate"/>.</param>
     /// <param name="rate">The shared sample rate of the notes' positions and the audio.</param>
     /// <param name="maxSilence">Silences longer than this are shrunk to it; shorter gaps are kept.</param>
+    /// <param name="fadeSamples">Length of the de-click fade applied to the tail of each kept segment
+    /// before a splice, in samples. Defaults to ~5 ms of <paramref name="rate"/> when null; a caller may
+    /// pass 0 to disable it (e.g. alignment tests that assert exact sample values across a splice).</param>
     public static Result Collapse(
-        IReadOnlyList<NoteEvent> notes, float[] audio, SampleRate rate, SampleDuration maxSilence)
+        IReadOnlyList<NoteEvent> notes, float[] audio, SampleRate rate, SampleDuration maxSilence, int? fadeSamples = null)
     {
         if (notes is null) throw new ArgumentNullException(nameof(notes));
         if (audio is null) throw new ArgumentNullException(nameof(audio));
 
+        int fade = fadeSamples ?? Math.Max(1, rate.Hz / 200);
         long threshold = maxSilence.Samples;
         var sorted = notes.OrderBy(n => n.Onset.Samples).ToList();
 
@@ -56,11 +60,12 @@ public static class SilenceCollapser
         if (trailing > threshold)
             cuts.Add((prevEnd + threshold, trailing - threshold));
 
-        return new Result(retimed, RemoveSpans(audio, cuts));
+        return new Result(retimed, RemoveSpans(audio, cuts, fade));
     }
 
-    // Copy `audio` minus the given ordered, non-overlapping spans.
-    private static float[] RemoveSpans(float[] audio, List<(long Start, long Count)> cuts)
+    // Copy `audio` minus the given ordered, non-overlapping spans, fading the tail of each kept
+    // segment so a splice that truncates a still-ringing note settles smoothly instead of clicking.
+    private static float[] RemoveSpans(float[] audio, List<(long Start, long Count)> cuts, int fade)
     {
         if (cuts.Count == 0) return (float[])audio.Clone();
 
@@ -72,10 +77,25 @@ public static class SilenceCollapser
         {
             int keep = (int)(start - read);
             Array.Copy(audio, read, result, write, keep);
+            FadeOutTail(result, write, keep, fade);
             write += keep;
             read = start + count;
         }
         Array.Copy(audio, read, result, write, (int)(audio.Length - read));
+        FadeOutTail(result, write, (int)(audio.Length - read), fade);
         return result;
+    }
+
+    // Linearly ramps the last `fade` samples of result[offset, offset+length) down to zero, so a cut
+    // that truncates a still-ringing note settles smoothly instead of clicking. Tail-only: the next
+    // segment starts at a note attack (~0), so the join is smooth without altering attacks.
+    private static void FadeOutTail(float[] result, int offset, int length, int fade)
+    {
+        int f = Math.Min(fade, length);
+        for (int i = 0; i < f; i++)
+        {
+            double gain = 1.0 - (i + 1.0) / f; // 1 -> 0 across the last f samples; last sample = 0
+            result[offset + length - f + i] *= (float)gain;
+        }
     }
 }
