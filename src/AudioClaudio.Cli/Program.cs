@@ -25,11 +25,10 @@ switch (args[0])
 {
     case "transcribe" when args.Length >= 2:
         {
-            // claudio transcribe <in.wav> --tempo N [--out-dir .]
-            double tempo = double.Parse(
-                TryReadOption(args, "--tempo")
-                    ?? throw new ArgumentException("transcribe requires --tempo <bpm>"),
-                System.Globalization.CultureInfo.InvariantCulture);
+            // claudio transcribe <in.wav> [--tempo N] [--out-dir .]
+            double? tempo = TryReadOption(args, "--tempo") is { } t
+                ? double.Parse(t, System.Globalization.CultureInfo.InvariantCulture)
+                : null;
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
             bool noteNames = Array.IndexOf(args, "--note-names") >= 0;
             TranscribeCommand.Run(args[1], tempo, outDir, noteNames);
@@ -50,16 +49,15 @@ switch (args[0])
         }
     case "listen":
         {
-            // claudio listen --tempo N [--out-dir .] [--view] [--record] [--skip-silence]
+            // claudio listen [--tempo N] [--out-dir .] [--view] [--record] [--skip-silence]
             // The composition root — the ONLY place adapters are constructed (Section 7) and Ctrl+C is
             // wired. With --view, recording is driven by Start/Stop buttons in the browser: multiple
             // recordings per run, each saved under its own start-timestamp; the mic opens on Start and
             // closes on Stop; Ctrl+C exits, auto-saving a recording still in progress. Without --view it
             // is a single recording from launch to Ctrl+C.
-            int tempo = int.Parse(
-                TryReadOption(args, "--tempo")
-                    ?? throw new ArgumentException("listen requires --tempo <bpm>"),
-                System.Globalization.CultureInfo.InvariantCulture);
+            string? tempoArg = TryReadOption(args, "--tempo");
+            bool estimateTempo = tempoArg is null;
+            double tempoBpm = tempoArg is null ? 120.0 : double.Parse(tempoArg, System.Globalization.CultureInfo.InvariantCulture);
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
             Directory.CreateDirectory(outDir);
             bool view = Array.IndexOf(args, "--view") >= 0;
@@ -68,11 +66,14 @@ switch (args[0])
             bool noteNames = Array.IndexOf(args, "--note-names") >= 0;
             const int SampleRateHz = 44100, FrameSize = 1024, Hop = 256;
 
-            var settings = TranscriptionSettings.ForTempo(tempo) with { FrameSize = FrameSize, Hop = Hop };
+            var settings = TranscriptionSettings.ForTempo(tempoBpm) with { FrameSize = FrameSize, Hop = Hop, EstimateTempo = estimateTempo };
             var pipeline = new TranscriptionPipeline(settings, new Radix2Fft()); // Domain FFT (Step 3 Option A)
             var midiWriter = new DryWetMidiWriter(); // implements INoteEventWriter + IScoreWriter
             var session = new LiveTranscriptionSession(pipeline.StreamNotes, pipeline.Transcribe);
-            var grid = new QuantizationGrid(new SampleRate(SampleRateHz), new Tempo(tempo),
+            // The live preview's grid always uses the fallback/declared tempoBpm (never the estimate --
+            // the estimate is only known after the batch pass on stop); the SAVED score.mid/score.musicxml
+            // come from result.Score, which IS estimated when estimateTempo is set (via `settings` above).
+            var grid = new QuantizationGrid(new SampleRate(SampleRateHz), new Tempo(tempoBpm),
                                             TimeSignature.FourFour, Subdivision.Sixteenth);
             var musicXml = new MusicXmlScoreWriter(noteNames);
 
@@ -110,6 +111,9 @@ switch (args[0])
 
                 string archiveDir = SessionOutputArchive.Archive(outDir, timestamp);
                 Console.WriteLine($"Archived to {archiveDir}.");
+
+                if (estimateTempo)
+                    Console.WriteLine($"Estimated tempo: {result.Score.Tempo.BeatsPerMinute:F0} BPM.");
             }
 
             LiveNotationServer? server = null;
@@ -176,7 +180,7 @@ switch (args[0])
                         Console.WriteLine($"Recording {timestamp}...");
                         mic.Start();
                         // Runs until mic.Stop() ends the frames — triggered by the Stop button or Ctrl+C.
-                        var result = listen.Run(mic, tempo, outDir, CancellationToken.None);
+                        var result = listen.Run(mic, (int)Math.Round(tempoBpm), outDir, CancellationToken.None);
                         lock (gate) { currentMic = null; }
                         mic.Dispose();
 
@@ -200,7 +204,7 @@ switch (args[0])
                     using var cts = new CancellationTokenSource();
                     Console.CancelKeyPress += (_, e) => { e.Cancel = true; micSource.Stop(); cts.Cancel(); };
                     micSource.Start();
-                    var result = listen.Run(micSource, tempo, outDir, cts.Token);
+                    var result = listen.Run(micSource, (int)Math.Round(tempoBpm), outDir, cts.Token);
                     FinalizeRecording(result, timestamp);
                 }
             }
@@ -217,8 +221,8 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> --tempo <bpm> [--out-dir <dir>] [--note-names]   -> raw.mid, score.mid, score.musicxml");
-    Console.Error.WriteLine("  listen --tempo <bpm> [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
+    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names]   -> raw.mid, score.mid, score.musicxml; omit --tempo to auto-estimate it from your playing");
+    Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     return 1;
 }

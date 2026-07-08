@@ -16,11 +16,12 @@ namespace AudioClaudio.Cli.Commands;
 /// </summary>
 public static class TranscribeCommand
 {
-    public static void Run(string inputWav, double tempoBpm, string outDir, bool includeNoteNames = false)
+    public static void Run(string inputWav, double? tempoBpm, string outDir, bool includeNoteNames = false)
     {
         Directory.CreateDirectory(outDir);
 
-        var settings = TranscriptionSettings.ForTempo(tempoBpm);
+        bool estimate = tempoBpm is null;
+        var settings = TranscriptionSettings.ForTempo(tempoBpm ?? 120.0) with { EstimateTempo = estimate };
         var pipeline = new TranscriptionPipeline(settings, new Radix2Fft()); // Domain FFT (Option A)
 
         TranscriptionResult result;
@@ -29,7 +30,8 @@ public static class TranscribeCommand
             result = pipeline.Transcribe(source);
         }
 
-        var tempo = new Tempo(tempoBpm);
+        var tempo = result.Score.Tempo; // estimated when --tempo omitted, else the declared value
+        Console.WriteLine($"Tempo: {tempo.BeatsPerMinute:F0} BPM{(estimate ? " (estimated)" : "")}");
         var writer = new DryWetMidiWriter();
 
         using (var raw = File.Create(Path.Combine(outDir, "raw.mid")))

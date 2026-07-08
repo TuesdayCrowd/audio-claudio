@@ -88,8 +88,19 @@ public sealed record TranscriptionSettings
     /// </summary>
     public int OffsetPersistFrames { get; init; } = 3;
 
-    /// <summary>User-declared tempo (R6.3): MVP never estimates it.</summary>
+    /// <summary>
+    /// The DECLARED tempo. Used directly for quantization unless <see cref="EstimateTempo"/> is
+    /// set, in which case it is instead the fallback returned when estimation has too little data
+    /// to work with (<see cref="TempoEstimator.Estimate"/>).
+    /// </summary>
     public required double TempoBpm { get; init; }
+
+    /// <summary>
+    /// When set, the tempo used for quantization is estimated from the detected notes' onsets
+    /// (<see cref="TempoEstimator"/>, Phase-2 §8) instead of taking <see cref="TempoBpm"/> literally.
+    /// Off by default (R6.3's declared-tempo MVP default is preserved).
+    /// </summary>
+    public bool EstimateTempo { get; init; } = false;
 
     public TimeSignature TimeSignature { get; init; } = TimeSignature.FourFour;
 

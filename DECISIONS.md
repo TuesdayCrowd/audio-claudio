@@ -912,3 +912,69 @@ construction. `listen` constructs a single `new MusicXmlScoreWriter(noteNames)` 
 (via `LiveNotationServer`'s `scoreToMusicXml` hook, already an injectable
 `Func<Score, string>` seam from the live-notation design) — so the two can never disagree
 about whether names are shown.
+
+## Domain — tempo estimation (median inter-onset interval, 2026-07-08)
+
+**`TempoEstimator.Estimate` (`AudioClaudio.Domain`) recovers a BPM from detected notes'
+onsets**, so `--tempo` becomes optional on `transcribe`/`listen` instead of a hard
+requirement — pulling forward CLAUDE.md §8 item 2 ("Tempo estimation... removes the
+`--tempo` flag") ahead of the rest of Phase-2. Detection stays tempo-free: YIN, onset
+detection, and `NoteSegmenter` never consult a tempo, so estimation slots in at the one
+place tempo was already consumed — `TranscriptionPipeline.Transcribe`'s quantization step,
+after note segmentation has already produced `events`.
+
+**What it does.** Sort the notes' onsets, take every consecutive gap, drop gaps outside
+[0.12 s, 1.5 s] (below is a detection blip or ornament, above is a phrase pause — neither
+is the beat), and take the median of what survives as the beat length. `bpm = 60 / beat`
+is then folded into `[minBpm, maxBpm]` (default `[50, 180]`) by repeated halving/doubling.
+
+**Median inter-onset interval, not a grid-fit search.** A tempo grid-fit alternative —
+search candidate BPMs and keep the one whose quantization grid minimizes total
+onset-snapping error — was prototyped against real recordings and rejected: it landed an
+octave low, converging on half the true tempo. A coarser (slower) grid trivially reduces
+total snapping error for any onset sequence that isn't already perfectly quantized, which
+biases a naive grid-search toward too-slow a tempo. The median-IOI approach has no such
+bias: it reads the dominant gap between onsets directly — a beat, or a clean subdivision
+of one, by construction — and the fold step below is a deliberate, auditable fix for the
+beat/subdivision ambiguity rather than an emergent side effect of an error-minimization
+search.
+
+**The fold, the fallback, and the override.** Because a median gap can be measuring
+eighths where the true beat is quarters (or vice versa), the raw `60 / beat` BPM is folded
+by repeated ×2/÷2 into the plausible range before being accepted — this is what turns a raw
+240 BPM (eighths) read into the true 120 BPM (quarters), or the reverse. `Estimate` returns
+its caller-supplied `fallback` tempo unchanged, without guessing, whenever there isn't
+enough rhythm to work with: fewer than 3 notes, no gaps survive the range filter, or the
+folded estimate still falls outside `[minBpm, maxBpm]`. The caller can always override
+estimation entirely by passing an explicit `--tempo`, which both `transcribe` and `listen`
+honor exactly as before (`TranscriptionSettings.EstimateTempo` defaults to `false`,
+preserving R6.3's declared-tempo default for every existing caller). Validated on two real
+recordings (~118 and ~131 BPM); the 131 BPM take is the fixture
+`TempoEstimatorTests.EstimatesWithinTheValidatedRangeOnARealRecording` pins (asserted
+within [125, 137] BPM — a tolerance, since the estimate is a statistic over human
+performance timing, not a deterministic transform of a machine-generated signal like the
+closed loop's synthesized corpus).
+
+**Plugs in at quantization only — detection is untouched.** `TranscriptionSettings.
+EstimateTempo` is read in exactly one place, `TranscriptionPipeline.Transcribe`'s grid
+construction (the empty-frames guard branch is deliberately left alone — there are no
+events to estimate from). When it is set, `TranscriptionSettings.TempoBpm` changes meaning
+subtly: it is no longer the tempo used, but the *fallback* `TempoEstimator.Estimate`
+returns when there isn't enough rhythm to work with. Both `transcribe` and `listen` default
+this fallback to 120 BPM when `--tempo` is omitted.
+
+**`listen`'s live preview still uses a provisional tempo; only the SAVED score is
+estimated.** The live `--view`/console preview (`LiveScoreProjector`, driven off
+`TranscriptionPipeline.StreamNotes`) builds its `QuantizationGrid` once, before a take has
+produced any notes to estimate from, so it necessarily renders against the fallback/declared
+`tempoBpm` (120 by default) for the whole take — there is no retroactive re-grid of notes
+already drawn. The accurate, SAVED `score.mid`/`score.musicxml` come from the batch
+`TranscriptionPipeline.Transcribe` pass that runs on stop, which DOES estimate (via the same
+`EstimateTempo`-configured `settings` the live pipeline was built from), so the archived
+score reflects the tempo actually played even when the live sheet music was drawn against
+the provisional one. `Program.cs`'s `listen` case prints `Estimated tempo: <bpm> BPM.` once
+the batch score is known, so any gap between the provisional preview tempo and the final
+estimate is visible, not silent. `transcribe` similarly prints `Tempo: <bpm> BPM` (with
+`(estimated)` appended when estimation ran), reading the tempo actually used off
+`result.Score.Tempo` rather than echoing the CLI argument back, so the console output and
+the three written files can never disagree about which tempo was used.

@@ -90,9 +90,13 @@ public sealed class TranscriptionPipeline : ITranscriber
             events, observations, _settings.OffsetSettleFrames, _settings.OffsetReleaseRatio,
             _settings.OffsetPersistFrames, rate);
 
-        // Step 6: build the grid and quantize (static, no `new Quantizer()`).
-        var grid = new QuantizationGrid(
-            rate, new Tempo(_settings.TempoBpm), _settings.TimeSignature, _settings.Subdivision);
+        // Step 6: build the grid and quantize (static, no `new Quantizer()`). Tempo is estimated
+        // from the just-detected events when requested — valid because detection is tempo-independent
+        // (CLAUDE.md background) and tempo is only ever consumed here, at quantization.
+        Tempo tempo = _settings.EstimateTempo
+            ? TempoEstimator.Estimate(events, new Tempo(_settings.TempoBpm))
+            : new Tempo(_settings.TempoBpm);
+        var grid = new QuantizationGrid(rate, tempo, _settings.TimeSignature, _settings.Subdivision);
         Score score = Quantizer.Quantize(events, grid);
 
         return new TranscriptionResult(score, events);

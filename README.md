@@ -13,8 +13,9 @@ Claudio tells you which notes were played, when they started, and how long
 they lasted, then writes the result out as MIDI and as sheet music
 (MusicXML). It listens to one note at a time (see [Limitations](#limitations)
 below); it detects each note's pitch and attack from the raw audio, snaps the
-timing to a tempo you declare, and can sing the transcription back to you
-through a synthesized piano.
+timing to a tempo — declared by you, or auto-estimated from your playing if
+you don't pass one — and can sing the transcription back to you through a
+synthesized piano.
 
 It is a small, honest transcriber. Its correctness claim is not asserted — it
 is *earned*, by the closed-loop test described below.
@@ -126,8 +127,8 @@ Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has four
 commands:
 
 ```bash
-claudio transcribe <in.wav> --tempo 120 [--out-dir .]    # -> raw.mid, score.mid, score.musicxml
-claudio listen --tempo 100 [--out-dir .] [--record]      # live; writes the same trio on Ctrl+C; --record also writes input.wav + recreation.wav
+claudio transcribe <in.wav> [--tempo 120] [--out-dir .]  # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated from note spacing if omitted
+claudio listen [--tempo 100] [--out-dir .] [--record]    # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted; --record also writes input.wav + recreation.wav
 claudio play <file.mid> [--soundfont <path>]             # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>] # deterministically render a MIDI file to WAV
 ```
@@ -213,10 +214,18 @@ faking them:
 - **Monophonic only.** One note at a time — chords and overlapping voices
   are out of scope for v0.1.0. Polyphony, via a neural model behind the
   same `ITranscriber` port, is the first item on the Phase-2 list.
-- **Declared tempo, not estimated.** You pass `--tempo`; the MVP does not
-  guess it. Hiding an unreliable tempo estimator inside the pipeline would
-  quietly poison the closed-loop suite's timing checks, so tempo estimation
-  is deferred rather than half-done.
+- **Tempo: a declared value by default, optional to override.** Pass
+  `--tempo` for a declared tempo used exactly; omit it and the pipeline
+  instead estimates tempo from the detected notes' onset spacing (the
+  median inter-onset interval — the most common gap between note starts is
+  taken to be one beat). The estimator assumes a mostly-even melody
+  dominated by one note value (a beginner's quarter-note tune, say); on a
+  heavily syncopated or mixed-rhythm performance it can lock onto an
+  octave-wrong tempo — double or half the true BPM, since it cannot tell
+  "quarters at T" from "eighths at 2T" — so pass `--tempo` explicitly
+  whenever exact timing matters. (This estimator is not part of the
+  closed-loop suite's timing checks, which still run at a known declared
+  tempo — see The closed loop, above.)
 - **Single staff.** MusicXML output is one staff, clef chosen by range,
   fixed 4/4 time signature. A treble/bass split is Phase-2 work.
 - **Duration recovery has a pitch ceiling.** A note's *duration* is only
