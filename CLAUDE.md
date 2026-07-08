@@ -61,10 +61,15 @@ new dependency), a byte-exact golden, the bar-conservation property; `transcribe
 MuseScore GUI load check (R11.2) is deferred to Cornelius (MuseScore isn't installable in CI) — the writer is
 validated by the byte-exact golden + `xmllint` + a MusicXML-4.0 structural check; DECISIONS.md has the action item.
 
-- **Next is §6 Step 12 — README, polish, ship v0.1.0** (the final step): write the root `README.md` (problem,
-  pipeline diagram, non-negotiables, the closed-loop suite + honest limitations), doc-lint tests, confirm CI
-  green on a fresh clone, tag **v0.1.0**, stop. No design decision. Plans + `docs/plans/CONTRACTS.md` live in
-  `docs/plans/`.
+README + ship (Step 12) — the root `README.md` (problem, pipeline, non-negotiables, the closed-loop claim
+stated honestly + limitations), doc-lint tests pinning its content. **All 13 build-spec steps (0–12) are
+complete and on `main`; the MVP is tagged `v0.1.0`.** Build/test green (311 tests).
+
+- **The v0.1.0 MVP is shipped.** Open human follow-ups (documented, non-blocking): the MuseScore GUI load
+  check for the MusicXML golden (R11.2 — see `DECISIONS.md`); a by-ear `listen` mic acceptance run. Phase-2
+  items (§8) — polyphony, tempo estimation, pYIN pitch-hardening (fixes the rare ~0.4% octave residual),
+  treble/bass split — are out of MVP scope. The step plans and the authoritative API reference
+  (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note honest if work resumes.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
