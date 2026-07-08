@@ -43,12 +43,34 @@ public class WebAssetContentTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public void IndexHtmlContainsThePerRecordingOptionInputs()
+    {
+        string html = File.ReadAllText(Path.Combine(WwwRoot, "index.html"));
+
+        Assert.Contains("id=\"score-title\"", html);
+        Assert.Contains("id=\"opt-record\"", html);
+        Assert.Contains("id=\"opt-skip-silence\"", html);
+        Assert.Contains("id=\"opt-note-names\"", html);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public void AppJsPostsRecordingControlSignalsAndHandlesClear()
     {
         string js = File.ReadAllText(Path.Combine(WwwRoot, "app.js"));
 
-        Assert.Contains("\"/record/start\"", js);
+        Assert.Contains("\"/record/start?\"", js);
         Assert.Contains("\"/record/stop\"", js);
         Assert.Contains("addEventListener(\"clear\"", js);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void AppJsSendsThePerRecordingOptionsWithStart()
+    {
+        string js = File.ReadAllText(Path.Combine(WwwRoot, "app.js"));
+
+        Assert.Contains(".checked", js);
+        Assert.Contains("score-title", js);
     }
 }

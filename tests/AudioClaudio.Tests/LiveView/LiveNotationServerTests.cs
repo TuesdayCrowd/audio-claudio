@@ -85,23 +85,55 @@ public class LiveNotationServerTests
 
     [Fact]
     [Trait("Category", "Fast")]
-    public async Task PostToRecordStartAndStopInvokesTheCorrespondingCallback()
+    public async Task PostToRecordStartInvokesStartRequestedWithTheParsedOptions()
     {
         using var server = new LiveNotationServer(WebRoot);
-        bool startInvoked = false;
+        RecordOptions captured = default;
+        server.StartRequested = opts => captured = opts;
+        server.Start();
+        using var http = new HttpClient();
+
+        var response = await http.PostAsync(
+            server.BaseUrl + "record/start?noteNames=true&title=Hello%20World&skipSilence=true", content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.True(captured.NoteNames);
+        Assert.True(captured.SkipSilence);
+        Assert.True(captured.Record); // skip-silence implies record
+        Assert.Equal("Hello World", captured.Title);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PostToRecordStartWithOnlyRecordFlagDoesNotImplySkipSilence()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        RecordOptions captured = default;
+        server.StartRequested = opts => captured = opts;
+        server.Start();
+        using var http = new HttpClient();
+
+        var response = await http.PostAsync(server.BaseUrl + "record/start?record=true", content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.True(captured.Record);
+        Assert.False(captured.SkipSilence);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PostToRecordStopInvokesStopRequested()
+    {
+        using var server = new LiveNotationServer(WebRoot);
         bool stopInvoked = false;
-        server.StartRequested = () => startInvoked = true;
         server.StopRequested = () => stopInvoked = true;
         server.Start();
         using var http = new HttpClient();
 
-        var startResponse = await http.PostAsync(server.BaseUrl + "record/start", content: null);
-        var stopResponse = await http.PostAsync(server.BaseUrl + "record/stop", content: null);
+        var response = await http.PostAsync(server.BaseUrl + "record/stop", content: null);
 
-        Assert.True(startInvoked);
         Assert.True(stopInvoked);
-        Assert.Equal(HttpStatusCode.NoContent, startResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, stopResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     private static Score Fixture(params int[] midiNotes)

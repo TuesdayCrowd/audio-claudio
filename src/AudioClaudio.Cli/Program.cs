@@ -80,16 +80,16 @@ switch (args[0])
             // One recording's outputs: the out-dir root holds the LATEST files at stable paths; on stop,
             // write --record's WAVs (optionally silence-collapsed) then archive that whole set into
             // <out-dir>/<timestamp>/ (timestamp = when the recording started).
-            void FinalizeRecording(LiveSessionResult result, string timestamp)
+            void FinalizeRecording(LiveSessionResult result, string timestamp, bool doRecord, bool doSkipSilence)
             {
-                if (record)
+                if (doRecord)
                 {
                     float[] inputPcm = result.CapturedFrames.Count > 0
                         ? Framing.ReconstructMono(result.CapturedFrames)
                         : Array.Empty<float>();
                     IReadOnlyList<NoteEvent> recreationNotes = result.Events;
 
-                    if (skipSilence)
+                    if (doSkipSilence)
                     {
                         var maxSilence = new SampleDuration(rate.Hz / 2, rate); // collapse pauses > 500 ms
                         var collapsed = SilenceCollapser.Collapse(result.Events, inputPcm, rate, maxSilence);
@@ -147,8 +147,9 @@ switch (args[0])
                     var gate = new object();
                     PortAudioAudioSource? currentMic = null;
                     bool exiting = false;
+                    RecordOptions pendingOptions = default;
 
-                    server.StartRequested = () => startSignal.Release();
+                    server.StartRequested = opts => { lock (gate) { pendingOptions = opts; } startSignal.Release(); };
                     server.StopRequested = () => { lock (gate) { currentMic?.Stop(); } };
                     Console.CancelKeyPress += (_, e) =>
                     {
@@ -162,6 +163,9 @@ switch (args[0])
                         startSignal.Wait();
                         lock (gate) { if (exiting) break; }
 
+                        RecordOptions opts;
+                        lock (gate) { opts = pendingOptions; }
+
                         string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
                         server.PublishClear(); // blank the staff for the new recording
                         var cleared = SessionOutputArchive.CleanLatest(outDir);
@@ -170,8 +174,10 @@ switch (args[0])
 
                         var projector = new LiveScoreProjector(grid); // fresh accumulation per recording
                         LiveNotationServer liveServer = server;
+                        var recordingWriter = new MusicXmlScoreWriter(opts.NoteNames, opts.Title);
+                        server.ScoreToMusicXml = recordingWriter.WriteToString;
                         var listen = new ListenCommand(session, midiWriter, midiWriter, Console.WriteLine,
-                                                        musicXmlWriter: musicXml,
+                                                        musicXmlWriter: recordingWriter,
                                                         onLiveNote: n => liveServer.PublishScore(projector.Add(n)),
                                                         onFinalScore: s => liveServer.PublishScore(s));
 
@@ -184,7 +190,7 @@ switch (args[0])
                         lock (gate) { currentMic = null; }
                         mic.Dispose();
 
-                        FinalizeRecording(result, timestamp);
+                        FinalizeRecording(result, timestamp, opts.Record, opts.SkipSilence);
                         Thread.Sleep(TimeSpan.FromSeconds(1)); // let the final SSE push reach the browser
 
                         lock (gate) { if (exiting) break; }
@@ -205,7 +211,7 @@ switch (args[0])
                     Console.CancelKeyPress += (_, e) => { e.Cancel = true; micSource.Stop(); cts.Cancel(); };
                     micSource.Start();
                     var result = listen.Run(micSource, (int)Math.Round(tempoBpm), outDir, cts.Token);
-                    FinalizeRecording(result, timestamp);
+                    FinalizeRecording(result, timestamp, record, skipSilence);
                 }
             }
             finally

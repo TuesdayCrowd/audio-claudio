@@ -211,6 +211,40 @@ public class MusicXmlWriterTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public void IncludesWorkTitleWhenOptedIn()
+    {
+        var score = MusicXmlFixtures.OneNote(new Pitch(60));
+
+        var xml = new MusicXmlScoreWriter(workTitle: "Ode to Joy").WriteToString(score);
+
+        Assert.Contains("<work-title>Ode to Joy</work-title>", xml);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void EscapesSpecialCharactersInWorkTitle()
+    {
+        var score = MusicXmlFixtures.OneNote(new Pitch(60));
+
+        var xml = new MusicXmlScoreWriter(workTitle: "A & B").WriteToString(score);
+
+        Assert.Contains("<work-title>A &amp; B</work-title>", xml);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void OmitsWorkTitleByDefault()
+    {
+        var score = MusicXmlFixtures.OneNote(new Pitch(60));
+
+        var xml = new MusicXmlScoreWriter().WriteToString(score);
+
+        Assert.DoesNotContain("<work-title>", xml);
+        Assert.DoesNotContain("<work>", xml);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public void EmitsTieStartAndStopForBarSplitNotes()
     {
         // A note tied across the barline: measure 1 ends with a tied-to-next C4,

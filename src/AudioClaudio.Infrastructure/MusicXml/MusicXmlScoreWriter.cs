@@ -20,13 +20,21 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
     private const string Nl = "\n";
 
     private readonly bool _includeNoteNames;
+    private readonly string? _workTitle;
 
     /// <summary>
     /// <paramref name="includeNoteNames"/>: when true, every note carries its scientific-pitch name
     /// (e.g. C4, F#5) as a &lt;lyric&gt;, so a renderer such as OSMD prints it beneath the note — a
     /// learning/verification aid (`listen --note-names`). Default false keeps the plain golden output.
+    /// <paramref name="workTitle"/>: when non-blank, emitted as the score's &lt;work-title&gt; (e.g. so
+    /// a renderer such as OSMD shows it instead of "Untitled Score"). Default null/blank keeps the
+    /// plain golden output.
     /// </summary>
-    public MusicXmlScoreWriter(bool includeNoteNames = false) => _includeNoteNames = includeNoteNames;
+    public MusicXmlScoreWriter(bool includeNoteNames = false, string? workTitle = null)
+    {
+        _includeNoteNames = includeNoteNames;
+        _workTitle = string.IsNullOrWhiteSpace(workTitle) ? null : workTitle;
+    }
 
     /// <summary>Serialize a score to UTF-8 (no BOM) MusicXML on the stream.</summary>
     public void Write(Score score, Stream destination)
@@ -43,6 +51,13 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
         sb.Append("<!DOCTYPE score-partwise PUBLIC \"-//Recordare//DTD MusicXML 4.0 Partwise//EN\" " +
                   "\"http://www.musicxml.org/dtds/partwise.dtd\">").Append(Nl);
         sb.Append("<score-partwise version=\"4.0\">").Append(Nl);
+        if (_workTitle is not null)
+        {
+            sb.Append("  <work>").Append(Nl);
+            sb.Append($"    <work-title>{XmlEscape(_workTitle)}</work-title>").Append(Nl);
+            sb.Append("  </work>").Append(Nl);
+        }
+
         sb.Append("  <part-list>").Append(Nl);
         sb.Append("    <score-part id=\"P1\">").Append(Nl);
         sb.Append("      <part-name>Music</part-name>").Append(Nl);
@@ -63,6 +78,15 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
         sb.Append("</score-partwise>").Append(Nl);
         return sb.ToString();
     }
+
+    // XML-escapes text content for the <work-title> element. Order matters: '&' must be escaped
+    // first, or the '&' introduced by the later replacements would itself be re-escaped.
+    private static string XmlEscape(string s) =>
+        s.Replace("&", "&amp;")
+         .Replace("<", "&lt;")
+         .Replace(">", "&gt;")
+         .Replace("\"", "&quot;")
+         .Replace("'", "&apos;");
 
     private static void AppendMeasure(StringBuilder sb, Score score, Measure measure,
                                       int measureNumber, bool isFirst, Clef clef, int divisions,

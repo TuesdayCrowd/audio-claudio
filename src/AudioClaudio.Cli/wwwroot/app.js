@@ -20,7 +20,13 @@ const stopButton = document.getElementById("stop-recording");
 startButton.addEventListener("click", async () => {
   startButton.disabled = true;
   stopButton.disabled = false;
-  await fetch("/record/start", { method: "POST" });
+  const params = new URLSearchParams({
+    record: document.getElementById("opt-record").checked,
+    skipSilence: document.getElementById("opt-skip-silence").checked,
+    noteNames: document.getElementById("opt-note-names").checked,
+    title: document.getElementById("score-title").value,
+  });
+  await fetch("/record/start?" + params.toString(), { method: "POST" });
 });
 
 stopButton.addEventListener("click", async () => {

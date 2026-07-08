@@ -21,15 +21,22 @@ public sealed class LiveNotationServer : IDisposable
     private readonly CancellationTokenSource _stopping = new();
     private readonly object _gate = new();
     private readonly List<SseConnection> _connections = new();
-    private readonly Func<Score, string> _toMusicXml;
     private (string Name, string Data)? _latest;
     private Task? _acceptLoop;
 
     public int Port { get; }
     public string BaseUrl { get; }
 
-    /// <summary>Invoked when a browser POSTs /record/start (the "start recording" button).</summary>
-    public Action? StartRequested { get; set; }
+    /// <summary>
+    /// The current score serializer. Settable (not fixed at construction) so a per-recording
+    /// choice of title/note-names (<see cref="RecordOptions"/>) can be reflected in the live view
+    /// without reconstructing the server between takes.
+    /// </summary>
+    public Func<Score, string> ScoreToMusicXml { get; set; }
+
+    /// <summary>Invoked when a browser POSTs /record/start (the "start recording" button), carrying
+    /// the per-recording options chosen in that form.</summary>
+    public Action<RecordOptions>? StartRequested { get; set; }
 
     /// <summary>Invoked when a browser POSTs /record/stop (the "stop recording" button).</summary>
     public Action? StopRequested { get; set; }
@@ -40,7 +47,7 @@ public sealed class LiveNotationServer : IDisposable
         Port = port == 0 ? FreeTcpPort.Find() : port;
         BaseUrl = $"http://localhost:{Port}/";
         _listener.Prefixes.Add(BaseUrl);
-        _toMusicXml = scoreToMusicXml ?? new MusicXmlScoreWriter().WriteToString;
+        ScoreToMusicXml = scoreToMusicXml ?? new MusicXmlScoreWriter().WriteToString;
     }
 
     public void Start()
@@ -56,7 +63,7 @@ public sealed class LiveNotationServer : IDisposable
     /// </summary>
     public void PublishScore(Score score)
     {
-        string xml = _toMusicXml(score);
+        string xml = ScoreToMusicXml(score);
         string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(xml));
         Broadcast(("score", base64), remembered: ("score", base64));
     }
@@ -106,13 +113,25 @@ public sealed class LiveNotationServer : IDisposable
         {
             string path = ctx.Request.Url?.AbsolutePath ?? "/";
 
-            if (ctx.Request.HttpMethod == "POST" && (path == "/record/start" || path == "/record/stop"))
+            // Fire-and-forget control signals for the CLI's recording loop; a throwing handler must
+            // never break the HTTP response (the button just needs a 204 back).
+            if (ctx.Request.HttpMethod == "POST" && path == "/record/start")
             {
-                // Fire-and-forget control signal for the CLI's recording loop; a throwing handler must never
-                // break the HTTP response (the button just needs a 204 back).
-                try { (path == "/record/start" ? StartRequested : StopRequested)?.Invoke(); }
-                catch { /* ignore: the signal is best-effort */ }
-                ctx.Response.StatusCode = (int)HttpStatusCode.NoContent; // 204
+                System.Collections.Specialized.NameValueCollection q = ctx.Request.QueryString;
+                bool Flag(string key) => q[key] is "true" or "1";
+                var options = new RecordOptions(
+                    Record: Flag("record") || Flag("skipSilence"), // skip-silence needs audio to de-silence
+                    SkipSilence: Flag("skipSilence"),
+                    NoteNames: Flag("noteNames"),
+                    Title: string.IsNullOrWhiteSpace(q["title"]) ? null : q["title"]);
+                try { StartRequested?.Invoke(options); } catch { /* best-effort control signal */ }
+                ctx.Response.StatusCode = (int)HttpStatusCode.NoContent;
+                return;
+            }
+            if (ctx.Request.HttpMethod == "POST" && path == "/record/stop")
+            {
+                try { StopRequested?.Invoke(); } catch { }
+                ctx.Response.StatusCode = (int)HttpStatusCode.NoContent;
                 return;
             }
 
