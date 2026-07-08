@@ -55,11 +55,16 @@ Live capture (Step 10) — `PortAudioAudioSource : IAudioSource, IDisposable` (d
 `listen` command (prints notes live, writes raw+quantized MIDI on stop; MusicXML seam null until Step 11).
 The real device path is manual acceptance (no audio device in CI). Build/test green (264 tests).
 
-- **Next is §6 Step 11 — MusicXML emission** (the last Infrastructure adapter): hand-rolled `MusicXmlScoreWriter :
-  IScoreWriter`, a **byte-exact golden** (MusicXML is deterministic text — no float/platform issue), the
-  bar-conservation property, and wiring `score.musicxml` into both `transcribe` (Step 9) and `listen` (Step 10).
-  MuseScore load is a manual check recorded in `DECISIONS.md`. No design decision. Work the steps in order
-  (§1 rule 3). Plans + `docs/plans/CONTRACTS.md` live in `docs/plans/`; keep this note honest.
+MusicXML emission (Step 11) — hand-rolled `MusicXmlScoreWriter : IScoreWriter` (Infrastructure.MusicXml, no
+new dependency), a byte-exact golden, the bar-conservation property; `transcribe` and `listen` now both emit
+`score.musicxml` (the §7 trio + R10.3 complete). Build/test green (287 tests). **Open human task:** the
+MuseScore GUI load check (R11.2) is deferred to Cornelius (MuseScore isn't installable in CI) — the writer is
+validated by the byte-exact golden + `xmllint` + a MusicXML-4.0 structural check; DECISIONS.md has the action item.
+
+- **Next is §6 Step 12 — README, polish, ship v0.1.0** (the final step): write the root `README.md` (problem,
+  pipeline diagram, non-negotiables, the closed-loop suite + honest limitations), doc-lint tests, confirm CI
+  green on a fresh clone, tag **v0.1.0**, stop. No design decision. Plans + `docs/plans/CONTRACTS.md` live in
+  `docs/plans/`.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
