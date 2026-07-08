@@ -1,0 +1,2 @@
+# MusicXML goldens are compared byte-for-byte: force LF so no platform normalizes to CRLF.
+*.musicxml text eol=lf

@@ -541,3 +541,49 @@ registers `new MusicXmlScoreWriter()` in the composition root — at which point
 `score.musicxml` is emitted with zero change to `listen`. The seam (and the "written
 iff a writer is supplied" behavior) is proven now by `ListenCommandTests`; only the
 adapter is deferred. `raw.mid` + `score.mid` are fully delivered in Step 10.
+
+## Step 11 — MusicXML emission
+
+No new NuGet package: `MusicXmlScoreWriter` (`AudioClaudio.Infrastructure.MusicXml`) is a
+hand-rolled `StringBuilder` serializer, per R11.3. No *Design decision* was listed for this
+step; the one thing worth recording plainly is an honest gap in the R11.2 sign-off.
+
+### R11.2 "loads cleanly in MuseScore" — NOT performed as a human GUI check; recorded honestly
+
+R11.2 asks for a manual check: open the golden `.musicxml` in MuseScore, confirm it loads and
+renders, and record the version/date here. **That literal check has not happened** — MuseScore
+is not installed in this execution environment (no `mscore`/`mscore4portable`/`MuseScore4`
+binary on `PATH`, no `.app` bundle under `/Applications`), and this agent has no path to install
+or drive a GUI application. Writing a line like "checked in MuseScore 4.4 on 2026-07-06" without
+that having actually happened would be a fabricated record, which is worse than an honest gap —
+so this entry says plainly what was and wasn't done, and asks Cornelius to close it out.
+
+**What was verified instead, as the strongest available automated proxy:**
+- Well-formed XML: `xmllint --noout fixtures/golden/musicxml/twinkle.musicxml` passes clean.
+- The `<?xml version="1.0" encoding="UTF-8"?>` declaration, the MusicXML 4.0 Partwise DOCTYPE,
+  and `<score-partwise version="4.0">` root are present and correctly formed (also pinned by
+  `MusicXmlWriterTests.EmitsMusicXml40PartwiseDocumentHeader`).
+- Structural conformance to the MusicXML 4.0 partwise content model, checked by hand against the
+  canonical (`note.mod`/`attributes.mod`) element sequences: `<note>` children appear in
+  `(pitch|rest), duration, tie*, type, dot*, notations` order — the schema's
+  `(%full-note;, duration, (tie, tie?)?), instrument?, %editorial-voice;, type?, dot*,
+  accidental?, ..., notations*, ...` sequence with every optional member in between (instrument,
+  voice, accidental, stem, ...) simply omitted, which the schema permits; `<attributes>`
+  children in `divisions, key, time, clef` order; `<key>` as `fifths` (mode omitted); `<time>` as
+  `beats, beat-type`; `<clef>` as `sign, line`; `<pitch>` as `step, alter?, octave`; `<part-list>`
+  holding a `<score-part>` with the required `<part-name>`.
+- The DOCTYPE's own external identifier, `http://www.musicxml.org/dtds/partwise.dtd`, was
+  fetched directly from this network to see whether schema-validated parsing was possible: it
+  404s (confirmed byte-for-byte — the response is nginx's default 404 page, not a DTD). That URL
+  is a long-standing public identifier real notation tools resolve from a DTD bundled with the
+  application, not a live fetch — which is exactly why `MusicXmlTestSupport.Xml.Parse` sets
+  `DtdProcessing.Ignore` / `XmlResolver = null` rather than attempting DTD-validated parsing; a
+  from-scratch, non-canonical local DTD would validate nothing meaningful, so none was written.
+
+**Action item for Cornelius:** open `fixtures/golden/musicxml/twinkle.musicxml` in an actual
+MuseScore install, confirm it loads without error and renders two 4/4 bars in treble clef ending
+on a quarter rest, then replace this note with the literal "Manual check: `twinkle.musicxml`
+loads and renders in MuseScore `<version>` (checked `<date>`)" line R11.2 calls for. Until then:
+R11.2's *stability* half is fully proven (the byte-identical golden test,
+`EmitsByteIdenticalGoldenForTwinkleFixture`, plus the LF/no-BOM determinism guard); its
+*"loads cleanly in MuseScore"* half rests on the schema-conformance review above, not a GUI run.

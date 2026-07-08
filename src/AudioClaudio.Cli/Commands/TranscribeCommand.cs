@@ -4,14 +4,15 @@ using AudioClaudio.Domain;
 using AudioClaudio.Domain.Spectral; // Radix2Fft
 using AudioClaudio.Infrastructure.Audio; // WavAudioSource
 using AudioClaudio.Infrastructure.Midi; // DryWetMidiWriter
+using AudioClaudio.Infrastructure.MusicXml; // MusicXmlScoreWriter
 
 namespace AudioClaudio.Cli.Commands;
 
 /// <summary>
 /// Wires the file-based transcription pipeline for
 /// <c>claudio transcribe &lt;in.wav&gt; --tempo N [--out-dir .]</c>. Emits <c>raw.mid</c> (the
-/// unquantized performance) and <c>score.mid</c> (the quantized score). <c>score.musicxml</c> is
-/// added by Step 11 once <c>MusicXmlScoreWriter</c> exists (CONTRACTS §9).
+/// unquantized performance), <c>score.mid</c> (the quantized score), and <c>score.musicxml</c>
+/// (the notation), completing the §7 trio.
 /// </summary>
 public static class TranscribeCommand
 {
@@ -39,6 +40,11 @@ public static class TranscribeCommand
         using (var score = File.Create(Path.Combine(outDir, "score.mid")))
         {
             writer.Write(result.Score, score); // IScoreWriter: quantized score
+        }
+
+        using (var musicXml = File.Create(Path.Combine(outDir, "score.musicxml")))
+        {
+            new MusicXmlScoreWriter().Write(result.Score, musicXml); // IScoreWriter: notation
         }
     }
 }

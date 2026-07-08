@@ -6,6 +6,7 @@ using AudioClaudio.Domain;
 using AudioClaudio.Domain.Spectral;
 using AudioClaudio.Infrastructure.Audio;
 using AudioClaudio.Infrastructure.Midi;
+using AudioClaudio.Infrastructure.MusicXml;
 using AudioClaudio.Infrastructure.Synthesis;
 
 var rate = new SampleRate(44100);
@@ -63,8 +64,9 @@ switch (args[0])
             using var micSource = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
             var midiWriter = new DryWetMidiWriter(); // implements INoteEventWriter + IScoreWriter
             var session = new LiveTranscriptionSession(pipeline.StreamNotes, pipeline.Transcribe);
-            // musicXmlWriter stays null until Step 11 registers `new MusicXmlScoreWriter()` here — zero change to `listen`.
-            var listen = new ListenCommand(session, midiWriter, midiWriter, Console.WriteLine);
+            // R10.3: listen now emits score.musicxml on stop, alongside raw.mid/score.mid.
+            var listen = new ListenCommand(session, midiWriter, midiWriter, Console.WriteLine,
+                                            musicXmlWriter: new MusicXmlScoreWriter());
 
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; micSource.Stop(); cts.Cancel(); };
@@ -79,8 +81,8 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> --tempo <bpm> [--out-dir <dir>]   -> raw.mid, score.mid");
-    Console.Error.WriteLine("  listen --tempo <bpm> [--out-dir <dir>]                -> live; raw.mid, score.mid on Ctrl+C");
+    Console.Error.WriteLine("  transcribe <in.wav> --tempo <bpm> [--out-dir <dir>]   -> raw.mid, score.mid, score.musicxml");
+    Console.Error.WriteLine("  listen --tempo <bpm> [--out-dir <dir>]                -> live; raw.mid, score.mid, score.musicxml on Ctrl+C");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     return 1;
 }
