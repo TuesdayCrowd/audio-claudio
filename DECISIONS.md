@@ -759,19 +759,14 @@ session tool and were intentionally NOT changed:
   context; the browser's `EventSource` also auto-reconnects and re-fetches the
   current state (the late-join path) if it ever misses the last push.
 
-### Manual acceptance (Task 6) — NOT performed; recorded honestly
-Per the same honesty standard as Step 10's mic-loopback note and Step 11's
-MuseScore gap: **this execution environment has no audio input device and no
-browser**, so the by-ear/by-eye acceptance script in
-`docs/plans/2026-07-07-live-notation-plan.md` Task 6 (run `listen --tempo 100
---view`, confirm the browser opens and notes render live, confirm late-join
-and the final-score snap on Ctrl+C, confirm plain `listen` is unchanged) has
-**not** been run. Writing a "checked on <OS/browser> (checked <date>)" line
-without that having actually happened would be a fabricated record. What
-stands in its place, automated and green: `LiveScoreProjectorTests` (the
-projection logic), `LiveNotationServerTests` (the HTTP/SSE server end-to-end
-via `HttpClient`, including late-join and multi-client broadcast), and
-`WebAssetContentTests` (the served HTML/JS reference the right paths and call
-the right OSMD APIs). **Action item for Cornelius:** run Task 6's script on a
-machine with a working microphone and default browser, then replace this note
-with the literal acceptance line the plan's Task 6 asks for.
+### Manual acceptance (Task 6) — PASSED (Cornelius, 2026-07-07)
+Manual check: `listen --view` on the primary machine (macOS M3 Max, default
+browser) — the browser opened automatically and the staves rendered **live**, a
+note at a time, as pitches were produced (with the **voice**, not only a piano —
+YIN detects the fundamental regardless of source), and the sheet snapped to the
+accurate score on Ctrl+C. Confirmed working well. (This supersedes the prior
+"not performed in the CI sandbox" honesty note.) The automated coverage remains
+the CI-side proof: `LiveScoreProjectorTests` (projection logic),
+`LiveNotationServerTests` (the HTTP/SSE server end-to-end via `HttpClient`,
+including late-join and multi-client broadcast), and `WebAssetContentTests`
+(the served HTML/JS reference the right paths and call the right OSMD APIs).
