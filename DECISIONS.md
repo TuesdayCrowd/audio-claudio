@@ -839,7 +839,7 @@ earlier timestamped archive subfolders are left alone — and then writes this s
 files at the same familiar names (`raw.mid`, `score.mid`, `score.musicxml`, and
 `--record`'s `input.wav`/`recreation.wav`), so tools and scripts can always point at the
 same filenames. On stop, once every file has been written, `SessionOutputArchive.Archive`
-COPIES (not moves) that same top-level set into `<out-dir>/<YYYYMMDD_HHMM>/`, timestamped
+COPIES (not moves) that same top-level set into `<out-dir>/<YYYYMMDD_HHMMSS>/`, timestamped
 by when the session STARTED — the latest files stay in the root; the timestamped folder
 is an archived snapshot of that session.
 

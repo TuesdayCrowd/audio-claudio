@@ -9,7 +9,7 @@ namespace AudioClaudio.Cli.Composition;
 /// Manages `listen`'s output scheme: the out-dir root always holds the LATEST session's files
 /// (raw.mid, score.mid, score.musicxml, and --record's input.wav/recreation.wav) at stable paths,
 /// and each session is additionally archived into a start-timestamped
-/// <c>&lt;outDir&gt;/&lt;yyyyMMdd_HHmm&gt;/</c> subfolder. <see cref="CleanLatest"/> runs on start
+/// <c>&lt;outDir&gt;/&lt;yyyyMMdd_HHmmss&gt;/</c> subfolder. <see cref="CleanLatest"/> runs on start
 /// (top-level only, so prior archive subfolders survive); <see cref="Archive"/> runs on stop,
 /// after every file has been written.
 /// </summary>

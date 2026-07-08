@@ -61,7 +61,7 @@ switch (args[0])
             // Session archiving: the out-dir root always holds the LATEST run's files at stable paths;
             // each session is copied into a start-timestamped subfolder on stop (folder = when recording
             // STARTED). Reading the wall clock here is a composition-root concern (the domain stays clock-free).
-            string sessionTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmm", System.Globalization.CultureInfo.InvariantCulture);
+            string sessionTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
             Directory.CreateDirectory(outDir);
             var cleared = SessionOutputArchive.CleanLatest(outDir);
             if (cleared.Count > 0)
