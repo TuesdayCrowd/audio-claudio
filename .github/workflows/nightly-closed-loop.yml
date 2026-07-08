@@ -15,8 +15,8 @@ jobs:
   closed-loop:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
       - name: Nightly closed loop (large corpus)
@@ -25,7 +25,7 @@ jobs:
           CLOSED_LOOP_CASES: "1000"
       - name: Upload quarantine artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: closed-loop-quarantine
           path: artifacts/closed-loop-quarantine/
