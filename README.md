@@ -182,6 +182,10 @@ audio, not the live preview.
   rests are left untouched. Implies `--record` (it only ever affects those two
   WAVs) — `raw.mid`/`score.mid`/`score.musicxml` are never touched and keep the
   true performance timing.
+- **`--note-names`.** Pass `--note-names` to print each note's scientific-pitch
+  name (e.g. `C4`, `F#5`) beneath it in the notation — both the live `--view`
+  rendering and the saved `score.musicxml`. Opt-in and off by default; `transcribe`
+  also accepts the same flag for `score.musicxml`.
 - **Latency.** The worst-case *algorithmic* onset latency — key-strike to
   the onset being known — is about **41 ms** at the default live parameters
   (44.1 kHz, 1024-sample frame, 256-sample hop, look-ahead 3), measured and

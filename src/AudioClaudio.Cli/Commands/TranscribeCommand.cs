@@ -16,7 +16,7 @@ namespace AudioClaudio.Cli.Commands;
 /// </summary>
 public static class TranscribeCommand
 {
-    public static void Run(string inputWav, double tempoBpm, string outDir)
+    public static void Run(string inputWav, double tempoBpm, string outDir, bool includeNoteNames = false)
     {
         Directory.CreateDirectory(outDir);
 
@@ -44,7 +44,7 @@ public static class TranscribeCommand
 
         using (var musicXml = File.Create(Path.Combine(outDir, "score.musicxml")))
         {
-            new MusicXmlScoreWriter().Write(result.Score, musicXml); // IScoreWriter: notation
+            new MusicXmlScoreWriter(includeNoteNames).Write(result.Score, musicXml); // IScoreWriter: notation
         }
     }
 }

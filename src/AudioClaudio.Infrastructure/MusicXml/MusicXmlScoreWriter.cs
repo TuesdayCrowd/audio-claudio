@@ -19,6 +19,15 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
     // bit-for-bit determinism non-negotiable (CLAUDE.md §4, non-negotiable 3).
     private const string Nl = "\n";
 
+    private readonly bool _includeNoteNames;
+
+    /// <summary>
+    /// <paramref name="includeNoteNames"/>: when true, every note carries its scientific-pitch name
+    /// (e.g. C4, F#5) as a &lt;lyric&gt;, so a renderer such as OSMD prints it beneath the note — a
+    /// learning/verification aid (`listen --note-names`). Default false keeps the plain golden output.
+    /// </summary>
+    public MusicXmlScoreWriter(bool includeNoteNames = false) => _includeNoteNames = includeNoteNames;
+
     /// <summary>Serialize a score to UTF-8 (no BOM) MusicXML on the stream.</summary>
     public void Write(Score score, Stream destination)
     {
@@ -47,7 +56,7 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
         for (int i = 0; i < score.Measures.Count; i++)
         {
             AppendMeasure(sb, score, score.Measures[i], measureNumber: i + 1, isFirst: i == 0,
-                          clef, divisions, ref tiedFromPrevious);
+                          clef, divisions, ref tiedFromPrevious, _includeNoteNames);
         }
 
         sb.Append("  </part>").Append(Nl);
@@ -57,7 +66,7 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
 
     private static void AppendMeasure(StringBuilder sb, Score score, Measure measure,
                                       int measureNumber, bool isFirst, Clef clef, int divisions,
-                                      ref bool tiedFromPrevious)
+                                      ref bool tiedFromPrevious, bool includeNoteNames)
     {
         sb.Append($"    <measure number=\"{measureNumber}\">").Append(Nl);
         if (isFirst)
@@ -80,7 +89,7 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
 
         foreach (var element in measure.Elements)
         {
-            AppendElement(sb, element, divisions, tiedFromPrevious);
+            AppendElement(sb, element, divisions, tiedFromPrevious, includeNoteNames);
             tiedFromPrevious = element.TiedToNext;
         }
 
@@ -92,7 +101,8 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
     // run is spelled as a sequence of standard values — tied notes for a note, consecutive rests for a
     // rest (Step 6 conserves the ticks; R11.1 leaves this notation-spelling to Step 11).
     // MusicXML <note> child order (partwise content model): (pitch|rest), duration, tie*, type, dot*, notations.
-    private static void AppendElement(StringBuilder sb, ScoreElement element, int divisions, bool tiedFromPrevious)
+    private static void AppendElement(StringBuilder sb, ScoreElement element, int divisions, bool tiedFromPrevious,
+                                      bool includeNoteNames)
     {
         var parts = Decompose(element.LengthTicks, divisions);
         bool isNote = element.Kind == ElementKind.Note && element.Pitch is Pitch;
@@ -157,6 +167,19 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
                 }
 
                 sb.Append("        </notations>").Append(Nl);
+            }
+
+            // Note-name lyric (opt-in): show the played note's scientific-pitch name once, at its onset —
+            // the first decomposed part (p == 0) of an element that is NOT a tie continuation from a prior
+            // measure. MusicXML note content model puts <lyric> after <notations>.
+            if (includeNoteNames && isNote && p == 0 && !tiedFromPrevious)
+            {
+                var (step, alter, octave) = PitchToXml((Pitch)element.Pitch!);
+                string name = $"{step}{(alter == 1 ? "#" : string.Empty)}{octave}";
+                sb.Append("        <lyric number=\"1\">").Append(Nl);
+                sb.Append("          <syllabic>single</syllabic>").Append(Nl);
+                sb.Append($"          <text>{name}</text>").Append(Nl);
+                sb.Append("        </lyric>").Append(Nl);
             }
 
             sb.Append("      </note>").Append(Nl);

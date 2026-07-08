@@ -177,6 +177,40 @@ public class MusicXmlWriterTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public void IncludesNoteNameLyricWhenOptedIn()
+    {
+        var score = MusicXmlFixtures.OneNote(new Pitch(60)); // middle C
+
+        var xml = new MusicXmlScoreWriter(includeNoteNames: true).WriteToString(score);
+
+        Assert.Contains("<lyric", xml);
+        Assert.Contains("<text>C4</text>", xml);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void OmitsNoteNameLyricByDefault()
+    {
+        var score = MusicXmlFixtures.OneNote(new Pitch(60)); // middle C
+
+        var xml = new MusicXmlScoreWriter().WriteToString(score);
+
+        Assert.DoesNotContain("<lyric", xml);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void IncludesSharpInNoteNameLyricForSharpNote()
+    {
+        var score = MusicXmlFixtures.OneNote(new Pitch(61)); // C#4
+
+        var xml = new MusicXmlScoreWriter(includeNoteNames: true).WriteToString(score);
+
+        Assert.Contains("<text>C#4</text>", xml);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public void EmitsTieStartAndStopForBarSplitNotes()
     {
         // A note tied across the barline: measure 1 ends with a tied-to-next C4,

@@ -884,3 +884,31 @@ POST handlers: a `SemaphoreSlim` that Start releases and the CLI's recording loo
 waits on, and a mic-stop callback that Stop invokes directly. Neither the
 transcription pipeline nor the domain layer changed — this is composition-root
 wiring only.
+
+## CLI — `--note-names` (note-name lyrics, 2026-07-08)
+
+**Opt-in `--note-names` adds a MusicXML `<lyric>` per note carrying its scientific-pitch
+name** (e.g. `C4`, `F#5`), reusing `MusicXmlScoreWriter`'s existing sharps-only
+step/alter/octave mapping (`PitchToXml`) rather than a second spelling table — a
+learning/verification aid so a renderer such as OSMD prints the name beneath each note.
+The name is shown once at each note's onset: the first decomposed part (`p == 0`) of an
+element that is not itself a tie continuation from a prior measure (`!tiedFromPrevious`),
+so a note split across a barline by Step 6's structural tie-splitting gets one label, not
+one per tied fragment.
+
+**Opt-in, default off, so the byte-exact golden and every existing caller are
+unaffected.** `MusicXmlScoreWriter` gained one constructor parameter
+(`includeNoteNames = false`); every pre-existing `new MusicXmlScoreWriter()` call site
+(the golden test, the other writer tests, `LiveNotationServer`'s default, both prior CLI
+call sites) keeps compiling and keeps emitting byte-identical output with no change —
+verified by re-running `MusicXmlGoldenTests.EmitsByteIdenticalGoldenForTwinkleFixture`
+after the change, still byte-exact.
+
+**Threaded through one flag-configured writer instance, not two.** `transcribe` takes
+the flag straight into `TranscribeCommand.Run`'s existing `MusicXmlScoreWriter`
+construction. `listen` constructs a single `new MusicXmlScoreWriter(noteNames)` in
+`Program.cs` and reuses that one instance for both consumers of notation — the saved
+`score.musicxml` (via `ListenCommand`'s `musicXmlWriter`) and the live `--view` rendering
+(via `LiveNotationServer`'s `scoreToMusicXml` hook, already an injectable
+`Func<Score, string>` seam from the live-notation design) — so the two can never disagree
+about whether names are shown.
