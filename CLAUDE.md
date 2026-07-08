@@ -65,11 +65,21 @@ README + ship (Step 12) — the root `README.md` (problem, pipeline, non-negotia
 stated honestly + limitations), doc-lint tests pinning its content. **All 13 build-spec steps (0–12) are
 complete and on `main`; the MVP is tagged `v0.1.0`.** Build/test green (311 tests).
 
-- **The v0.1.0 MVP is shipped.** Open human follow-ups (documented, non-blocking): the MuseScore GUI load
-  check for the MusicXML golden (R11.2 — see `DECISIONS.md`); a by-ear `listen` mic acceptance run. Phase-2
-  items (§8) — polyphony, tempo estimation, pYIN pitch-hardening (fixes the rare ~0.4% octave residual),
-  treble/bass split — are out of MVP scope. The step plans and the authoritative API reference
-  (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note honest if work resumes.
+Live incremental notation — `listen --view` (Phase-2 §8 item 3, shipped post-MVP as **v0.1.1**) —
+`LiveScoreProjector` (Application; re-quantizes the growing note list on each onset) + a BCL-only
+`LiveNotationServer` (`HttpListener` + SSE, base64-MusicXML events over a capacity-1 drop-oldest outbox) +
+a vendored OpenSheetMusicDisplay bundle (`wwwroot/`, OSMD 2.0.0 BSD-3-Clause) that renders the staff in a
+browser tab as the piece is played. The optional `--view` flag cannot break plain `listen` (hook isolation
++ guarded server start). Manual acceptance PASSED (Cornelius, 2026-07-07 — staves built live from voice
+input, snapped correct on stop). Build/test green (331 tests).
+
+- **The v0.1.0 MVP is shipped; `v0.1.1` adds live incremental notation.** The lone open human follow-up is
+  the MuseScore GUI load check for the MusicXML golden (R11.2 — see `DECISIONS.md`), and even that is now
+  corroborated — OSMD renders the same `MusicXmlScoreWriter` output correctly in the browser. The by-ear
+  live-`listen` path is human-confirmed (voice through the mic, 2026-07-07). Phase-2 items (§8) — polyphony,
+  tempo estimation, pYIN pitch-hardening (fixes the rare ~0.4% octave residual), treble/bass split — are out
+  of scope. The step plans and the authoritative API reference (`docs/plans/CONTRACTS.md`) live in
+  `docs/plans/`; keep this note honest if work resumes.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
