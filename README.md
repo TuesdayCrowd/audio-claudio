@@ -82,8 +82,9 @@ rather than as one round number:
 
 - Across **MIDI 33–96** (A1–C7), note **count**, **pitch**, and **onset**
   are recovered exactly (onset within one grid subdivision). This is
-  checked on every push (40 fresh, reproducible cases) and by a nightly job
-  that runs 1,000 unpinned cases specifically to hunt for rarer failures.
+  checked on every push (40 fresh, reproducible cases); a larger 1,000-case
+  unpinned sweep, for hunting rarer failures, runs on demand (a manual
+  workflow) rather than on a schedule.
 - **Duration** is *additionally* recovered exactly (within one grid
   subdivision) across **MIDI 33–71** (up to just below C5). Above that, the
   corpus is deliberately capped rather than tested unfairly: with this
@@ -98,9 +99,9 @@ rather than as one round number:
   detected an octave away from the one played) and one missed note onset.
   Both are pre-existing limitations of the monophonic pitch/onset detector
   on real synthesized audio — unrelated to the duration cap, which only
-  ever affects duration, never count, pitch, or onset. The nightly job
-  exists specifically to surface and quarantine cases like these (rather
-  than let them block every push); hardening the detector further (a
+  ever affects duration, never count, pitch, or onset. The on-demand deep
+  closed-loop sweep surfaces and quarantines cases like these (rather than
+  let them block every push); hardening the detector further (a
   probabilistic pitch tracker, better onset recall) is recorded as Phase-2
   work, not hidden behind a false 100% claim.
 
@@ -196,8 +197,8 @@ faking them:
   still transcribed correctly, but the notated duration is not something
   the rendered audio can support, so it is not claimed there either.
 - **A rare (~0.4%) octave-error / missed-onset residual** exists on real
-  synthesized piano audio, tracked by the nightly closed-loop run rather
-  than hidden; see The closed loop, above. Hardening the pitch/onset
+  synthesized piano audio, surfaced by the on-demand deep closed-loop run
+  rather than hidden; see The closed loop, above. Hardening the pitch/onset
   detector further is Phase-2 work.
 - **Live microphone capture and the MusicXML "loads in MuseScore" check are
   both manual, not automated.** No audio device exists in CI, so

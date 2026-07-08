@@ -6,7 +6,7 @@ namespace AudioClaudio.Tests.ClosedLoop;
 
 public sealed class ClosedLoopPropertyTests
 {
-    // The push-suite case count (R9.4: modest on push; the nightly workflow runs far more via
+    // The push-suite case count (R9.4: modest on push; the deep-closed-loop workflow runs far more via
     // CLOSED_LOOP_CASES). Now that the corpus is constrained to physically-audible durations it
     // passes STRICT R9.2 with zero failures, so this is a genuine (not placeholder) sample size.
     private const int PushCaseCount = 40;
@@ -47,7 +47,7 @@ public sealed class ClosedLoopPropertyTests
     {
         if (int.TryParse(Environment.GetEnvironmentVariable("CLOSED_LOOP_CASES"), out var n) && n > 0)
         {
-            // Exploratory path (e.g. the nightly workflow): fresh, unpinned cases every run is the
+            // Exploratory path (e.g. the on-demand deep-closed-loop workflow): fresh, unpinned cases every run is the
             // point (R9.3 discovery), and Sample's shrinking yields a smaller repro on failure.
             gen.Sample(run, iter: n);
             return;

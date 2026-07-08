@@ -400,8 +400,9 @@ Step 4/5 limitations on real piano audio, unrelated to this step's decision**:
 
 Both are rare (~0.4% of cases in that run) and are **pitch/onset/count**, never
 duration — `RefineOffsets` sets only duration, so it cannot cause them, and the
-audible cap has nothing to do with them. They are the designed job of the nightly
-workflow (`CLOSED_LOOP_CASES` large, unpinned) to discover and quarantine (R9.3);
+audible cap has nothing to do with them. They are the designed job of the large
+exploratory closed-loop sweep (`CLOSED_LOOP_CASES` large, unpinned) to discover and
+quarantine (R9.3);
 the pinned push windows avoid them not by cherry-picking around a common failure
 but because the failures are genuinely rare (a random 40-case window is clean
 ~85–90% of the time). Hardening YIN's octave selection and onset recall on real
@@ -435,7 +436,7 @@ reproduce an *identical* case sequence across independent process runs (checked
 3+ times). `ClosedLoopPropertyTests`'s default (unoverridden) push path uses
 this direct loop, not `Sample`, for exactly this reason — for BOTH the strict
 capped corpus and the full-range count/pitch/onset corpus. The
-`CLOSED_LOOP_CASES`-overridden (exploratory/nightly) path still uses `Sample`
+`CLOSED_LOOP_CASES`-overridden (exploratory / on-demand deep) path still uses `Sample`
 deliberately — reproducibility does not matter there (R9.3's discovery intent),
 and `Sample`'s shrinking is a genuine benefit for producing a smaller,
 easier-to-triage failing case to quarantine.
@@ -770,3 +771,38 @@ the CI-side proof: `LiveScoreProjectorTests` (projection logic),
 `LiveNotationServerTests` (the HTTP/SSE server end-to-end via `HttpClient`,
 including late-join and multi-client broadcast), and `WebAssetContentTests`
 (the served HTML/JS reference the right paths and call the right OSMD APIs).
+
+## CI — nightly closed-loop retired to an on-demand deep run (2026-07-08)
+
+**Decision (Cornelius):** delete the daily `schedule:` from the large closed-loop
+sweep and keep it as a manual `workflow_dispatch` button, renamed
+`nightly-closed-loop.yml` → `deep-closed-loop.yml`. The everyday guard stays the
+push CI (40 pinned, deterministic seeds, strict R9.2, ~1.5 min). The deep run stays
+**strict** — no budget-guard / tolerance-of-failure logic was added: when pressed it
+should show every failure and upload the quarantine artifacts.
+
+**Why.** The scheduled nightly was a *development-phase* instrument. While the
+detection code (YIN, onset, segmentation) was in flux, a nightly 1,000-case random
+sweep genuinely earned its keep — it caught regressions from ongoing changes and
+discovered residual cases to quarantine (R9.3). Since v0.1.0 that code is **frozen**
+(the residual's fix, pYIN, is Phase-2, §8). On frozen, deterministic code a daily run
+just re-measures the same ~0.4% residual and reds on it most nights — pure
+alarm-fatigue, and it contradicted the job's own "not a gate / not a signal the build
+is broken" header. R9.4 always called the larger run "optional"; this is how that
+latitude is exercised. (Prompted by the 2026-07-08 run failing on two ordinary
+residual cases — count 7≠8 and 6≠7, both dropped-onset misses — with the detection
+path verified byte-identical to v0.1.0, i.e. not a regression.)
+
+**Considered and rejected.** (a) A *residual-budget guard* — green iff the measured
+miss-rate stays under a documented budget, red only on a genuine detection regression
+— was designed and half-built, then dropped as premature: its only value materializes
+during Phase-2 detection work, so re-adding a trigger + budget then is cheaper than
+carrying dormant CI semantics now (YAGNI). (b) `continue-on-error` (an always-green
+fuzzer) — rejected as strictly worse than removing the schedule, since it keeps
+spending ~28 min of CI to measure a constant nobody watches.
+
+**Reinstating in Phase-2.** When detection work resumes, either restore a `schedule:`
+on `deep-closed-loop.yml` or add a `push`/`pull_request` path filter on the detection
+files, and (if wanted) apply the residual-budget guard so a detection change goes
+green unless it worsens the residual. The harness already supports the large sample
+via `CLOSED_LOOP_CASES`; nothing in the test code was removed.

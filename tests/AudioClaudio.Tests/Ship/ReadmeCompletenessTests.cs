@@ -104,7 +104,7 @@ public class ReadmeCompletenessTests
     [Fact]
     [Trait("Category", "Fast")]
     // Honest limitation: the rare (~0.4%) YIN octave-error / onset-miss
-    // residual the nightly closed-loop job discovers (DECISIONS.md, "Step 9").
+    // residual the on-demand deep closed-loop run discovers (DECISIONS.md, "Step 9").
     public void States_the_octave_error_residual_honestly()
     {
         Assert.Contains("octave", Readme, StringComparison.OrdinalIgnoreCase);

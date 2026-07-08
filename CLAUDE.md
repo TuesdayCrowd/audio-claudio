@@ -46,7 +46,7 @@ property suite. Recorded decision: the closed-loop corpus is **constrained to ph
 durations** (a piano's high notes decay before a long declared duration elapses — `synthesize` is lossy
 for duration there). On that corpus, count/pitch/onset/duration all hold strictly; count/pitch/onset are
 separately proven across the full MIDI 33–96 range. Known documented limitation: a rare (~0.4%) YIN
-octave-error / onset-miss residual on real piano audio (the nightly discovers + quarantines it, R9.3) —
+octave-error / onset-miss residual on real piano audio (the on-demand deep closed-loop run discovers + quarantines it, R9.3) —
 the Phase-2 pYIN upgrade (§8) is its fix, not an MVP task. Build/test green (248 tests).
 
 Live capture (Step 10) — `PortAudioAudioSource : IAudioSource, IDisposable` (device callback → bounded
