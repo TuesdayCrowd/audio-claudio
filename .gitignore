@@ -55,3 +55,8 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# CLI session output (transcribe/listen --out-dir); the README examples write here.
+out/
+*.wav
+!fixtures/**/*.wav

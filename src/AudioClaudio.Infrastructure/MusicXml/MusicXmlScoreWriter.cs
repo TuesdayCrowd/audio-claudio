@@ -87,67 +87,80 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
         sb.Append("    </measure>").Append(Nl);
     }
 
-    // MusicXML <note> child order (per the partwise content model): (pitch|rest), duration,
-    // tie*, type, dot*, notations. Voice/instrument are optional and omitted (out of R11.1 scope).
+    // Emits one ScoreElement. Its LengthTicks need NOT be a single standard note value: a note cut
+    // at a barline (Step 6 TiedToNext) or a rest filling an odd gap can be e.g. 15 sixteenths. Such a
+    // run is spelled as a sequence of standard values — tied notes for a note, consecutive rests for a
+    // rest (Step 6 conserves the ticks; R11.1 leaves this notation-spelling to Step 11).
+    // MusicXML <note> child order (partwise content model): (pitch|rest), duration, tie*, type, dot*, notations.
     private static void AppendElement(StringBuilder sb, ScoreElement element, int divisions, bool tiedFromPrevious)
     {
-        var (type, dotted) = TypeAndDot(element.LengthTicks, divisions);
-        sb.Append("      <note>").Append(Nl);
-        if (element.Kind == ElementKind.Note && element.Pitch is Pitch pitch)
+        var parts = Decompose(element.LengthTicks, divisions);
+        bool isNote = element.Kind == ElementKind.Note && element.Pitch is Pitch;
+
+        for (int p = 0; p < parts.Count; p++)
         {
-            var (step, alter, octave) = PitchToXml(pitch);
-            sb.Append("        <pitch>").Append(Nl);
-            sb.Append($"          <step>{step}</step>").Append(Nl);
-            if (alter != 0)
+            var (type, dotted, partTicks) = parts[p];
+            // Notes tie in when the element is held from a previous measure (first part) or this part
+            // continues the decomposed run (p > 0); tie out when held into the next measure (last part)
+            // or more parts follow. Rests are never tied (MusicXML has no rest tie).
+            bool tieIn = isNote && (p > 0 || tiedFromPrevious);
+            bool tieOut = isNote && (p < parts.Count - 1 || element.TiedToNext);
+
+            sb.Append("      <note>").Append(Nl);
+            if (isNote)
             {
-                sb.Append($"          <alter>{alter}</alter>").Append(Nl);
+                var (step, alter, octave) = PitchToXml((Pitch)element.Pitch!);
+                sb.Append("        <pitch>").Append(Nl);
+                sb.Append($"          <step>{step}</step>").Append(Nl);
+                if (alter != 0)
+                {
+                    sb.Append($"          <alter>{alter}</alter>").Append(Nl);
+                }
+
+                sb.Append($"          <octave>{octave}</octave>").Append(Nl);
+                sb.Append("        </pitch>").Append(Nl);
+            }
+            else
+            {
+                sb.Append("        <rest/>").Append(Nl);
             }
 
-            sb.Append($"          <octave>{octave}</octave>").Append(Nl);
-            sb.Append("        </pitch>").Append(Nl);
-        }
-        else
-        {
-            sb.Append("        <rest/>").Append(Nl);
-        }
+            sb.Append($"        <duration>{partTicks}</duration>").Append(Nl);
 
-        sb.Append($"        <duration>{element.LengthTicks}</duration>").Append(Nl);
-
-        // Structural bar-split ties (Step 6 TiedToNext): stop the incoming tie before starting
-        // the outgoing one, so a note held across a barline reads as start -> (stop+start)* -> stop.
-        if (tiedFromPrevious)
-        {
-            sb.Append("        <tie type=\"stop\"/>").Append(Nl);
-        }
-
-        if (element.TiedToNext)
-        {
-            sb.Append("        <tie type=\"start\"/>").Append(Nl);
-        }
-
-        sb.Append($"        <type>{type}</type>").Append(Nl);
-        if (dotted)
-        {
-            sb.Append("        <dot/>").Append(Nl);
-        }
-
-        if (tiedFromPrevious || element.TiedToNext)
-        {
-            sb.Append("        <notations>").Append(Nl);
-            if (tiedFromPrevious)
+            if (tieIn)
             {
-                sb.Append("          <tied type=\"stop\"/>").Append(Nl);
+                sb.Append("        <tie type=\"stop\"/>").Append(Nl);
             }
 
-            if (element.TiedToNext)
+            if (tieOut)
             {
-                sb.Append("          <tied type=\"start\"/>").Append(Nl);
+                sb.Append("        <tie type=\"start\"/>").Append(Nl);
             }
 
-            sb.Append("        </notations>").Append(Nl);
-        }
+            sb.Append($"        <type>{type}</type>").Append(Nl);
+            if (dotted)
+            {
+                sb.Append("        <dot/>").Append(Nl);
+            }
 
-        sb.Append("      </note>").Append(Nl);
+            if (tieIn || tieOut)
+            {
+                sb.Append("        <notations>").Append(Nl);
+                if (tieIn)
+                {
+                    sb.Append("          <tied type=\"stop\"/>").Append(Nl);
+                }
+
+                if (tieOut)
+                {
+                    sb.Append("          <tied type=\"start\"/>").Append(Nl);
+                }
+
+                sb.Append("        </notations>").Append(Nl);
+            }
+
+            sb.Append("      </note>").Append(Nl);
+        }
     }
 
     // MIDI number -> (step, chromatic alter, octave). Sharps only; octave n/12 - 1 => MIDI 60 is C4.
@@ -173,25 +186,56 @@ public sealed class MusicXmlScoreWriter : IScoreWriter
         };
     }
 
-    // LengthTicks -> (<type>, dotted?). <duration> is LengthTicks itself, since divisions =
-    // Subdivision.TicksPerQuarter(). Rescaled to sixteenth-equivalents (a sixteenth is
-    // divisions/4 ticks) so the table is the same regardless of the score's grid subdivision.
-    private static (string Type, bool Dotted) TypeAndDot(int lengthTicks, int divisions)
+    // Standard note values in sixteenth-equivalents, largest first, each with its MusicXML type/dot.
+    // divisions = Subdivision.TicksPerQuarter(); a sixteenth is divisions/4 ticks, so this table is
+    // grid-independent. No run exceeds a whole note (16 sixteenths): a 4/4 barline splits every run
+    // to at most one bar.
+    private static readonly (int Sixteenths, string Type, bool Dotted)[] StandardValues =
     {
-        int sixteenths = lengthTicks * 4 / divisions;
-        return sixteenths switch
+        (16, "whole", false),
+        (12, "half", true),
+        (8, "half", false),
+        (6, "quarter", true),
+        (4, "quarter", false),
+        (3, "eighth", true),
+        (2, "eighth", false),
+        (1, "16th", false),
+    };
+
+    // Decompose a length into standard note values, greedily largest-first, returning
+    // (type, dotted, ticks) per part. A single standard value yields one part (so clean, barline-
+    // aligned scores serialize exactly as before); a non-standard length (e.g. a 15/16 barline
+    // segment) yields a tied-note / consecutive-rest run. Since the smallest value is a sixteenth,
+    // every positive whole-sixteenth length is fully consumed.
+    private static List<(string Type, bool Dotted, int Ticks)> Decompose(int lengthTicks, int divisions)
+    {
+        if (lengthTicks <= 0)
         {
-            1 => ("16th", false),
-            2 => ("eighth", false),
-            3 => ("eighth", true),
-            4 => ("quarter", false),
-            6 => ("quarter", true),
-            8 => ("half", false),
-            12 => ("half", true),
-            16 => ("whole", false),
-            _ => throw new ArgumentOutOfRangeException(nameof(lengthTicks), lengthTicks,
-                      $"No standard note type for {lengthTicks} ticks at {divisions} divisions/quarter."),
-        };
+            throw new ArgumentOutOfRangeException(nameof(lengthTicks), lengthTicks, "Element length must be positive.");
+        }
+
+        int remainingSixteenths = lengthTicks * 4 / divisions;
+        if (remainingSixteenths * divisions / 4 != lengthTicks)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lengthTicks), lengthTicks,
+                $"Length {lengthTicks} at {divisions} divisions/quarter is not a whole number of sixteenths.");
+        }
+
+        var parts = new List<(string Type, bool Dotted, int Ticks)>();
+        while (remainingSixteenths > 0)
+        {
+            foreach (var (sixteenths, type, dotted) in StandardValues)
+            {
+                if (sixteenths <= remainingSixteenths)
+                {
+                    parts.Add((type, dotted, sixteenths * divisions / 4));
+                    remainingSixteenths -= sixteenths;
+                    break;
+                }
+            }
+        }
+
+        return parts;
     }
 
     // Range-based clef with fixed tie-breaks: mean == MiddleC -> treble; an all-rests score -> treble.
