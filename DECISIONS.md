@@ -978,3 +978,32 @@ estimate is visible, not silent. `transcribe` similarly prints `Tempo: <bpm> BPM
 `(estimated)` appended when estimation ran), reading the tempo actually used off
 `result.Score.Tempo` rather than echoing the CLI argument back, so the console output and
 the three written files can never disagree about which tempo was used.
+
+---
+
+## Phase 2 — Polyphonic transcription (audio → many simultaneous notes)
+
+**The monophonic YIN front end is kept; polyphony arrives as a second `ITranscriber`
+behind the same port.** §8 item 1 always anticipated this. `NoteEvent`/`ITranscriber`
+already exchange a list that can hold overlapping notes, so polyphony is a new adapter plus
+polyphonic score-building, not a domain rewrite. The engine is **Spotify Basic Pitch** (the
+ICASSP-2022 neural pitch model) run via **Microsoft.ML.OnnxRuntime**, exactly the stack the
+§3 table names.
+
+**Licenses (§1 rule 7).** `Microsoft.ML.OnnxRuntime` 1.27.0 — **MIT**. The Basic Pitch model
+`fixtures/models/basic-pitch-nmp.onnx` — **Apache-2.0** (Spotify AB; license text committed
+alongside as `fixtures/models/LICENSE.basic-pitch`). Both are permissive; no copyleft enters
+the graph. The 230 KB model is committed as a fixture (like the SoundFont) so the build is
+self-contained.
+
+**The model contract was pinned empirically, not assumed.** ONNX input
+`serving_default_input_2:0` is `[batch, 43844, 1]` — one ~2 s window of 22 050 Hz mono audio.
+Outputs: `StatefulPartitionedCall:1` = note-frames `[·,172,88]`, `:2` = onsets `[·,172,88]`,
+`:0` = contour `[·,172,264]`; pitch bin `i` = MIDI `21+i`. The note-vs-onset identity was
+determined by feeding a sustained 440 Hz tone (bin 48 = A4 lit across the whole window in
+`:1`, only at the attack in `:2`) — locked by `BasicPitchModelTests`.
+
+**Determinism.** CPU inference is deterministic for a given input on a given build, but — like
+the MeltySynth mixdown — is not guaranteed bit-identical across CPU architectures (SIMD). The
+same accommodation the render golden already makes (tolerance, not byte-equality) applies to
+any future polyphonic golden.

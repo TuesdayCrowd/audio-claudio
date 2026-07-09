@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageReference Include="Melanchall.DryWetMidi" Version="8.0.3" />
     <PackageReference Include="MeltySynth" Version="2.4.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.27.0" />
     <PackageReference Include="PortAudioSharp2" Version="1.0.6" />
   </ItemGroup>
 
