@@ -108,10 +108,11 @@ Phase-2 refinement): true independent inner voices, key signature, timing alignm
 
 ## Stage 4: Accuracy iteration
 **Goal**: close the gap to the reference; every change justified by a metric delta.
-- **4a** DTW time-alignment in the evaluator (or an `evaluate --align` mode): align
-  the candidate to the reference before matching so onset-F1 reflects *pitch
-  recovery*, not rubato/tempo drift (today the raw metric is timing-dominated). This
-  makes 4b measurable.
+- **4a** DONE (landed): `OnsetAlignment.GlobalScale` + `evaluate --align` — rescales the
+  candidate's onset span onto the reference's, cancelling the gross tempo difference so the
+  metric reflects pitch recovery. On Death poly raw.mid vs reference (±250 ms): F1 6.7% → 18.1%
+  (matched 100 → 270), confirming most of the low F1 was timing drift. (DTW warp for rubato is
+  the next refinement.)
 - **4b** Decoder threshold tuning (`OnsetThreshold`/`FrameThreshold`/`MinNoteLen`)
   swept against the aligned metric — current path over-generates (1887 vs 1100 ref),
   so precision is the lever.

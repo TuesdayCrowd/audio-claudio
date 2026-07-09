@@ -86,14 +86,20 @@ switch (args[0])
         }
     case "evaluate" when args.Length >= 3:
         {
-            // claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50]
+            // claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align]
             // Note-level precision/recall/F1 of a transcription against a reference note-set.
             var candidate = MidiFileReader.ReadFile(args[1], rate).Events;
             var reference = MidiFileReader.ReadFile(args[2], rate).Events;
             double tolMs = TryReadOption(args, "--onset-tolerance-ms") is { } t
                 ? double.Parse(t, System.Globalization.CultureInfo.InvariantCulture)
                 : 50.0;
-            EvaluateCommand.Run(candidate, reference, new NoteMatchOptions(tolMs / 1000.0), Console.WriteLine);
+            // --align cancels the gross performance-vs-score tempo difference before scoring, so the
+            // F1 reflects pitch recovery rather than tempo drift (Stage 4a; DTW is the refinement).
+            bool align = Array.IndexOf(args, "--align") >= 0;
+            var evalCandidate = align ? OnsetAlignment.GlobalScale(candidate, reference) : candidate;
+            if (align)
+                Console.WriteLine("(candidate globally time-aligned to the reference span)");
+            EvaluateCommand.Run(evalCandidate, reference, new NoteMatchOptions(tolMs / 1000.0), Console.WriteLine);
             return 0;
         }
     case "listen":
@@ -286,7 +292,7 @@ static int Usage()
     Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--poly [--model <path>]]   -> raw.mid, score.mid, score.musicxml; omit --tempo to auto-estimate it; --poly uses the polyphonic Basic Pitch engine (many simultaneous notes)");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
-    Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>]  -> note-level precision/recall/F1 vs a reference");
+    Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>] [--align]  -> note-level precision/recall/F1 vs a reference; --align cancels the global tempo difference first");
     return 1;
 }
 
