@@ -59,7 +59,7 @@ adapter is built.
     both pitches). **On Death: 49 → 1887 notes; onset-F1 0%→6.7% (±250 ms), tempo-scaled
     0.2%→21.2% (±300 ms); pitch-class content recovery ≈ 87%.** Stage 2 COMPLETE.
 
-## Stage 3: Polyphonic score building  ← CURRENT
+## Stage 3: Polyphonic score building
 **Goal**: turn overlapping `NoteEvent`s into readable grand-staff notation.
 
 **Design decision — parallel types, monophonic path untouched.** The monophonic
@@ -106,18 +106,50 @@ renders in Verovio as a real grand staff) and a polyphonic `score.mid` (max 8
 simultaneous). Monophonic path untouched (386 fast tests). Remaining polish (deferred to
 Phase-2 refinement): true independent inner voices, key signature, timing alignment (Stage 4).
 
-## Stage 4: Accuracy iteration
+## Stage 4: Accuracy iteration  ← CURRENT
 **Goal**: close the gap to the reference; every change justified by a metric delta.
+
+**Order note.** DTW lands *before* the 4b threshold sweep on purpose: tuning is judged by
+the metric, and the metric is only trustworthy once alignment has removed tempo drift.
+Global-scale (4a) cancels one overall tempo ratio; DTW cancels *local* rubato. So: 4a → DTW
+→ 4b (sweep against the DTW metric) → 4c.
+
 - **4a** DONE (landed): `OnsetAlignment.GlobalScale` + `evaluate --align` — rescales the
   candidate's onset span onto the reference's, cancelling the gross tempo difference so the
   metric reflects pitch recovery. On Death poly raw.mid vs reference (±250 ms): F1 6.7% → 18.1%
-  (matched 100 → 270), confirming most of the low F1 was timing drift. (DTW warp for rubato is
-  the next refinement.)
-- **4b** Decoder threshold tuning (`OnsetThreshold`/`FrameThreshold`/`MinNoteLen`)
-  swept against the aligned metric — current path over-generates (1887 vs 1100 ref),
-  so precision is the lever.
-- **4c** (optional) key-signature-aware enharmonic spelling; velocity/dynamics.
-**Status**: Not Started (4a may be pulled forward — it is how Stage-3 output gets scored).
+  (matched 100 → 270), confirming most of the low F1 was timing drift.
+
+- **DTW warp** — `OnsetAlignment.DtwWarp(candidate, reference)` (Domain.Evaluation) + `evaluate
+  --warp`. Global-scale is a single linear ratio; rubato is *local* tempo variation it cannot
+  fix. DTW builds a monotonic correspondence between the two onset-time sequences (pre-scaled,
+  cost = |Δt|, standard match/insert/delete DP + backtrack), reduces the path to strictly
+  increasing anchor pairs, and applies a piecewise-linear warp to every candidate onset
+  (duration scaled by local slope). Pure/deterministic; candidate never mutated. Headline test:
+  a piecewise-tempo candidate (first half rushed, second half normal) that `GlobalScale` cannot
+  recover, `DtwWarp` does — all onsets match at tight tolerance. `--warp` implies alignment and
+  wins over `--align` if both are passed.
+  **Status**: Not Started.
+
+- **4b** Decoder threshold tuning. Expose `--onset-threshold`/`--frame-threshold`/
+  `--min-note-len` on `transcribe --poly` (a TDD-tested `PolyDecoderOptions.FromArgs` parser;
+  defaults = Basic Pitch's stock 0.5/0.3/11, so behavior is unchanged unless tuned), then sweep
+  them on the real Death audio *against the DTW metric* and record the numbers. The path
+  over-generates (1887 vs ~1100 ref) so precision is the lever; raising thresholds trades recall
+  for precision. Honest-default rule: keep the Domain `NoteDecoderOptions.Default` a faithful
+  port; document the recommended flag values for dense polyphonic piano rather than overfitting
+  a global default to one piece.
+  **Status**: Not Started.
+
+- **4c** Key-signature-aware enharmonic spelling. `PitchSpeller.Spell(midi, fifths)`
+  (Domain) — line-of-fifths nearest-to-tonic method: diatonic notes spell naturally, chromatics
+  spell in the key's accidental direction (A♭ major → D♭/E♭/A♭/B♭, not D#/G#/A#). Thread a
+  declared key (`transcribe --poly --key <fifths>`, default 0 = today's behavior) into
+  `GrandStaffMusicXmlWriter`: emit the real `<fifths>` and spell `<pitch>` + the note-name lyric
+  through the speller (flats render as ♭). Velocity is already carried in raw.mid/score.mid (from
+  Basic Pitch amplitude); MusicXML `<dynamics>` marks are lossy and deferred, stated honestly.
+  **Status**: Not Started.
+
+**Status**: In Progress (4a landed; DTW → 4b → 4c next).
 
 ## Stage 5: CLI + docs
 **Goal**: ship it.

@@ -70,4 +70,68 @@ public class OnsetAlignmentTests
     {
         Assert.Empty(OnsetAlignment.GlobalScale(new List<NoteEvent>(), new List<NoteEvent> { Note(60, 0) }));
     }
+
+    // ---- DtwWarp: local (rubato) alignment, beyond GlobalScale's single linear ratio ----
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Dtw_identity_leaves_onsets_unchanged()
+    {
+        var seq = new List<NoteEvent> { Note(60, 0), Note(62, 44100), Note(64, 88200), Note(65, 132300) };
+
+        IReadOnlyList<NoteEvent> warped = OnsetAlignment.DtwWarp(seq, seq);
+
+        Assert.Equal(seq.Select(e => e.Onset.Samples), warped.Select(e => e.Onset.Samples));
+        Assert.Equal(seq.Select(e => e.Pitch.MidiNumber), warped.Select(e => e.Pitch.MidiNumber));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Dtw_recovers_local_rubato_that_global_scale_cannot()
+    {
+        // Reference: five notes exactly one second apart (a steady grid).
+        var reference = new List<NoteEvent>
+        {
+            Note(60, 0), Note(62, 44100), Note(64, 88200), Note(65, 132300), Note(67, 176400),
+        };
+        // Candidate: SAME span [0, 4s] and same pitches, but pushed and pulled by a NON-LINEAR rubato
+        // (0.7, 1.8, 3.2 instead of 1, 2, 3) — each interior note still lands within half a beat of its
+        // own reference (its "lane"), just displaced. A single linear scale (GlobalScale) cannot bend to
+        // fit that curve — the span already matches, so it is a near-identity and leaves every interior
+        // note drifted. DTW's piecewise warp bends locally and re-times each note onto its match.
+        var candidate = new List<NoteEvent>
+        {
+            Note(60, 0), Note(62, 30870), Note(64, 79380), Note(65, 141120), Note(67, 176400),
+        };
+
+        var opts = new NoteMatchOptions(0.05); // 50 ms — the standard MIR window
+        NoteSetEvaluation global = TranscriptionEvaluator.Evaluate(
+            OnsetAlignment.GlobalScale(candidate, reference), reference, opts);
+        NoteSetEvaluation dtw = TranscriptionEvaluator.Evaluate(
+            OnsetAlignment.DtwWarp(candidate, reference), reference, opts);
+
+        Assert.True(global.TruePositives < 5, $"expected GlobalScale to miss interior notes, got {global.TruePositives}/5");
+        Assert.Equal(5, dtw.TruePositives); // DTW's monotonic warp lands every onset in tolerance
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Dtw_preserves_pitch_and_ordering()
+    {
+        var reference = new List<NoteEvent> { Note(60, 0), Note(64, 44100), Note(67, 88200) };
+        var candidate = new List<NoteEvent> { Note(60, 0), Note(64, 30000), Note(67, 88200) };
+
+        IReadOnlyList<NoteEvent> warped = OnsetAlignment.DtwWarp(candidate, reference);
+
+        Assert.Equal(new[] { 60, 64, 67 }, warped.Select(e => e.Pitch.MidiNumber));
+        Assert.True(warped[0].Onset.Samples <= warped[1].Onset.Samples);
+        Assert.True(warped[1].Onset.Samples <= warped[2].Onset.Samples); // monotonic onsets out
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Dtw_empty_candidate_is_returned_unchanged()
+    {
+        Assert.Empty(OnsetAlignment.DtwWarp(new List<NoteEvent>(), new List<NoteEvent> { Note(60, 0) }));
+    }
 }
