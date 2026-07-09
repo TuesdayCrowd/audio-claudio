@@ -50,6 +50,32 @@ public class GrandStaffMusicXmlWriterTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public void Emits_the_declared_key_and_spells_pitches_for_it()
+    {
+        // A♭ major (4 flats): MIDI 56/68 are the tonic A♭ — they must engrave as A♭ (step A, alter −1),
+        // never G♯, and the key signature must read −4. The old writer hard-coded fifths 0 and sharps,
+        // so this asserts behaviour the pre-4c writer could not produce.
+        var events = new List<NoteEvent> { Note(56, 0, 44100), Note(68, 0, 44100) }; // bass A♭2 + treble A♭4
+        GrandStaffScore score = PolyphonicQuantizer.Quantize(events, Grid, new SampleDuration(1000, R));
+
+        string xml = new GrandStaffMusicXmlWriter(fifths: -4).WriteToString(score);
+        XDocument doc = XDocument.Parse(xml);
+
+        Assert.Contains("<fifths>-4</fifths>", xml);
+        Assert.Contains(doc.Descendants("note"), n =>
+            n.Element("pitch")?.Element("step")?.Value == "A" &&
+            n.Element("pitch")?.Element("alter")?.Value == "-1"); // A♭, a flat
+        Assert.DoesNotContain(doc.Descendants("note"), n =>
+            n.Element("pitch")?.Element("step")?.Value == "G" &&
+            n.Element("pitch")?.Element("alter")?.Value == "1");  // never G♯
+
+        // The scientific-pitch lyric renders the flat too (as "b").
+        string named = new GrandStaffMusicXmlWriter(includeNoteNames: true, fifths: -4).WriteToString(score);
+        Assert.Contains("<text>Ab4</text>", named);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public void Each_staff_advances_exactly_one_bar_per_measure()
     {
         string xml = new GrandStaffMusicXmlWriter().WriteToString(SampleScore());

@@ -127,7 +127,7 @@ Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has four
 commands:
 
 ```bash
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--poly [--model <path>] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]]  # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated if omitted; --poly uses the polyphonic Basic Pitch engine (thresholds tune its note density)
+claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--poly [--model <path>] [--key -4] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]]  # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated if omitted; --poly uses the polyphonic Basic Pitch engine (--key spells accidentals, thresholds tune note density)
 claudio listen [--tempo 100] [--out-dir .] [--view] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted
 claudio play <file.mid> [--soundfont <path>]                                           # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>]                               # deterministically render a MIDI file to WAV
@@ -149,6 +149,7 @@ a bare `--flag` is a boolean switch.
 | `--note-names` | off | Print each note's scientific-pitch name (e.g. `C4`, `F#5`) as a lyric beneath it in `score.musicxml`. |
 | `--poly` | off | Use the **polyphonic** Basic Pitch engine (many simultaneous notes) instead of the default monophonic YIN pipeline. See the note below — the polyphony lands in `raw.mid`; `score.mid`/`score.musicxml` are still monophonic for now. Does not auto-estimate tempo (uses `--tempo`, else 120 BPM). |
 | `--model <path>` | committed model | With `--poly`, use a different Basic Pitch `.onnx` model. Default is the committed `fixtures/models/basic-pitch-nmp.onnx`, resolved relative to the repo. |
+| `--key <fifths>` | `0` (C major) | With `--poly`, the key signature as a count of sharps (positive) or flats (negative) — `-4` = A♭ major, `2` = D major. Sets `score.musicxml`'s `<key>` and spells every accidental to match (A♭ major → E♭/A♭/B♭, not D#/G#/A#). |
 | `--onset-threshold <v>` | `0.5` | With `--poly`, minimum onset activation to *start* a note. Raise it for fewer, more-confident note starts. See the tuning note below. |
 | `--frame-threshold <v>` | `0.3` | With `--poly`, minimum sustained activation to *keep* a note. The dominant density lever — raising it most reduces the note count. |
 | `--min-note-len <frames>` | `11` | With `--poly`, the flicker floor: notes shorter than this many frames (~128 ms at 11) are discarded. Raise it to shed short spurious notes. |
@@ -167,6 +168,12 @@ to steer it:
   homophonic-per-staff — a stack of chords per hand — not yet independent inner
   voices; and its timing is snapped to the grid, where `raw.mid` keeps the exact
   performance.)
+- **Key signature & spelling.** Pass `--key <fifths>` (sharps positive, flats
+  negative — `-4` for A♭ major, `2` for D major) to set `score.musicxml`'s key
+  signature and spell every accidental to match it: a piece in A♭ major engraves
+  its black keys as E♭/A♭/B♭, not the default C-major sharps. A MIDI number alone
+  can't be spelled correctly without the key, so this is a *declared* value (like
+  the tempo), defaulting to C major.
 - **Tuning the note density.** The three thresholds trade recall for precision.
   On dense piano they barely move note-level accuracy — which is bounded by onset
   timing, not by over-generation — but they do control how *cleanly* the score
@@ -282,14 +289,17 @@ faking them:
 
 - **Monophonic by default; polyphony is opt-in and still maturing.** The
   default pipeline is **monophonic** — one note at a time — and everything the
-  closed-loop suite proves is about that path. Phase-2 polyphony has now begun:
-  `transcribe --poly` runs a neural model (Basic Pitch) behind the same
-  `ITranscriber` port and does recover chords and overlapping voices into
-  `raw.mid`. But it is not yet at parity: the quantized `score.mid`/
-  `score.musicxml` are still monophonic (polyphonic score-building is in
-  progress), timing is not yet aligned to a grid, and it has no closed-loop
-  correctness guarantee like the monophonic path. Treat `--poly` as a capable
-  preview, not a finished feature.
+  closed-loop suite proves is about that path. `transcribe --poly` runs a neural
+  model (Basic Pitch) behind the same `ITranscriber` port and recovers chords and
+  overlapping voices: `raw.mid` is the honest many-note output, and `score.mid`/
+  `score.musicxml` are now a real grand staff — chords in both hands, a treble/bass
+  split, key-aware accidental spelling, tunable note density, quantized to a 4/4
+  grid. What it still lacks: any closed-loop correctness guarantee like the
+  monophonic path; independent inner voices (each staff is a chord stack, not
+  separately-moving lines); and high note-level accuracy on dense real audio —
+  measured against an engraved reference, note-level F1 is modest (~15–22 %
+  depending on onset tolerance), bounded by onset timing and exact-pitch matching,
+  not by the notation. Treat `--poly` as a capable preview, not a finished feature.
 - **Tempo: a declared value by default, optional to override.** Pass
   `--tempo` for a declared tempo used exactly; omit it and the pipeline
   instead estimates tempo from the detected notes' onset spacing (the
@@ -302,8 +312,10 @@ faking them:
   whenever exact timing matters. (This estimator is not part of the
   closed-loop suite's timing checks, which still run at a known declared
   tempo — see The closed loop, above.)
-- **Single staff.** MusicXML output is one staff, clef chosen by range,
-  fixed 4/4 time signature. A treble/bass split is Phase-2 work.
+- **Single staff (monophonic path).** The default monophonic pipeline's
+  MusicXML is one staff, clef chosen by range, fixed 4/4 time signature. The
+  `--poly` path instead emits a two-staff grand staff (treble/bass split at
+  middle C); a treble/bass split for the monophonic path remains Phase-2 work.
 - **Duration recovery has a pitch ceiling.** A note's *duration* is only
   recoverable while it stays audibly above the release threshold with this
   SoundFont — roughly MIDI 33–71 for a note an eighth or longer (see The

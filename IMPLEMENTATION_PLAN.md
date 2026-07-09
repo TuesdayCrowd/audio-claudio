@@ -106,7 +106,7 @@ renders in Verovio as a real grand staff) and a polyphonic `score.mid` (max 8
 simultaneous). Monophonic path untouched (386 fast tests). Remaining polish (deferred to
 Phase-2 refinement): true independent inner voices, key signature, timing alignment (Stage 4).
 
-## Stage 4: Accuracy iteration  ← CURRENT
+## Stage 4: Accuracy iteration  — COMPLETE
 **Goal**: close the gap to the reference; every change justified by a metric delta.
 
 **Order note.** DTW lands *before* the 4b threshold sweep on purpose: tuning is judged by
@@ -149,17 +149,23 @@ Global-scale (4a) cancels one overall tempo ratio; DTW cancels *local* rubato. S
   dense polyphonic piano, not baked into a global default overfit to one piece.
 
 - **4c** Key-signature-aware enharmonic spelling. `PitchSpeller.Spell(midi, fifths)`
-  (Domain) — line-of-fifths nearest-to-tonic method: diatonic notes spell naturally, chromatics
-  spell in the key's accidental direction (A♭ major → D♭/E♭/A♭/B♭, not D#/G#/A#). Thread a
-  declared key (`transcribe --poly --key <fifths>`, default 0 = today's behavior) into
-  `GrandStaffMusicXmlWriter`: emit the real `<fifths>` and spell `<pitch>` + the note-name lyric
-  through the speller (flats render as ♭). Velocity is already carried in raw.mid/score.mid (from
-  Basic Pitch amplitude); MusicXML `<dynamics>` marks are lossy and deferred, stated honestly.
-  **Status**: Not Started.
+  (Domain) — line-of-fifths nearest-to-centre method: diatonic notes spell naturally, chromatics
+  spell in the key's accidental direction (A♭ major → D♭/E♭/G♭/A♭/B♭, not D#/G#/A#). A declared
+  key (`transcribe --poly --key <fifths>`, default 0 = today's behaviour) threads into
+  `GrandStaffMusicXmlWriter`: it emits the real `<fifths>` and spells every `<pitch>` + note-name
+  lyric through the speller.
+  **Status**: DONE (landed). 15 TDD tests (flat-key/sharp-key/C-major spelling cases + an
+  all-keys round-trip invariant + the writer emitting `<fifths>` and flats). On the real Death
+  audio, `transcribe --poly --key -4` now emits `<fifths>-4</fifths>` and **545 flats / 0 sharps**
+  — the whole 4-flat piece spelled correctly, where the pre-4c writer would have engraved every
+  chromatic as a sharp. Velocity is already carried in raw.mid/score.mid (Basic Pitch amplitude);
+  MusicXML `<dynamics>` marks are lossy and deliberately deferred.
 
-**Status**: In Progress (4a landed; DTW → 4b → 4c next).
+**Status**: COMPLETE — 4a, DTW, 4b, 4c all landed. Every gain is metric-justified; the honest
+ceiling holds (F1 is timing/pitch-exactness-bound at ~15–22%, not over-generation-bound). Only
+Stage 5 (final docs sweep) remains.
 
-## Stage 5: CLI + docs
+## Stage 5: CLI + docs  ← CURRENT
 **Goal**: ship it.
 **Deliverable**: `transcribe` uses the polyphonic path (flag or default);
 README + CLAUDE.md updated honestly (what it recovers, what it can't); the

@@ -19,11 +19,15 @@ public sealed class GrandStaffMusicXmlWriter
 
     private readonly bool _includeNoteNames;
     private readonly string? _workTitle;
+    private readonly int _fifths;
 
-    public GrandStaffMusicXmlWriter(bool includeNoteNames = false, string? workTitle = null)
+    /// <param name="fifths">Key signature: sharps positive, flats negative (A♭ major = −4). Drives both
+    /// the emitted <c>&lt;fifths&gt;</c> and the enharmonic spelling of every pitch (<see cref="PitchSpeller"/>).</param>
+    public GrandStaffMusicXmlWriter(bool includeNoteNames = false, string? workTitle = null, int fifths = 0)
     {
         _includeNoteNames = includeNoteNames;
         _workTitle = string.IsNullOrWhiteSpace(workTitle) ? null : workTitle;
+        _fifths = fifths;
     }
 
     /// <summary>Serialize to UTF-8 (no BOM) MusicXML on the stream.</summary>
@@ -81,7 +85,7 @@ public sealed class GrandStaffMusicXmlWriter
             sb.Append("      <attributes>").Append(Nl);
             sb.Append($"        <divisions>{divisions}</divisions>").Append(Nl);
             sb.Append("        <key>").Append(Nl);
-            sb.Append("          <fifths>0</fifths>").Append(Nl);
+            sb.Append($"          <fifths>{_fifths}</fifths>").Append(Nl);
             sb.Append("        </key>").Append(Nl);
             sb.Append("        <time>").Append(Nl);
             sb.Append($"          <beats>{score.TimeSignature.BeatsPerMeasure}</beats>").Append(Nl);
@@ -167,7 +171,7 @@ public sealed class GrandStaffMusicXmlWriter
             sb.Append("        <chord/>").Append(Nl);
         }
 
-        (string step, int alter, int octave) = PitchToXml(pitch);
+        (string step, int alter, int octave) = PitchSpeller.Spell(pitch.MidiNumber, _fifths);
         sb.Append("        <pitch>").Append(Nl);
         sb.Append($"          <step>{step}</step>").Append(Nl);
         if (alter != 0)
@@ -214,7 +218,7 @@ public sealed class GrandStaffMusicXmlWriter
 
         if (includeName)
         {
-            string name = $"{step}{(alter == 1 ? "#" : string.Empty)}{octave}";
+            string name = $"{step}{Accidental(alter)}{octave}";
             sb.Append("        <lyric number=\"1\">").Append(Nl);
             sb.Append("          <syllabic>single</syllabic>").Append(Nl);
             sb.Append($"          <text>{name}</text>").Append(Nl);
@@ -247,27 +251,16 @@ public sealed class GrandStaffMusicXmlWriter
          .Replace("\"", "&quot;")
          .Replace("'", "&apos;");
 
-    private static (string Step, int Alter, int Octave) PitchToXml(Pitch pitch)
+    // Accidental suffix for a scientific-pitch name lyric (ASCII, matching the "F#5" convention): a
+    // double-flat "bb" through double-sharp "##".
+    private static string Accidental(int alter) => alter switch
     {
-        int n = pitch.MidiNumber;
-        int pitchClass = ((n % 12) + 12) % 12;
-        int octave = (n / 12) - 1;
-        return pitchClass switch
-        {
-            0 => ("C", 0, octave),
-            1 => ("C", 1, octave),
-            2 => ("D", 0, octave),
-            3 => ("D", 1, octave),
-            4 => ("E", 0, octave),
-            5 => ("F", 0, octave),
-            6 => ("F", 1, octave),
-            7 => ("G", 0, octave),
-            8 => ("G", 1, octave),
-            9 => ("A", 0, octave),
-            10 => ("A", 1, octave),
-            _ => ("B", 0, octave),
-        };
-    }
+        <= -2 => "bb",
+        -1 => "b",
+        0 => "",
+        1 => "#",
+        _ => "##",
+    };
 
     private static readonly (int Sixteenths, string Type, bool Dotted)[] StandardValues =
     {
