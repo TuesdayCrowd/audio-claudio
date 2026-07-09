@@ -127,7 +127,7 @@ Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has four
 commands:
 
 ```bash
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names]                 # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated from note spacing if omitted
+claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--poly [--model <path>]]  # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated if omitted; --poly uses the polyphonic Basic Pitch engine
 claudio listen [--tempo 100] [--out-dir .] [--view] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted
 claudio play <file.mid> [--soundfont <path>]                                           # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>]                               # deterministically render a MIDI file to WAV
@@ -147,6 +147,22 @@ a bare `--flag` is a boolean switch.
 | `--tempo <bpm>` | auto-estimate | Grid tempo. Omit to estimate it from the notes' onset spacing (see [Limitations](#limitations)). |
 | `--out-dir <dir>` | `.` | Where `raw.mid`, `score.mid`, `score.musicxml`, and `log.txt` are written. Created if absent. |
 | `--note-names` | off | Print each note's scientific-pitch name (e.g. `C4`, `F#5`) as a lyric beneath it in `score.musicxml`. |
+| `--poly` | off | Use the **polyphonic** Basic Pitch engine (many simultaneous notes) instead of the default monophonic YIN pipeline. See the note below — the polyphony lands in `raw.mid`; `score.mid`/`score.musicxml` are still monophonic for now. Does not auto-estimate tempo (uses `--tempo`, else 120 BPM). |
+| `--model <path>` | committed model | With `--poly`, use a different Basic Pitch `.onnx` model. Default is the committed `fixtures/models/basic-pitch-nmp.onnx`, resolved relative to the repo. |
+
+**Polyphonic transcription (`--poly`).** By default `transcribe` runs the
+monophonic YIN pipeline (one note at a time). Pass `--poly` to instead run the
+neural **Basic Pitch** model (Spotify, Apache-2.0) through ONNX Runtime, which
+recovers many simultaneous notes — chords, two hands. Two honest caveats:
+
+- The polyphony lands in **`raw.mid`** (the many-note output). `score.mid` and
+  `score.musicxml` are still produced by the *monophonic* quantizer, so they
+  collapse each chord to a single line — **render or inspect `raw.mid`** to hear
+  the full polyphony (`render` and `play` are fully polyphonic; the limitation is
+  only that `score.*` doesn't yet carry the chords). Polyphonic score-building
+  (chords, two staves, voices) is in progress.
+- Inference is deterministic per build, but — like the MeltySynth mixdown — not
+  guaranteed bit-identical across CPU architectures (SIMD).
 
 **`listen`** — live microphone capture (writes the same trio on stop).
 
@@ -252,9 +268,16 @@ audio, not the live preview.
 This is a deliberately scoped MVP. It declines the following rather than
 faking them:
 
-- **Monophonic only.** One note at a time — chords and overlapping voices
-  are out of scope for v0.1.0. Polyphony, via a neural model behind the
-  same `ITranscriber` port, is the first item on the Phase-2 list.
+- **Monophonic by default; polyphony is opt-in and still maturing.** The
+  default pipeline is **monophonic** — one note at a time — and everything the
+  closed-loop suite proves is about that path. Phase-2 polyphony has now begun:
+  `transcribe --poly` runs a neural model (Basic Pitch) behind the same
+  `ITranscriber` port and does recover chords and overlapping voices into
+  `raw.mid`. But it is not yet at parity: the quantized `score.mid`/
+  `score.musicxml` are still monophonic (polyphonic score-building is in
+  progress), timing is not yet aligned to a grid, and it has no closed-loop
+  correctness guarantee like the monophonic path. Treat `--poly` as a capable
+  preview, not a finished feature.
 - **Tempo: a declared value by default, optional to override.** Pass
   `--tempo` for a declared tempo used exactly; omit it and the pipeline
   instead estimates tempo from the detected notes' onset spacing (the
