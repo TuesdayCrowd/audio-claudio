@@ -127,11 +127,52 @@ Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has four
 commands:
 
 ```bash
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .]  # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated from note spacing if omitted
-claudio listen [--tempo 100] [--out-dir .] [--record]    # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted; --record also writes input.wav + recreation.wav
-claudio play <file.mid> [--soundfont <path>]             # play a MIDI file through MeltySynth
-claudio render <file.mid> <out.wav> [--soundfont <path>] # deterministically render a MIDI file to WAV
+claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names]                 # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated from note spacing if omitted
+claudio listen [--tempo 100] [--out-dir .] [--view] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted
+claudio play <file.mid> [--soundfont <path>]                                           # play a MIDI file through MeltySynth
+claudio render <file.mid> <out.wav> [--soundfont <path>]                               # deterministically render a MIDI file to WAV
 ```
+
+### Options reference
+
+Every command and flag, exhaustively. Options are order-independent; unknown
+flags are ignored. A `--flag <value>` option reads the token that follows it;
+a bare `--flag` is a boolean switch.
+
+**`transcribe <in.wav>`** — batch-transcribe a WAV file.
+
+| Option | Default | Effect |
+|---|---|---|
+| `<in.wav>` | *(required)* | 16/24-bit PCM WAV, mono or multichannel (downmixed to mono). |
+| `--tempo <bpm>` | auto-estimate | Grid tempo. Omit to estimate it from the notes' onset spacing (see [Limitations](#limitations)). |
+| `--out-dir <dir>` | `.` | Where `raw.mid`, `score.mid`, `score.musicxml`, and `log.txt` are written. Created if absent. |
+| `--note-names` | off | Print each note's scientific-pitch name (e.g. `C4`, `F#5`) as a lyric beneath it in `score.musicxml`. |
+
+**`listen`** — live microphone capture (writes the same trio on stop).
+
+| Option | Default | Effect |
+|---|---|---|
+| `--tempo <bpm>` | auto-estimate | Grid tempo for the saved score. Omit to estimate it on stop. The live preview always uses a 120 BPM fallback grid, since the estimate is only known after the whole-signal batch pass. |
+| `--out-dir <dir>` | `.` | Where session files are written (stable latest paths in the root, plus a timestamped archive per recording). Created if absent. |
+| `--view` | off | Open a live browser sheet-music view with Start/Stop recording buttons — multiple takes per run, each saved under its own start-timestamp. Degrades to a plain single recording if the server can't start. |
+| `--record` | off | Also write `input.wav` (the captured mic audio, losslessly reconstructed) and `recreation.wav` (the transcription re-synthesized) for A/B comparison. |
+| `--skip-silence` | off | Collapse pauses longer than ~500 ms out of both `input.wav` and `recreation.wav`, cut from each in alignment. Implies `--record`; never affects the MIDI/MusicXML timing. |
+| `--note-names` | off | Show each note's scientific-pitch name beneath it in both the `--view` rendering and `score.musicxml`. |
+
+**`play <file.mid>`** — play a MIDI file aloud through MeltySynth (PortAudio output).
+
+| Option | Default | Effect |
+|---|---|---|
+| `<file.mid>` | *(required)* | The MIDI file to play. |
+| `--soundfont <path>` | committed GS SoundFont | Use a different `.sf2`. Required when running outside the repo tree (the default is resolved relative to the repo). |
+
+**`render <file.mid> <out.wav>`** — deterministically render a MIDI file to a WAV.
+
+| Option | Default | Effect |
+|---|---|---|
+| `<file.mid>` | *(required)* | The MIDI file to render. |
+| `<out.wav>` | *(required)* | The output WAV path. |
+| `--soundfont <path>` | committed GS SoundFont | Use a different `.sf2` (see `play`). |
 
 There is no packaged `claudio` binary yet, so run them today through
 `dotnet run`:
