@@ -45,7 +45,8 @@ switch (args[0])
                 Directory.CreateDirectory(outDir);
                 string modelPath = ModelLocator.Resolve(TryReadOption(args, "--model"));
                 using var polySource = WavAudioSource.FromFile(args[1], new FrameParameters(1024, 256));
-                using var polyTx = new BasicPitchTranscriber(modelPath, tempo: tempo is { } bpm ? new Tempo(bpm) : null);
+                var decoderOptions = PolyDecoderOptions.FromArgs(args); // --onset-threshold/--frame-threshold/--min-note-len (Stage 4b)
+                using var polyTx = new BasicPitchTranscriber(modelPath, decoderOptions, tempo: tempo is { } bpm ? new Tempo(bpm) : null);
                 TranscriptionResult polyResult = polyTx.Transcribe(polySource);
                 var polyWriter = new DryWetMidiWriter();
                 using (var raw = File.Create(Path.Combine(outDir, "raw.mid")))
@@ -301,7 +302,7 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--poly [--model <path>]]   -> raw.mid, score.mid, score.musicxml; omit --tempo to auto-estimate it; --poly uses the polyphonic Basic Pitch engine (many simultaneous notes)");
+    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--poly [--model <path>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]]   -> raw.mid, score.mid, score.musicxml; omit --tempo to auto-estimate it; --poly uses the polyphonic Basic Pitch engine (many simultaneous notes); the three thresholds tune it (higher onset/frame = fewer, more-confident notes)");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>] [--align|--warp]  -> note-level precision/recall/F1 vs a reference; --align cancels the global tempo difference, --warp (DTW) also removes local rubato");

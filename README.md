@@ -127,7 +127,7 @@ Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has four
 commands:
 
 ```bash
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--poly [--model <path>]]  # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated if omitted; --poly uses the polyphonic Basic Pitch engine
+claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--poly [--model <path>] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]]  # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated if omitted; --poly uses the polyphonic Basic Pitch engine (thresholds tune its note density)
 claudio listen [--tempo 100] [--out-dir .] [--view] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted
 claudio play <file.mid> [--soundfont <path>]                                           # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>]                               # deterministically render a MIDI file to WAV
@@ -149,18 +149,30 @@ a bare `--flag` is a boolean switch.
 | `--note-names` | off | Print each note's scientific-pitch name (e.g. `C4`, `F#5`) as a lyric beneath it in `score.musicxml`. |
 | `--poly` | off | Use the **polyphonic** Basic Pitch engine (many simultaneous notes) instead of the default monophonic YIN pipeline. See the note below — the polyphony lands in `raw.mid`; `score.mid`/`score.musicxml` are still monophonic for now. Does not auto-estimate tempo (uses `--tempo`, else 120 BPM). |
 | `--model <path>` | committed model | With `--poly`, use a different Basic Pitch `.onnx` model. Default is the committed `fixtures/models/basic-pitch-nmp.onnx`, resolved relative to the repo. |
+| `--onset-threshold <v>` | `0.5` | With `--poly`, minimum onset activation to *start* a note. Raise it for fewer, more-confident note starts. See the tuning note below. |
+| `--frame-threshold <v>` | `0.3` | With `--poly`, minimum sustained activation to *keep* a note. The dominant density lever — raising it most reduces the note count. |
+| `--min-note-len <frames>` | `11` | With `--poly`, the flicker floor: notes shorter than this many frames (~128 ms at 11) are discarded. Raise it to shed short spurious notes. |
 
 **Polyphonic transcription (`--poly`).** By default `transcribe` runs the
 monophonic YIN pipeline (one note at a time). Pass `--poly` to instead run the
 neural **Basic Pitch** model (Spotify, Apache-2.0) through ONNX Runtime, which
-recovers many simultaneous notes — chords, two hands. Two honest caveats:
+recovers many simultaneous notes — chords, two hands. What it produces and how
+to steer it:
 
-- The polyphony lands in **`raw.mid`** (the many-note output). `score.mid` and
-  `score.musicxml` are still produced by the *monophonic* quantizer, so they
-  collapse each chord to a single line — **render or inspect `raw.mid`** to hear
-  the full polyphony (`render` and `play` are fully polyphonic; the limitation is
-  only that `score.*` doesn't yet carry the chords). Polyphonic score-building
-  (chords, two staves, voices) is in progress.
+- **All three outputs are polyphonic.** `raw.mid` is the honest, un-quantized
+  many-note output (exact performance timing). `score.mid` and `score.musicxml`
+  are built by a polyphonic **grand-staff** quantizer: chords in both hands, a
+  treble/bass split at middle C, each staff's measures conserving a full 4/4 bar.
+  `render` and `play` on any of them are fully polyphonic. (The score is
+  homophonic-per-staff — a stack of chords per hand — not yet independent inner
+  voices; and its timing is snapped to the grid, where `raw.mid` keeps the exact
+  performance.)
+- **Tuning the note density.** The three thresholds trade recall for precision.
+  On dense piano they barely move note-level accuracy — which is bounded by onset
+  timing, not by over-generation — but they do control how *cleanly* the score
+  reads. `--onset-threshold 0.6 --frame-threshold 0.4 --min-note-len 16` cuts the
+  note count roughly in half, toward the engraved score's density, at essentially
+  no accuracy cost; the stock defaults (`0.5`/`0.3`/`11`) maximize recall.
 - Inference is deterministic per build, but — like the MeltySynth mixdown — not
   guaranteed bit-identical across CPU architectures (SIMD).
 

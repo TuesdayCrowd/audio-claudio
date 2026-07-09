@@ -124,21 +124,29 @@ Global-scale (4a) cancels one overall tempo ratio; DTW cancels *local* rubato. S
   fix. DTW builds a monotonic correspondence between the two onset-time sequences (pre-scaled,
   cost = |Δt|, standard match/insert/delete DP + backtrack), reduces the path to strictly
   increasing anchor pairs, and applies a piecewise-linear warp to every candidate onset
-  (duration scaled by local slope). Pure/deterministic; candidate never mutated. Headline test:
-  a piecewise-tempo candidate (first half rushed, second half normal) that `GlobalScale` cannot
-  recover, `DtwWarp` does — all onsets match at tight tolerance. `--warp` implies alignment and
-  wins over `--align` if both are passed.
-  **Status**: Not Started.
+  (duration scaled by local slope). Pure/deterministic; candidate never mutated. Time-only by
+  design (never consults pitch), so pitch recovery stays judged independently — no circularity in
+  the metric. Headline test: an *in-lane* rubato candidate (each note displaced < half its gap)
+  that `GlobalScale` cannot recover, `DtwWarp` does — all onsets match at tight tolerance. `--warp`
+  implies alignment and wins over `--align` if both are passed.
+  **Status**: DONE (landed, e8dd656). On Death poly raw.mid vs reference, DTW beats global-scale
+  at every tolerance, more so as it tightens: TP 270→322 / F1 18.1%→21.6% (±250 ms), 175→224 /
+  11.7%→15.0% (±150 ms), 135→187 / 9.0%→12.5% (±100 ms). 4 TDD tests.
 
-- **4b** Decoder threshold tuning. Expose `--onset-threshold`/`--frame-threshold`/
-  `--min-note-len` on `transcribe --poly` (a TDD-tested `PolyDecoderOptions.FromArgs` parser;
-  defaults = Basic Pitch's stock 0.5/0.3/11, so behavior is unchanged unless tuned), then sweep
-  them on the real Death audio *against the DTW metric* and record the numbers. The path
-  over-generates (1887 vs ~1100 ref) so precision is the lever; raising thresholds trades recall
-  for precision. Honest-default rule: keep the Domain `NoteDecoderOptions.Default` a faithful
-  port; document the recommended flag values for dense polyphonic piano rather than overfitting
-  a global default to one piece.
-  **Status**: Not Started.
+- **4b** Decoder threshold tuning. `--onset-threshold`/`--frame-threshold`/`--min-note-len` on
+  `transcribe --poly` (TDD `PolyDecoderOptions.FromArgs`; defaults = Basic Pitch's stock
+  0.5/0.3/11, so behavior is unchanged unless tuned), swept on the real Death audio against the
+  DTW metric.
+  **Status**: DONE (landed). **Headline finding: thresholds are a *notation-cleanliness* knob,
+  not an *accuracy* knob.** F1 is pinned ~14–15% (±150 ms) / ~21–22% (±250 ms) across the whole
+  useful range — bounded by onset timing + pitch-exactness, not over-generation, so trimming false
+  positives barely moves it (raising thresholds trades recall for precision at ~constant F1;
+  pitch-class content recovery is already ~87%). What tuning buys is a readable score:
+  `--onset-threshold 0.6 --frame-threshold 0.4 --min-note-len 16` cuts the note count 1887 → 1188
+  (≈ the ~1100-note reference density) at essentially zero F1 cost (F1@250 21.6%→21.5%), higher
+  precision. Honest-default rule kept: the Domain `NoteDecoderOptions.Default` stays the faithful
+  stock port (max recall); the tuned values are *documented* (README) as the recommendation for
+  dense polyphonic piano, not baked into a global default overfit to one piece.
 
 - **4c** Key-signature-aware enharmonic spelling. `PitchSpeller.Spell(midi, fifths)`
   (Domain) — line-of-fifths nearest-to-tonic method: diatonic notes spell naturally, chromatics
