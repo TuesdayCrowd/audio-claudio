@@ -5,6 +5,7 @@ using AudioClaudio.Cli.Commands;
 using AudioClaudio.Cli.Composition;
 using AudioClaudio.Domain;
 using AudioClaudio.Domain.Evaluation;
+using AudioClaudio.Domain.Polyphony;
 using AudioClaudio.Domain.Spectral;
 using AudioClaudio.Infrastructure.Audio;
 using AudioClaudio.Infrastructure.LiveView;
@@ -48,12 +49,20 @@ switch (args[0])
                 TranscriptionResult polyResult = polyTx.Transcribe(polySource);
                 var polyWriter = new DryWetMidiWriter();
                 using (var raw = File.Create(Path.Combine(outDir, "raw.mid")))
-                    polyWriter.Write(polyResult.RawEvents, polyResult.Score.Tempo, raw);
-                using (var score = File.Create(Path.Combine(outDir, "score.mid")))
-                    polyWriter.Write(polyResult.Score, score);
+                    polyWriter.Write(polyResult.RawEvents, polyResult.Score.Tempo, raw); // honest un-quantized polyphony
+
+                // Stage 3: quantize into a polyphonic grand-staff score (chords + two staves), then
+                // emit both score.musicxml (grand staff) and a flattened polyphonic score.mid.
+                var polyRate = new SampleRate(BasicPitchModel.SampleRateHz);
+                var polyGrid = new QuantizationGrid(polyRate, polyResult.Score.Tempo, TimeSignature.FourFour, Subdivision.Sixteenth);
+                var chordWindow = new SampleDuration(polyRate.Hz / 20, polyRate); // ~50 ms: notes this close are one chord
+                var grandStaff = PolyphonicQuantizer.Quantize(polyResult.RawEvents, polyGrid, chordWindow);
                 using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
-                    new MusicXmlScoreWriter(noteNames).Write(polyResult.Score, mx);
-                Console.WriteLine($"Polyphonic transcription: {polyResult.RawEvents.Count} notes -> raw.mid, score.mid, score.musicxml");
+                    new GrandStaffMusicXmlWriter(noteNames).Write(grandStaff, mx);
+                var quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, polyGrid);
+                using (var score = File.Create(Path.Combine(outDir, "score.mid")))
+                    polyWriter.Write(quantized, polyResult.Score.Tempo, score);
+                Console.WriteLine($"Polyphonic transcription: {polyResult.RawEvents.Count} notes -> raw.mid; {quantized.Count} quantized -> score.mid + score.musicxml (grand staff, {grandStaff.Measures.Count} bars)");
                 File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
                 return 0;
             }

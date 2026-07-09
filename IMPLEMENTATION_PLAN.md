@@ -99,7 +99,12 @@ Sub-steps (each TDD + landed):
 **Success**: rendered MusicXML shows a grand staff with chords in both hands; every
 staff's measure ticks still sum to a full bar; `render score.mid` is polyphonic;
 all existing monophonic tests stay green.
-**Status**: IN PROGRESS.
+**Status**: DONE (landed). 3a–3c domain (chords/staves/quantizer) + 3d
+`GrandStaffMusicXmlWriter` + `GrandStaffFlattener` + 3e wiring. On Death: `--poly`
+now emits a grand-staff `score.musicxml` (2 staves, 149 bars, 632 chords, xmllint-clean,
+renders in Verovio as a real grand staff) and a polyphonic `score.mid` (max 8
+simultaneous). Monophonic path untouched (386 fast tests). Remaining polish (deferred to
+Phase-2 refinement): true independent inner voices, key signature, timing alignment (Stage 4).
 
 ## Stage 4: Accuracy iteration
 **Goal**: close the gap to the reference; every change justified by a metric delta.
