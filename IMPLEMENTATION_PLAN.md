@@ -32,7 +32,11 @@ CLI command. A reference MIDI derived from `Death.omr.musicxml`.
 **Success**: metric is deterministic, unit-tested (exact-match→F1=1; disjoint→0;
 tolerance boundary; octave error counted wrong); an honest baseline number for
 today's monophonic pipeline is recorded.
-**Status**: Not Started
+**Status**: DONE (landed) — `TranscriptionEvaluator`/`NoteSetEvaluation`/
+`NoteMatchOptions` (Domain.Evaluation, 7 tests) + `claudio evaluate <cand.mid>
+<ref.mid> [--onset-tolerance-ms]` (1 test). Reference MIDI derived from the OMR
+MusicXML lives OUTSIDE the repo (`…/Death-transcription/Death.reference.mid`) —
+the piece is copyrighted, so it is never committed.
 
 ## Stage 2: Polyphonic engine behind ITranscriber
 **Goal**: replace YIN's one-note-per-frame with true polyphony.
@@ -55,22 +59,59 @@ adapter is built.
     both pitches). **On Death: 49 → 1887 notes; onset-F1 0%→6.7% (±250 ms), tempo-scaled
     0.2%→21.2% (±300 ms); pitch-class content recovery ≈ 87%.** Stage 2 COMPLETE.
 
-## Stage 3: Polyphonic score building
-**Goal**: turn overlapping `NoteEvent`s into readable notation.
-**Deliverable**: chord grouping (near-simultaneous onsets → one chord),
-treble/bass split by pitch register, polyphonic quantization, and a
-`MusicXmlScoreWriter` path emitting `<chord>`, two `<staff>`s, and per-staff
-voices. Keeps the existing monophonic golden tests green.
-**Success**: rendered MusicXML shows a grand staff with chords in both hands;
-bar-conservation property still holds per staff.
-**Status**: Not Started
+## Stage 3: Polyphonic score building  ← CURRENT
+**Goal**: turn overlapping `NoteEvent`s into readable grand-staff notation.
+
+**Design decision — parallel types, monophonic path untouched.** The monophonic
+`Score`/`Measure`/`ScoreElement`/`Quantizer`/`MusicXmlScoreWriter` are single-voice
+by construction: `Measure` holds ONE ordered `ScoreElement` list, `ScoreElement`
+has ONE `Pitch?`, and `Quantizer` step 3 literally *drops* simultaneous notes
+("clip each note to the next onset; a note with no room is dropped"). Rather than
+risk their goldens + the closed-loop suite, add **parallel grand-staff types**;
+leave the monophonic ones exactly as-is.
+
+**Model = homophonic-per-staff** (a chord is a set of pitches sharing a quantized
+onset+duration; each staff is a sequence of chords). True independent inner voices
+(a held note under a moving line in the same hand) are deferred — this already
+captures the piece's two-hands-of-chords texture and maps cleanly to MusicXML.
+
+New Domain types (namespace `AudioClaudio.Domain.Polyphony`):
+- `Staff { Treble, Bass }`
+- `ChordElement(ElementKind Kind, IReadOnlyList<Pitch> Pitches, int Velocity, int LengthTicks, bool TiedToNext)`
+- `GrandStaffMeasure(IReadOnlyList<ChordElement> Treble, IReadOnlyList<ChordElement> Bass)`
+- `GrandStaffScore(Tempo, TimeSignature, Subdivision, IReadOnlyList<GrandStaffMeasure> Measures)`
+
+Sub-steps (each TDD + landed):
+- **3a** `ChordGrouper` — group `NoteEvent`s whose onsets fall within a window (~1
+  grid subdivision) into chords (shared onset, representative duration).
+- **3b** `StaffSplitter` — assign each note to Treble/Bass by pitch (split ~MIDI 60,
+  with a chord kept whole on the staff of its lowest/median note).
+- **3c** `PolyphonicQuantizer` — per staff: order chords, clip to next onset,
+  `grid.NearestStandardValueTicks`, gap-fill rests, bar-split (reuse
+  `QuantizationGrid`) → `GrandStaffScore`. Bar conservation holds per staff.
+- **3d** `GrandStaffMusicXmlWriter` (Infrastructure.MusicXml) — one part, `<staves>2`,
+  `<chord>` for multi-pitch, `<backup>` between the two staves, `<staff>1/2`. Golden +
+  per-staff bar-conservation tests. Keeps `MusicXmlScoreWriter` (mono) untouched.
+- **3e** Wire `transcribe --poly`: emit polyphonic `score.musicxml` (3d) and a
+  polyphonic `score.mid` (flatten the `GrandStaffScore` back to quantized
+  `NoteEvent`s and write via the existing `INoteEventWriter`).
+
+**Success**: rendered MusicXML shows a grand staff with chords in both hands; every
+staff's measure ticks still sum to a full bar; `render score.mid` is polyphonic;
+all existing monophonic tests stay green.
+**Status**: IN PROGRESS.
 
 ## Stage 4: Accuracy iteration
-**Goal**: close the gap to the reference.
-**Deliverable**: threshold tuning against the Stage-1 metric; key-signature-aware
-enharmonic spelling; onset/offset and min-duration tuning; optional regression
-fixture. Each change justified by a metric delta, not vibes.
-**Status**: Not Started
+**Goal**: close the gap to the reference; every change justified by a metric delta.
+- **4a** DTW time-alignment in the evaluator (or an `evaluate --align` mode): align
+  the candidate to the reference before matching so onset-F1 reflects *pitch
+  recovery*, not rubato/tempo drift (today the raw metric is timing-dominated). This
+  makes 4b measurable.
+- **4b** Decoder threshold tuning (`OnsetThreshold`/`FrameThreshold`/`MinNoteLen`)
+  swept against the aligned metric — current path over-generates (1887 vs 1100 ref),
+  so precision is the lever.
+- **4c** (optional) key-signature-aware enharmonic spelling; velocity/dynamics.
+**Status**: Not Started (4a may be pulled forward — it is how Stage-3 output gets scored).
 
 ## Stage 5: CLI + docs
 **Goal**: ship it.
