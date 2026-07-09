@@ -11,6 +11,7 @@ using AudioClaudio.Infrastructure.LiveView;
 using AudioClaudio.Infrastructure.Midi;
 using AudioClaudio.Infrastructure.MusicXml;
 using AudioClaudio.Infrastructure.Synthesis;
+using AudioClaudio.Infrastructure.Transcription;
 
 var rate = new SampleRate(44100);
 
@@ -35,6 +36,28 @@ switch (args[0])
                 : null;
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
             bool noteNames = Array.IndexOf(args, "--note-names") >= 0;
+            bool poly = Array.IndexOf(args, "--poly") >= 0;
+            if (poly)
+            {
+                // Polyphonic path (Basic Pitch). raw.mid is the honest many-note output; score.mid/
+                // score.musicxml are quantized with the (still monophonic) quantizer for now.
+                Directory.CreateDirectory(outDir);
+                string modelPath = ModelLocator.Resolve(TryReadOption(args, "--model"));
+                using var polySource = WavAudioSource.FromFile(args[1], new FrameParameters(1024, 256));
+                using var polyTx = new BasicPitchTranscriber(modelPath, tempo: tempo is { } bpm ? new Tempo(bpm) : null);
+                TranscriptionResult polyResult = polyTx.Transcribe(polySource);
+                var polyWriter = new DryWetMidiWriter();
+                using (var raw = File.Create(Path.Combine(outDir, "raw.mid")))
+                    polyWriter.Write(polyResult.RawEvents, polyResult.Score.Tempo, raw);
+                using (var score = File.Create(Path.Combine(outDir, "score.mid")))
+                    polyWriter.Write(polyResult.Score, score);
+                using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
+                    new MusicXmlScoreWriter(noteNames).Write(polyResult.Score, mx);
+                Console.WriteLine($"Polyphonic transcription: {polyResult.RawEvents.Count} notes -> raw.mid, score.mid, score.musicxml");
+                File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
+                return 0;
+            }
+
             TranscribeCommand.Run(args[1], tempo, outDir, noteNames);
             File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
             return 0;
@@ -251,7 +274,7 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names]   -> raw.mid, score.mid, score.musicxml; omit --tempo to auto-estimate it from your playing");
+    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--poly [--model <path>]]   -> raw.mid, score.mid, score.musicxml; omit --tempo to auto-estimate it; --poly uses the polyphonic Basic Pitch engine (many simultaneous notes)");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>]  -> note-level precision/recall/F1 vs a reference");

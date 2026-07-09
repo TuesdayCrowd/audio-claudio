@@ -44,7 +44,16 @@ Model committed under `fixtures/models/` with its Apache-2.0 license.
 dramatically higher than the monophonic baseline; determinism (same WAV → same
 notes) holds; a spike proves ONNX inference runs on this machine before the full
 adapter is built.
-**Status**: Not Started
+**Status**: In Progress —
+  - 2a DONE (landed): `BasicPitchModel` ONNX runner; .NET ONNX Runtime de-risked
+    on osx-arm64; model contract locked by test (440 Hz → A4).
+  - 2b DONE (landed): `BasicPitchNoteDecoder` — faithful port of
+    `output_to_notes_polyphonic` (infer-onsets, peak-pick, energy-walk, melodia), 5 tests.
+  - 2c DONE (landed): `AudioResampler` (band-limited Lanczos), FFT-verified pitch preservation.
+  - 2d DONE (landed): `BasicPitchTranscriber : ITranscriber` (resample → Basic Pitch windowing
+    → decode → frame→sample), CLI `transcribe --poly`. End-to-end polyphony proven (chord →
+    both pitches). **On Death: 49 → 1887 notes; onset-F1 0%→6.7% (±250 ms), tempo-scaled
+    0.2%→21.2% (±300 ms); pitch-class content recovery ≈ 87%.** Stage 2 COMPLETE.
 
 ## Stage 3: Polyphonic score building
 **Goal**: turn overlapping `NoteEvent`s into readable notation.
