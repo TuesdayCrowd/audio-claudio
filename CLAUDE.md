@@ -675,8 +675,12 @@ value:
    synthesize→transcribe oracle has no honest ground truth for a real, copyrighted
    performance. Accuracy is instead measured by a new `evaluate` harness (Stage 1)
    scoring against a real reference recording's note-set; that is how the honest
-   ~15–22% F1 ceiling above was established. A closed-loop-style correctness
-   guarantee for polyphony remains open.
+   ~15–22% F1 ceiling above was established. A polyphonic closed-loop **diagnostic**
+   (`PolyphonicClosedLoop`, test project) now measures the engine's *intrinsic*
+   fidelity at **~80% note-level F1** on clean synthesized chords — showing that
+   ~15–22% real-world figure is dominated by rubato + OMR-reference error, not the
+   engine (see `DECISIONS.md`). A strict exact-recovery *guarantee* like the
+   monophonic loop remains open.
 2. **Tempo estimation — DONE (shipped in `v0.1.2`).** Not the histogram/
    autocorrelation approach sketched here: `TempoEstimator` uses the median
    inter-onset interval (a grid-fit search was tried first and rejected — it

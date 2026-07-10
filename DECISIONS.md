@@ -1132,3 +1132,32 @@ that `--mono` is the guaranteed-correct path and that the closed-loop claim is a
 Documenting the trade-off is the price of making the choice honestly. Shipped as **v0.2.0** (a minor bump:
 a whole new engine, the `evaluate` command, grand-staff MusicXML, and the alignment/threshold/key tooling
 — substantially more than a patch).
+
+### Polyphonic closed-loop fidelity diagnostic — the engine is ~80% F1 intrinsically; the real-world gap is timing + reference, not the model
+
+**Finding, measured.** A polyphonic closed loop (`PolyphonicClosedLoop`/`PolyphonicClosedLoopGen`, test
+project) — generate random chord scores → synthesize with the MeltySynth oracle → transcribe with Basic
+Pitch → score note-level F1 against the score — isolates the *engine's* fidelity from the confounds that
+depress the real-world "Death" number (an OMR-derived reference with its own errors, and a *performance's*
+rubato vs an engraved *score*). On 8 clean synthetic cases (114 reference notes, mid-range MIDI 40–72 so
+this SoundFont actually sustains them): **note-level F1 ≈ 80% (recall ~90%, precision ~73%) at ±50–150 ms**,
+versus ~15–22% on real Death audio.
+
+**What it decides.** The engine is **not** the bottleneck — Basic Pitch recovers ~90% of notes with tight
+onsets on clean audio. The ~60-point real-world gap is (a) performance-vs-score timing (rubato) and (b) OMR
+reference error, **not** pitch/onset fidelity. So effort to raise real-world fidelity belongs in
+**timing/alignment** and **precision (over-generation)**, and in a **cleaner reference** — *not* in swapping
+the model (a piano-specific model is deprioritized accordingly). Two sub-findings: onset timing on clean
+audio is already tight (F1 moves only ~1.5 pts from ±50 → ±150 ms, so the real-world timing loss is rubato,
+not the engine's onset precision); and precision is ~73% even on clean audio (real over-generation,
+consistent with the bass-ghost register skew — the targeted-precision lever, not global thresholds per 4b).
+
+**Caveat recorded: `OnsetAlignment.GlobalScale` can HURT an already-aligned candidate.** On this clean
+corpus, applying it collapsed F1 from ~81% to ~16%: with no tempo drift to remove and a few outlier false
+positives, rescaling the candidate's onset span onto the reference's distorts the (already good) match.
+Alignment is for genuinely *drifted* audio (real performances), not clean output — it should arguably be
+gated to apply only when it improves the score, or made robust to outlier onsets. Left documented.
+
+**Not a pass/fail property.** Unlike the monophonic Step-9 closed loop (which demands exact recovery), this
+is a *diagnostic* reporting F1; its only assertion is a regression floor (synthetic F1 ≥ 55%) well below the
+observed ~80%, guarding an engine/decoder regression, not specifying the ceiling.
