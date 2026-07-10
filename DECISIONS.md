@@ -1227,3 +1227,28 @@ against it and both came up empty — recorded here so they are not re-attempted
 they draw on the same saturated model. The only lever that moves the ceiling is a stronger, piano-specific
 transcriber (a third `ITranscriber` adapter, behind the same port); the `evaluate-audio` harness remains to
 measure any such swap honestly.
+
+### Transkun evaluated, not integrated — and the sustain-pedal rendering fix it surfaced
+
+Chose **Transkun** (Yujia-Yan, MIT, 0.984 MAESTRO note F1) as the piano-specific model to try. Before
+building the large adapter (its decode is a custom Neural Semi-CRF — no ONNX; would need a transformer-only
+export + a C# port of the semi-CRF Viterbi + a mel front-end), measured it *directly via its CLI* on Death
+(measure-first): render its MIDI, `evaluate-audio` vs the original.
+
+**Finding: Transkun does NOT beat Basic Pitch on Death.** Fairly measured (pedal honored, below), Transkun =
+**77.5%** chroma vs Basic Pitch's **78.6%** — essentially tied, marginally behind. Its 0.984 MAESTRO score
+does not transfer: Transkun is specialized on MAESTRO (pristine studio Disklavier), Death is out-of-
+distribution, and Basic Pitch's generality is more robust here. So a multi-day Transkun integration would
+not improve the sound metric — **not integrated.** (Transkun *is* musically better for NOTATION — real
+durations, pedal, velocity, fewer ghosts — so if the goal shifts to score quality it is worth revisiting;
+the harness makes that cheap to re-check.)
+
+**The experiment surfaced a real bug, now fixed: `render` ignored the sustain pedal.** Transkun correctly
+emits short notes + CC64 pedal; our note→synth path has no pedal concept, so it played Transkun *dry* — an
+unfair 71.2% (vs the fair 77.5%). `SustainPedal.Flatten` (Domain) folds each CC64 down-span into the
+durations of the notes it sustains; `MidiFileReader` reads CC64 and applies it. Pure/TDD'd; a no-op for our
+own pedal-less MIDIs (Basic Pitch stays 78.6%). Any pedalled MIDI now renders correctly.
+
+**Meta-lesson: measure-first paid off again.** ~30 min running Transkun's CLI saved a multi-day
+ONNX/semi-CRF integration that would not have moved the number — and yielded a genuine pedal-rendering fix
+as a byproduct.

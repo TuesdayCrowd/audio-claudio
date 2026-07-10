@@ -48,7 +48,18 @@ public static class MidiFileReader
                 (int)note.Velocity));
         }
 
-        return new MidiReadResult(events, new Tempo(bpm));
+        // Fold the sustain pedal (CC64) into note durations, so a pedalled transcription doesn't play
+        // dry through the pedal-less note→synth path (our own writer emits no CC64, so this is a no-op
+        // for our MIDIs). Value ≥ 64 = pedal down.
+        var pedalChanges = midi.GetTimedEvents()
+            .Where(te => te.Event is ControlChangeEvent cc && (byte)cc.ControlNumber == 64)
+            .OrderBy(te => te.Time)
+            .Select(te => new SustainPedal.Change(
+                TicksToSamples(te.Time, ppqn, bpm, rate),
+                (byte)((ControlChangeEvent)te.Event).ControlValue >= 64))
+            .ToList();
+
+        return new MidiReadResult(SustainPedal.Flatten(events, pedalChanges), new Tempo(bpm));
     }
 
     public static MidiReadResult ReadFile(string path, SampleRate rate)

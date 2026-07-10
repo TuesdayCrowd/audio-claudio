@@ -279,7 +279,10 @@ dotnet run --project src/AudioClaudio.Cli -- evaluate out/score.mid reference.mi
 (`fixtures/soundfont/GeneralUser-GS.sf2`) automatically when run from inside
 the repository; pass `--soundfont <path>` to use a different one or to run
 outside the repo tree. `transcribe` never touches a SoundFont at all — it
-only detects notes, it does not synthesize them.
+only detects notes, it does not synthesize them. Both `play` and `render`
+honor the MIDI **sustain pedal** (CC64): a transcription that models the pedal
+as short notes plus a held pedal (as a good piano transcriber does) rings as
+intended, rather than playing dry.
 
 ### `listen` — live microphone capture
 

@@ -433,6 +433,12 @@ The single writer type is **`DryWetMidiWriter`** (never `MidiWriter` /
 `DryWetMidiScoreWriter`). To write to a path, callers open a `FileStream`:
 `using var fs = File.Create(path); new DryWetMidiWriter().Write(score, fs);`.
 
+`MidiFileReader.Read` folds the **sustain pedal** into note durations via
+`AudioClaudio.Domain.SustainPedal.Flatten(notes, IReadOnlyList<SustainPedal.Change>)` — a pure
+Domain function that extends a note released while the pedal (CC64 ≥ 64) is down out to the pedal's
+release, so a pedalled MIDI does not synthesize dry through the pedal-less note→synth path. A no-op
+when there are no CC64 events (our own writer emits none).
+
 ---
 
 ## 8. Synthesis & playback — **definer: Step 8**
