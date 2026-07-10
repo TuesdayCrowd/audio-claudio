@@ -1204,3 +1204,26 @@ moment-to-moment notes: a strong, honest accuracy number, free of the reference'
 settings edge out precision-tuned ones here (78.6% vs 77.3%), so for "sounds like the original" the fuller
 output wins; the harmonic-ghost filter (a precision fix for *notation* cleanliness) is neutral-to-slightly-
 negative on this metric and stays default-on for the score, not for this.
+
+### Recall + contour: an empirically-exhausted lever — Basic Pitch is at its ceiling on Death
+
+With `evaluate-audio` giving a reference-free chroma metric (78.6% on Death), two recall ideas were tested
+against it and both came up empty — recorded here so they are not re-attempted:
+
+- **Lowering the decoder onset threshold** (0.5 → 0.15) grows the note count 5× (1704 → 8117), yet chroma
+  stays flat (78.1–79.5%). The extra detections are roughly half noise; the +0.9% at the extreme is
+  illusory — those ~6 000 junk notes would make the reproduction *sound* cluttered, which chroma (measuring
+  dominant pitch classes) barely penalizes. Recall-via-thresholds is a dead end for sound quality.
+- **Folding Basic Pitch's contour posteriorgram** (`:0`, 3 bins/semitone) into the note activation was
+  implemented (a weighted max-pool) and swept, on the reasonable hypothesis that the note head — a *learned*
+  transform of the contour, not a simple pool — might discard recoverable note evidence. It does not: at
+  sensible weights (≤ 0.5) it is a literal no-op (the note activation already dominates the pooled contour
+  everywhere), and over-weighting only injects noise (weight 2.0: notes 1704 → 3246, chroma 78.6% → 78.2%).
+  The scaffolding was reverted (YAGNI — a knob that changes nothing does not earn its place); this note is
+  the durable artifact.
+
+**Conclusion.** On this dense, pedaled, real recording, Basic Pitch is at its intrinsic ceiling (~79% chroma;
+~80% note F1 on clean audio per the closed-loop diagnostic). Decoder tuning and the contour cannot break it —
+they draw on the same saturated model. The only lever that moves the ceiling is a stronger, piano-specific
+transcriber (a third `ITranscriber` adapter, behind the same port); the `evaluate-audio` harness remains to
+measure any such swap honestly.
