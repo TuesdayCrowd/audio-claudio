@@ -321,11 +321,19 @@ public static class SubdivisionExtensions
 
 public readonly record struct QuantizationGrid
 {
+    public SampleRate SampleRate { get; }
+    public Tempo Tempo { get; }
+    public TimeSignature TimeSignature { get; }
+    public Subdivision Subdivision { get; }
+
     public QuantizationGrid(SampleRate sampleRate, Tempo tempo, TimeSignature timeSignature, Subdivision subdivision);
     public int TicksPerBeat { get; }
     public int TicksPerMeasure { get; }
     public double SamplesPerBeat { get; }
-    // SamplesToTick(long samples) rounds half away from zero (deterministic)
+    public double SamplesPerTick { get; }          // SamplesPerBeat / TicksPerBeat; may be fractional
+    public long SamplesToTick(long samples);        // rounds half away from zero (deterministic)
+    public IReadOnlyList<int> StandardValueTicks { get; }    // whole..sixteenth (+ dotted) representable on this grid, ascending
+    public int NearestStandardValueTicks(double rawTicks);   // ties break toward the shorter value; never below the shortest standard value
 }
 
 public enum ElementKind { Note, Rest }
@@ -529,6 +537,264 @@ Reads `score.TimeSignature.BeatsPerMeasure/BeatUnit` and each
 `Measure.Elements` (`ScoreElement.Kind`, `Pitch`, `LengthTicks`, `TiedToNext`).
 The MuseScore load check (R11.2) is recorded in **`DECISIONS.md`**, not README
 (Step 12 owns the README).
+
+---
+
+## 12. Phase 2 — polyphony (Stages 1–5) — behind the same `ITranscriber` port
+
+> Landed on `main` across a Phase-2 effort tracked in `IMPLEMENTATION_PLAN.md` (deleted once its
+> Stage 5 — CLI + docs — ships; this section is where these signatures survive that deletion). Every
+> type below is **additive**: the monophonic `Score`/`Measure`/`ScoreElement`/`Quantizer`/
+> `MusicXmlScoreWriter`/`TranscriptionPipeline` contract in §§3–11 is untouched. Polyphony is reached
+> through a second `ITranscriber` adapter (`BasicPitchTranscriber`) — the **default** `transcribe`
+> engine as of v0.2.0, `--mono` opting back to the monophonic path — and the new `evaluate` command.
+
+### 12.1 Evaluation — **definer: Stage 1** (harness) **+ DTW** (alignment) (`AudioClaudio.Domain.Evaluation`)
+
+```csharp
+public sealed record NoteMatchOptions(double OnsetToleranceSeconds)
+{
+    public static NoteMatchOptions Default { get; } = new(0.05);   // ±50 ms, exact pitch — standard MIR tolerance
+}
+
+public readonly record struct NoteSetEvaluation(
+    int TruePositives, int FalsePositives, int FalseNegatives, int ReferenceCount, int CandidateCount)
+{
+    public double Precision { get; }   // TP / CandidateCount
+    public double Recall { get; }      // TP / ReferenceCount
+    public double F1 { get; }          // harmonic mean; 0 when both are 0
+}
+
+public static class TranscriptionEvaluator
+{
+    public static NoteSetEvaluation Evaluate(
+        IReadOnlyList<NoteEvent> candidate, IReadOnlyList<NoteEvent> reference, NoteMatchOptions options);
+}
+
+public static class OnsetAlignment
+{
+    public static IReadOnlyList<NoteEvent> GlobalScale(IReadOnlyList<NoteEvent> candidate, IReadOnlyList<NoteEvent> reference);
+    public static IReadOnlyList<NoteEvent> DtwWarp(IReadOnlyList<NoteEvent> candidate, IReadOnlyList<NoteEvent> reference);
+}
+```
+
+Matching (`Evaluate`) is one-to-one and deterministic: exact MIDI pitch (an octave error is a miss) +
+onset within `OnsetToleranceSeconds`; references walked in ascending `(onset-seconds, pitch, index)`
+order, each greedily claiming its nearest unclaimed equal-pitch candidate (a deliberate greedy, not
+optimal-bipartite, matching — see `DECISIONS.md`). `OnsetAlignment` re-times a *candidate* onto a
+*reference*'s time base before scoring, using onset times only (never pitch), so F1 reflects pitch
+recovery not tempo drift; both are pure, never mutate input, and return the candidate unchanged when
+empty. `GlobalScale` = one linear span rescale (gross tempo only); `DtwWarp` = monotonic DP over
+onset-time distance → piecewise-linear warp (cancels *local* rubato; no-ops if either side has <2
+distinct onsets). Wired to `claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50]
+[--align|--warp]` (§12.9); `--warp` wins over `--align`.
+
+### 12.2 Polyphonic note decoding — **definer: Stage 2b** (`AudioClaudio.Domain.Polyphony`)
+
+```csharp
+public sealed record BasicPitchNote(int StartFrame, int EndFrame, int MidiPitch, double Amplitude);
+// frame units (caller converts to samples); MidiPitch = 21 + pitch-bin index; Amplitude ≈ mean activation 0..1
+
+public sealed record NoteDecoderOptions(
+    double OnsetThreshold = 0.5, double FrameThreshold = 0.3, int MinNoteLenFrames = 11,
+    bool InferOnsets = true, bool MelodiaTrick = true, int EnergyTolerance = 11)
+{
+    public static NoteDecoderOptions Default { get; } = new();   // Basic Pitch's stock thresholds
+}
+
+public static class BasicPitchNoteDecoder
+{
+    public static IReadOnlyList<BasicPitchNote> Decode(float[,] frames, float[,] onsets, NoteDecoderOptions options);
+}
+```
+
+`frames`/`onsets` are `[frame, pitchBin]` posteriorgrams (88 bins). `Decode` is a pure, deterministic
+port of Basic Pitch's `output_to_notes_polyphonic` (Apache-2.0): peak-pick onsets, walk each forward to
+an energy drop (consuming the pitch band + neighbours so overtones don't spawn duplicates), discard
+sub-`MinNoteLenFrames` notes, then (optionally) the melodia sweep for onset-less sustained notes.
+
+### 12.3 Resampling — **definer: Stage 2c** (`AudioClaudio.Domain`, `AudioResampler.cs`)
+
+```csharp
+public static class AudioResampler
+{
+    public static float[] Resample(float[] input, int inRate, int outRate, int lobes = 4);
+}
+```
+
+Band-limited Lanczos (windowed-sinc); on downsampling the kernel widens to the *output* Nyquist to
+prevent aliasing; weights normalised so a constant passes unchanged. Pure, buffer-level only (no
+`SamplePosition`/`SampleRate` carried). Brings 44.1 kHz audio to the model's 22 050 Hz.
+
+### 12.4 The polyphonic transcriber — **definer: Stage 2a/2d** (`AudioClaudio.Infrastructure.Transcription`)
+
+```csharp
+public sealed class BasicPitchModel : IDisposable
+{
+    public const int SampleRateHz = 22050;
+    public const int WindowSamples = 43844;      // ~1.99 s per window
+    public const int FramesPerWindow = 172;
+    public const int PitchBins = 88;             // the 88 piano keys
+    public const int ContourBins = 264;          // 88 * 3 bins/semitone
+
+    public BasicPitchModel(string modelPath);
+    public BasicPitchWindowOutput Run(ReadOnlySpan<float> window);   // window.Length must == WindowSamples
+    public void Dispose();
+}
+
+public sealed record BasicPitchWindowOutput(float[,] NoteFrames, float[,] Onsets, float[,] Contours);
+
+public sealed class BasicPitchTranscriber : ITranscriber, IDisposable
+{
+    public BasicPitchTranscriber(
+        string modelPath, NoteDecoderOptions? decoderOptions = null,    // default NoteDecoderOptions.Default
+        Tempo? tempo = null,                                            // default new Tempo(120)
+        TimeSignature? timeSignature = null, Subdivision subdivision = Subdivision.Sixteenth);
+    public TranscriptionResult Transcribe(IAudioSource source);   // ITranscriber
+    public void Dispose();
+}
+```
+
+`Transcribe` reconstructs the mono signal (`Framing.ReconstructMono`), resamples to 22 050 Hz (§12.3),
+runs the model over overlapping front-padded windows (stitched by trimming the 30-frame overlap),
+decodes (§12.2), maps frames→`SamplePosition` at 22 050 Hz, and returns events sorted by `(onset,
+pitch)`. **`TranscriptionResult.RawEvents` is the honest many-note output; this class's own
+`TranscriptionResult.Score` is still quantized by the monophonic `Quantizer`** — the real grand-staff
+score is built by the *caller* (CLI, §12.9) via `PolyphonicQuantizer` + `GrandStaffMusicXmlWriter`/
+`GrandStaffFlattener`. This is the **default** `transcribe` engine (v0.2.0; `--mono` opts out). CPU
+inference is deterministic per build but not bit-identical across CPU architectures (SIMD), same as §8.
+
+**Dependency-rule note:** `Microsoft.ML.OnnxRuntime` is referenced only by
+`AudioClaudio.Infrastructure.csproj` (zero `PackageReference`s in `AudioClaudio.Domain.csproj`).
+`BasicPitchNoteDecoder`/`NoteDecoderOptions`/`BasicPitchNote` (§12.2), `PitchSpeller` (§12.8), and
+`AudioResampler` (§12.3) are pure Domain/BCL; only `BasicPitchModel`/`BasicPitchTranscriber` touch ONNX,
+through the existing `ITranscriber` port — no new inward-pointing import.
+
+### 12.5 Grand-staff score building — **definer: Stage 3a–3c** (`AudioClaudio.Domain.Polyphony`)
+
+> **Parallel types, monophonic path untouched** (see `DECISIONS.md`). Model = **homophonic-per-staff**:
+> a chord is a set of pitches sharing a quantized onset+duration; each staff is a sequence of chords.
+
+```csharp
+public enum Staff { Treble, Bass }
+
+public sealed record Chord(SamplePosition Onset, IReadOnlyList<Pitch> Pitches, SampleDuration Duration, int Velocity);
+
+public static class ChordGrouper
+{
+    public static IReadOnlyList<Chord> Group(IReadOnlyList<NoteEvent> events, SampleDuration window);
+}
+
+public static class StaffSplitter
+{
+    public const int DefaultSplitMidi = 60;   // middle C: this note and above → treble, below → bass
+    public static (Chord? Treble, Chord? Bass) Split(Chord chord, int splitMidi = DefaultSplitMidi);
+}
+
+public readonly record struct ChordElement(
+    ElementKind Kind, IReadOnlyList<Pitch> Pitches, int Velocity, int LengthTicks, bool TiedToNext)
+{
+    public static ChordElement Note(IReadOnlyList<Pitch> pitches, int velocity, int lengthTicks, bool tiedToNext = false);
+    public static ChordElement Rest(int lengthTicks);
+}
+
+public sealed record GrandStaffMeasure(IReadOnlyList<ChordElement> Treble, IReadOnlyList<ChordElement> Bass);
+
+public sealed record GrandStaffScore(
+    Tempo Tempo, TimeSignature TimeSignature, Subdivision Subdivision, IReadOnlyList<GrandStaffMeasure> Measures);
+
+public static class PolyphonicQuantizer
+{
+    public static GrandStaffScore Quantize(
+        IReadOnlyList<NoteEvent> events, QuantizationGrid grid, SampleDuration chordWindow,
+        int splitMidi = StaffSplitter.DefaultSplitMidi);
+}
+```
+
+`ChordGrouper.Group` groups notes within `window` of a chord's **anchor** (its earliest note, not
+chained), keeping one representative per pitch; the `Chord`'s `Duration`/`Velocity` are the max across
+its pitches. `ChordElement` reuses the existing `ElementKind` enum (§6) and the same structural-tie
+convention as `ScoreElement`. `GrandStaffScore` mirrors `Score`'s field order. `PolyphonicQuantizer.Quantize`:
+group → split each chord → lay each staff independently (snap via `grid.SamplesToTick`/
+`NearestStandardValueTicks`, clip to next onset, gap-fill rests, bar-split), both staves padded to the
+same measure count. Pure/deterministic; throws `ArgumentException` on a sample-rate mismatch.
+
+### 12.6 Grand-staff MusicXML — **definer: Stage 3d** (`AudioClaudio.Infrastructure.MusicXml`)
+
+```csharp
+public sealed class GrandStaffMusicXmlWriter
+{
+    public GrandStaffMusicXmlWriter(bool includeNoteNames = false, string? workTitle = null, int fifths = 0);
+    public void Write(GrandStaffScore score, Stream destination);      // UTF-8, no BOM
+    public string WriteToString(GrandStaffScore score);                 // MusicXML 4.0, LF newlines
+}
+```
+
+One piano `<part>`, `<staves>2</staves>` (treble = voice 1/staff 1, bass = voice 2/staff 2); chord
+pitches are sibling `<note>`s with `<chord/>`; a `<backup>` rewinds between staves; non-standard/tied
+lengths spell as a tied run of standard values. `fifths` drives both the `<fifths>` element and every
+pitch's spelling via `PitchSpeller.Spell` (§12.8). Deliberately does **not** reuse the monophonic
+`MusicXmlScoreWriter` (§11), so that writer's byte-exact golden cannot be disturbed. Covered by
+structural + bar-conservation + key-spelling tests (no byte-exact grand-staff golden — see `DECISIONS.md`).
+
+### 12.7 Flattening back to `NoteEvent` — **definer: Stage 3e** (`AudioClaudio.Domain.Polyphony`)
+
+```csharp
+public static class GrandStaffFlattener
+{
+    public static IReadOnlyList<NoteEvent> ToNoteEvents(GrandStaffScore score, QuantizationGrid grid);
+}
+```
+
+Merges tied runs into one `NoteEvent` per pitch, converts ticks→samples via `grid.SamplesPerTick`,
+sorts by `(onset, pitch)`. Lets the existing §7 `INoteEventWriter` write a polyphonic `score.mid`.
+
+### 12.8 Enharmonic spelling — **definer: Stage 4c** (`AudioClaudio.Domain`, `PitchSpeller.cs`)
+
+```csharp
+public static class PitchSpeller
+{
+    public static (string Step, int Alter, int Octave) Spell(int midiNumber, int fifths);
+}
+```
+
+`fifths`: sharps positive, flats negative (A♭ major = −4). Line-of-fifths, nearest-to-key-centre:
+diatonic natural, chromatics in the key's accidental direction, ties → fewer accidentals. Pure,
+deterministic. Consumed by `GrandStaffMusicXmlWriter` (§12.6).
+
+### 12.9 CLI wiring — **definer: Stage 1/4b/5** (`AudioClaudio.Cli`)
+
+```csharp
+public static class PolyDecoderOptions          // Cli.Commands
+{
+    public static NoteDecoderOptions FromArgs(string[] args);
+}
+
+public enum TranscribeMode { Monophonic, Polyphonic }   // Cli.Commands
+public static class TranscribeModeResolver
+{
+    public static TranscribeMode Resolve(string[] args);   // --mono → Monophonic (wins); else Polyphonic (default)
+}
+
+public static class EvaluateCommand
+{
+    public static NoteSetEvaluation Run(
+        IReadOnlyList<NoteEvent> candidate, IReadOnlyList<NoteEvent> reference,
+        NoteMatchOptions options, Action<string> print);
+}
+```
+
+`PolyDecoderOptions.FromArgs` reads `--onset-threshold`/`--frame-threshold`/`--min-note-len`, each
+defaulting to `NoteDecoderOptions.Default` (Stage 4b's honest-default rule). `transcribe` runs the
+polyphonic path by **default** (v0.2.0); `TranscribeModeResolver.Resolve` selects it unless `--mono` is
+passed, in which case `Program.cs` calls the monophonic `TranscribeCommand.Run` instead. The polyphonic
+branch (wired directly in `Program.cs`, not `TranscribeCommand`) resolves the model via
+`ModelLocator.Resolve` (mirrors §8's `SoundFontLocator`), constructs `BasicPitchTranscriber`, writes
+`raw.mid` from `RawEvents`, then quantizes `RawEvents` through `PolyphonicQuantizer` into a
+`GrandStaffScore` and writes `score.musicxml` (`GrandStaffMusicXmlWriter`) + `score.mid`
+(`GrandStaffFlattener` → `DryWetMidiWriter`). `--key` is a **declared** key signature (like `--tempo`,
+R6.3), never estimated. `claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms]
+[--align|--warp]` is wired alongside `render`/`play`; both MIDIs read via `MidiFileReader` (§7).
 
 ---
 

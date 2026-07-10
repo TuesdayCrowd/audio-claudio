@@ -1,21 +1,25 @@
 # Audio Claudio
 
-*Audiō Claudiō* — "I hear, by means of Claude." A real-time, monophonic piano
-transcriber in C# / .NET 10 (LTS), built in open collaboration with Claude
-Code. Audio comes in from a microphone or a WAV file; note events come out;
-notation is emitted as MusicXML; and the transcribed piece can be played back
-through a synthesized piano. Public domain (`UNLICENSE`).
+*Audiō Claudiō* — "I hear, by means of Claude." A real-time piano transcriber
+in C# / .NET 10 (LTS), built in open collaboration with Claude Code. Audio
+comes in from a microphone or a WAV file; note events come out; notation is
+emitted as MusicXML; and the transcribed piece can be played back through a
+synthesized piano. Two engines share one pipeline: a **monophonic** core (YIN)
+that carries the closed-loop correctness proof below, and an opt-in
+**polyphonic** engine (Basic Pitch) for chords and two hands. Public domain
+(`UNLICENSE`).
 
 ## What it is
 
-Play a single melody line — into a microphone, or as a WAV file — and Audio
-Claudio tells you which notes were played, when they started, and how long
-they lasted, then writes the result out as MIDI and as sheet music
-(MusicXML). It listens to one note at a time (see [Limitations](#limitations)
-below); it detects each note's pitch and attack from the raw audio, snaps the
-timing to a tempo — declared by you, or auto-estimated from your playing if
-you don't pass one — and can sing the transcription back to you through a
-synthesized piano.
+Play a melody line — into a microphone, or as a WAV file — and Audio Claudio
+tells you which notes were played, when they started, and how long they
+lasted, then writes the result out as MIDI and as sheet music (MusicXML). Its
+monophonic core listens to one note at a time; an opt-in polyphonic engine
+(`--poly`, the default for `transcribe` as of v0.2.0) recovers chords and two
+hands at once (see [Limitations](#limitations) below). It detects each note's
+pitch and attack from the raw audio, snaps the timing to a tempo — declared by
+you, or auto-estimated from your playing if you don't pass one — and can sing
+the transcription back to you through a synthesized piano.
 
 It is a small, honest transcriber. Its correctness claim is not asserted — it
 is *earned*, by the closed-loop test described below.
@@ -123,14 +127,15 @@ dotnet test                        # full suite: unit + property + the closed lo
 dotnet test --filter Category=Fast # skip the slow closed-loop properties
 ```
 
-Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has four
+Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has five
 commands:
 
 ```bash
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--poly [--model <path>] [--key -4] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]]  # -> raw.mid, score.mid, score.musicxml; --tempo auto-estimated if omitted; --poly uses the polyphonic Basic Pitch engine (--key spells accidentals, thresholds tune note density)
+claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]  # -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default, --mono for the monophonic YIN pipeline (which auto-estimates tempo when --tempo is omitted); --key spells accidentals, the thresholds tune note density
 claudio listen [--tempo 100] [--out-dir .] [--view] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted
 claudio play <file.mid> [--soundfont <path>]                                           # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>]                               # deterministically render a MIDI file to WAV
+claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align|--warp]  # note-level precision/recall/F1 vs a reference; --align/--warp remove tempo drift/rubato before scoring
 ```
 
 ### Options reference
@@ -144,21 +149,21 @@ a bare `--flag` is a boolean switch.
 | Option | Default | Effect |
 |---|---|---|
 | `<in.wav>` | *(required)* | 16/24-bit PCM WAV, mono or multichannel (downmixed to mono). |
-| `--tempo <bpm>` | auto-estimate | Grid tempo. Omit to estimate it from the notes' onset spacing (see [Limitations](#limitations)). |
+| `--mono` | off (polyphonic) | Use the **monophonic** YIN pipeline (one note at a time) — the closed-loop-proven path — instead of the default polyphonic engine. Auto-estimates tempo when `--tempo` is omitted. |
+| `--tempo <bpm>` | 120 (poly) / auto (`--mono`) | Grid tempo. The polyphonic default uses 120 BPM unless set; `--mono` estimates it from the notes' onset spacing when omitted (see [Limitations](#limitations)). |
 | `--out-dir <dir>` | `.` | Where `raw.mid`, `score.mid`, `score.musicxml`, and `log.txt` are written. Created if absent. |
 | `--note-names` | off | Print each note's scientific-pitch name (e.g. `C4`, `F#5`) as a lyric beneath it in `score.musicxml`. |
-| `--poly` | off | Use the **polyphonic** Basic Pitch engine (many simultaneous notes) instead of the default monophonic YIN pipeline. See the note below — the polyphony lands in `raw.mid`; `score.mid`/`score.musicxml` are still monophonic for now. Does not auto-estimate tempo (uses `--tempo`, else 120 BPM). |
-| `--model <path>` | committed model | With `--poly`, use a different Basic Pitch `.onnx` model. Default is the committed `fixtures/models/basic-pitch-nmp.onnx`, resolved relative to the repo. |
-| `--key <fifths>` | `0` (C major) | With `--poly`, the key signature as a count of sharps (positive) or flats (negative) — `-4` = A♭ major, `2` = D major. Sets `score.musicxml`'s `<key>` and spells every accidental to match (A♭ major → E♭/A♭/B♭, not D#/G#/A#). |
-| `--onset-threshold <v>` | `0.5` | With `--poly`, minimum onset activation to *start* a note. Raise it for fewer, more-confident note starts. See the tuning note below. |
-| `--frame-threshold <v>` | `0.3` | With `--poly`, minimum sustained activation to *keep* a note. The dominant density lever — raising it most reduces the note count. |
-| `--min-note-len <frames>` | `11` | With `--poly`, the flicker floor: notes shorter than this many frames (~128 ms at 11) are discarded. Raise it to shed short spurious notes. |
+| `--model <path>` | committed model | The polyphonic engine's Basic Pitch `.onnx` model. Default is the committed `fixtures/models/basic-pitch-nmp.onnx`, resolved relative to the repo. Ignored by `--mono`. |
+| `--key <fifths>` | `0` (C major) | The key signature as a count of sharps (positive) or flats (negative) — `-4` = A♭ major, `2` = D major. Sets `score.musicxml`'s `<key>` and spells every accidental to match (A♭ major → E♭/A♭/B♭, not D#/G#/A#). Ignored by `--mono`. |
+| `--onset-threshold <v>` | `0.5` | Polyphonic decoder: minimum onset activation to *start* a note. Raise it for fewer, more-confident note starts. See the tuning note below. |
+| `--frame-threshold <v>` | `0.3` | Polyphonic decoder: minimum sustained activation to *keep* a note. The dominant density lever — raising it most reduces the note count. |
+| `--min-note-len <frames>` | `11` | Polyphonic decoder: the flicker floor — notes shorter than this many frames (~128 ms at 11) are discarded. Raise it to shed short spurious notes. |
 
-**Polyphonic transcription (`--poly`).** By default `transcribe` runs the
-monophonic YIN pipeline (one note at a time). Pass `--poly` to instead run the
-neural **Basic Pitch** model (Spotify, Apache-2.0) through ONNX Runtime, which
-recovers many simultaneous notes — chords, two hands. What it produces and how
-to steer it:
+**Polyphonic transcription (the default).** As of v0.2.0 `transcribe` runs the
+neural **Basic Pitch** model (Spotify, Apache-2.0) through ONNX Runtime by
+default, recovering many simultaneous notes — chords, two hands. (Pass `--mono`
+for the monophonic YIN pipeline instead — the closed-loop-proven path.) What the
+polyphonic engine produces and how to steer it:
 
 - **All three outputs are polyphonic.** `raw.mid` is the honest, un-quantized
   many-note output (exact performance timing). `score.mid` and `score.musicxml`
@@ -178,8 +183,9 @@ to steer it:
   On dense piano they barely move note-level accuracy — which is bounded by onset
   timing, not by over-generation — but they do control how *cleanly* the score
   reads. `--onset-threshold 0.6 --frame-threshold 0.4 --min-note-len 16` cuts the
-  note count roughly in half, toward the engraved score's density, at essentially
-  no accuracy cost; the stock defaults (`0.5`/`0.3`/`11`) maximize recall.
+  note count by roughly a third (1887 → 1188 on the test piece), toward the
+  engraved score's density, at essentially no accuracy cost; the stock defaults
+  (`0.5`/`0.3`/`11`) maximize recall.
 - Inference is deterministic per build, but — like the MeltySynth mixdown — not
   guaranteed bit-identical across CPU architectures (SIMD).
 
@@ -209,14 +215,43 @@ to steer it:
 | `<out.wav>` | *(required)* | The output WAV path. |
 | `--soundfont <path>` | committed GS SoundFont | Use a different `.sf2` (see `play`). |
 
+**`evaluate <candidate.mid> <reference.mid>`** — score a transcription's notes against a reference note-set (precision/recall/F1).
+
+| Option | Default | Effect |
+|---|---|---|
+| `<candidate.mid>` | *(required)* | The transcription to score — typically a `transcribe`/`listen` output (`raw.mid` or `score.mid`). |
+| `<reference.mid>` | *(required)* | The note-set to compare against — a hand-corrected transcription, an OMR export of engraved sheet music, or similar. None is bundled with the repo (see below). |
+| `--onset-tolerance-ms <ms>` | `50` | Onset match window, in milliseconds. Pitch must still match exactly regardless of tolerance — an octave error is always a miss, never partial credit. |
+| `--align` | off | Globally rescale the candidate's onset span onto the reference's before scoring, cancelling one overall tempo ratio between a performance and a score. |
+| `--warp` | off | Dynamic-time-warp the candidate onto the reference, additionally cancelling *local* rubato (not just one global ratio). Wins over `--align` if both are passed. |
+
+`evaluate` reports note-level precision, recall, and F1 — the standard MIR
+note-detection metric — between a candidate transcription and a reference
+note-set. A candidate note counts as matched only when its pitch is exactly
+equal to a reference note's (an octave error is always a miss, never partial
+credit) and its onset falls within `--onset-tolerance-ms`; matching is
+one-to-one, so a duplicated candidate cannot inflate the score, and note
+durations are ignored entirely (a performance's rubato and pedalling need not
+match a score's). `--align`/`--warp` remove timing drift — one global tempo
+ratio, or local rubato — from the candidate *before* scoring, using onset times
+only and never pitch, so the reported F1 measures pitch recovery honestly
+rather than being deflated by a tempo mismatch between a recording and a score.
+This is the yardstick the polyphonic engine was tuned against (see
+[Limitations](#limitations)): no reference MIDI ships with the repo, because the
+piece used to develop and measure it there is a commercially copyrighted
+recording kept outside the repository — point `evaluate` at any note-set you
+consider ground truth.
+
 There is no packaged `claudio` binary yet, so run them today through
 `dotnet run`:
 
 ```bash
-dotnet run --project src/AudioClaudio.Cli -- transcribe song.wav --tempo 120 --out-dir out/
+dotnet run --project src/AudioClaudio.Cli -- transcribe song.wav --key -4 --out-dir out/   # polyphonic (default)
+dotnet run --project src/AudioClaudio.Cli -- transcribe song.wav --mono --out-dir out/     # monophonic, tempo auto-estimated
 dotnet run --project src/AudioClaudio.Cli -- listen --tempo 100 --out-dir out/
 dotnet run --project src/AudioClaudio.Cli -- play out/score.mid
 dotnet run --project src/AudioClaudio.Cli -- render out/score.mid out/score.wav
+dotnet run --project src/AudioClaudio.Cli -- evaluate out/score.mid reference.mid --onset-tolerance-ms 50 --warp
 ```
 
 `play` and `render` look for the committed SoundFont
@@ -287,19 +322,17 @@ audio, not the live preview.
 This is a deliberately scoped MVP. It declines the following rather than
 faking them:
 
-- **Monophonic by default; polyphony is opt-in and still maturing.** The
-  default pipeline is **monophonic** — one note at a time — and everything the
-  closed-loop suite proves is about that path. `transcribe --poly` runs a neural
-  model (Basic Pitch) behind the same `ITranscriber` port and recovers chords and
-  overlapping voices: `raw.mid` is the honest many-note output, and `score.mid`/
-  `score.musicxml` are now a real grand staff — chords in both hands, a treble/bass
-  split, key-aware accidental spelling, tunable note density, quantized to a 4/4
-  grid. What it still lacks: any closed-loop correctness guarantee like the
-  monophonic path; independent inner voices (each staff is a chord stack, not
-  separately-moving lines); and high note-level accuracy on dense real audio —
-  measured against an engraved reference, note-level F1 is modest (~15–22 %
-  depending on onset tolerance), bounded by onset timing and exact-pitch matching,
-  not by the notation. Treat `--poly` as a capable preview, not a finished feature.
+- **Polyphonic by default; the *proven* engine is monophonic (`--mono`).** As of
+  v0.2.0 `transcribe` defaults to the polyphonic Basic Pitch engine (chords, two
+  hands, a real grand-staff `score.mid`/`score.musicxml`). But everything the
+  closed-loop suite proves — exact count, pitch, and onset recovery — is about the
+  **monophonic** engine, which you select with `--mono`. The polyphonic default
+  carries no such guarantee: measured against an engraved reference, its note-level
+  F1 is modest (~15–22 % depending on onset tolerance), bounded by onset timing and
+  exact-pitch matching, not by the notation; and it has no independent inner voices
+  (each staff is a chord stack, not separately-moving lines). Treat the polyphonic
+  default as a capable preview, and reach for `--mono` when you need the
+  guaranteed-correct path.
 - **Tempo: a declared value by default, optional to override.** Pass
   `--tempo` for a declared tempo used exactly; omit it and the pipeline
   instead estimates tempo from the detected notes' onset spacing (the

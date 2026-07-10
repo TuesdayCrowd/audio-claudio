@@ -86,13 +86,46 @@ Record, Skip-silence, Note-names). Manual acceptance PASSED (Cornelius, 2026-07-
 (367 tests). CI: node24 actions; the scheduled nightly closed-loop retired to an on-demand
 `deep-closed-loop` workflow.
 
-- **The v0.1.0 MVP is shipped; `v0.1.1` added live incremental notation; `v0.1.2` adds the recording +
-  notation tooling above.** The lone open human follow-up is the MuseScore GUI load check for the MusicXML
-  golden (R11.2 — see `DECISIONS.md`), corroborated by OSMD rendering the same `MusicXmlScoreWriter` output.
-  Remaining Phase-2 items (§8): polyphony; pYIN pitch-hardening (the rare ~0.4% octave residual, and the
-  live-frame low/high range limits ≈ MIDI 42–93 on real mic audio); treble/bass split; and a legato /
-  coarser-grid note-off for cleaner rhythm from uneven beginner playing. The step plans and the authoritative
-  API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note honest if work resumes.
+Polyphonic transcription — `v0.2.0`, the **default** `transcribe` engine (Phase-2 §8 item 1; `--mono`
+selects the monophonic YIN path, whose closed-loop guarantee is completely untouched). A second
+`ITranscriber` behind the same port, built in four stages. The measurement harness (Stage 1) —
+`TranscriptionEvaluator`/`NoteSetEvaluation`/`NoteMatchOptions` (Domain.Evaluation) score a candidate
+against a reference note-set (exact pitch, onset-tolerant one-to-one matching) via `claudio evaluate
+<candidate.mid> <reference.mid> [--onset-tolerance-ms] [--align|--warp]`. The engine (Stage 2) —
+`BasicPitchModel` + `BasicPitchTranscriber : ITranscriber` (Infrastructure.Transcription) run Spotify's
+Basic Pitch neural model via Microsoft.ML.OnnxRuntime (model + its Apache-2.0 license committed under
+`fixtures/models/`) over resampled audio (`AudioResampler`, band-limited Lanczos) and decode via
+`BasicPitchNoteDecoder`; `raw.mid` is the honest, un-quantized many-note output.
+
+Grand-staff score building (Stage 3) — new parallel Domain.Polyphony types (`Staff`, `ChordElement`,
+`GrandStaffMeasure`, `GrandStaffScore`; the monophonic `Score`/`Quantizer`/`MusicXmlScoreWriter` are left
+untouched) plus `ChordGrouper`/`StaffSplitter`/`PolyphonicQuantizer`/`GrandStaffFlattener` and
+`GrandStaffMusicXmlWriter` (Infrastructure.MusicXml) turn the raw events into a real two-staff
+`score.mid`/`score.musicxml` — chords in both hands, treble/bass split at middle C, per-staff bar
+conservation. Accuracy iteration (Stage 4) — `OnsetAlignment.GlobalScale`/`DtwWarp` (`evaluate
+--align`/`--warp`) cancel global tempo drift and local rubato (time-only, never consulting pitch, so F1
+stays an honest pitch-recovery signal); `--onset-threshold`/`--frame-threshold`/`--min-note-len`
+(`PolyDecoderOptions`) tune the decoder's note density; `PitchSpeller.Spell` (line-of-fifths,
+nearest-to-centre) gives key-aware enharmonic spelling via a **declared** `--key <fifths>` (like tempo —
+declared, not estimated). **Honest ceiling, measured on a real copyrighted piece (audio + reference kept
+outside the repo, never committed):** note-level F1 is ~15–22% by onset tolerance, bounded by onset timing
++ exact-pitch matching — not over-generation (pitch-class content ≈87%) — so the three decoder thresholds
+are a notation-cleanliness knob (tuned values cut the note count ~a third toward the reference's density at
+~zero F1 cost), not an accuracy lever. Build/test green (431 tests).
+
+- **The v0.1.0 MVP is shipped; `v0.1.1` added live incremental notation; `v0.1.2` added the recording +
+  notation tooling above; `v0.2.0` makes opt-in polyphonic transcription the default `transcribe` engine
+  (above; `--mono` keeps the proven monophonic path).** The lone open human follow-up is the MuseScore GUI
+  load check for the MusicXML golden (R11.2 — see `DECISIONS.md`), corroborated by OSMD rendering the same
+  `MusicXmlScoreWriter` output. Remaining Phase-2 items (§8): pYIN pitch-hardening for the monophonic
+  detector (the rare ~0.4% octave residual, and the live-frame ≈ MIDI 42–93 range limits on real mic audio);
+  velocity-from-energy and a treble/bass split for the *monophonic* path specifically (both already true of
+  the polyphonic path — Basic Pitch amplitude, `StaffSplitter` — but not ported back to
+  YIN/`MusicXmlScoreWriter`); a closed-loop-style correctness guarantee for polyphony (today's accuracy claim
+  rests on the `evaluate` harness against one real reference recording, not a synthesize→transcribe suite);
+  and a legato / coarser-grid note-off for cleaner rhythm from uneven beginner playing. The step plans and
+  the authoritative API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note honest if
+  work resumes.
 - **The step-by-step plans live in `docs/plans/`.** `docs/plans/README.md` is the
   index and status tracker; `docs/plans/CONTRACTS.md` is the authoritative
   cross-step API reference (exact type names, signatures, namespaces) — follow it
@@ -617,10 +650,11 @@ Commit: `docs: README; v0.1.0`.
 ## 7. CLI summary (composition root)
 
 ```
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names]   # → raw.mid, score.mid, score.musicxml (--tempo auto-estimated if omitted; --note-names adds a scientific-pitch-name lyric under each note)
+claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   # → raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default, --mono for monophonic YIN (which auto-estimates tempo when --tempo is omitted); --note-names adds a scientific-pitch-name lyric under each note; --key declares the key signature for enharmonic spelling; the three thresholds tune note density
 claudio listen [--tempo 100] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on stop (--tempo auto-estimated if omitted); --record also writes input.wav + recreation.wav (each session also archived under <out-dir>/<YYYYMMDD_HHMMSS>/); --skip-silence implies --record and collapses pauses >500ms in input.wav/recreation.wav only; --note-names shows each note's name (e.g. C4) beneath it in --view and score.musicxml
 claudio play <file.mid>                                 # MeltySynth playback
 claudio render <file.mid> <out.wav>                     # deterministic render
+claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align|--warp]  # note-level precision/recall/F1 of a transcription vs a reference; --align cancels a global tempo ratio, --warp (DTW) also removes local rubato and wins if both are given
 ```
 
 The CLI is the only place adapters are constructed and wired to ports.
@@ -632,17 +666,37 @@ The CLI is the only place adapters are constructed and wired to ports.
 Recorded so the MVP can decline scope without losing the ideas. Rough order of
 value:
 
-1. **Polyphony** — Spotify Basic Pitch's ONNX serialization via
-   Microsoft.ML.OnnxRuntime, as a second `ITranscriber` adapter behind the
-   same port (precedent: NeuralNote embeds the same model outside Python).
-   The closed-loop suite then simply widens its generator to chords — the
-   oracle already exists.
-2. **Tempo estimation** — inter-onset interval histogram / autocorrelation;
-   removes the `--tempo` flag.
-3. **Live incremental notation** — VexFlow in a webview or Manufaktura,
-   rendering the score as it grows.
-4. **pYIN upgrade** to the detector; velocity from onset energy; treble/bass
-   staff split by pitch register.
+1. **Polyphony — DONE, the default `transcribe` engine as of `v0.2.0`** (see
+   "Where the project is right now" above; `--mono` keeps the monophonic path).
+   Spotify Basic Pitch's ONNX serialization via Microsoft.ML.OnnxRuntime, a
+   second `ITranscriber` adapter behind the same port, exactly as anticipated
+   (precedent: NeuralNote embeds the same model outside Python). **One correction
+   to the plan as written:** the closed-loop suite was *not* widened to chords — a
+   synthesize→transcribe oracle has no honest ground truth for a real, copyrighted
+   performance. Accuracy is instead measured by a new `evaluate` harness (Stage 1)
+   scoring against a real reference recording's note-set; that is how the honest
+   ~15–22% F1 ceiling above was established. A closed-loop-style correctness
+   guarantee for polyphony remains open.
+2. **Tempo estimation — DONE (shipped in `v0.1.2`).** Not the histogram/
+   autocorrelation approach sketched here: `TempoEstimator` uses the median
+   inter-onset interval (a grid-fit search was tried first and rejected — it
+   converged on half the true tempo). `--tempo` was not removed; it is now
+   optional, an explicit override of the auto-estimate, on both `transcribe` and
+   `listen`.
+3. **Live incremental notation — DONE (shipped in `v0.1.1` as `listen --view`).**
+   Not VexFlow/Manufaktura: a vendored OpenSheetMusicDisplay (OSMD) bundle rendered
+   in a browser tab, fed live over SSE by `LiveNotationServer`.
+4. **Still open — status per sub-item, not one bundle:**
+   - **pYIN upgrade** to the monophonic detector — open; would fix the rare ~0.4%
+     YIN octave-error/onset-miss residual and the live-frame ≈ MIDI 42–93 range
+     limit.
+   - **Velocity from onset energy** — open for the monophonic path
+     (`TranscriptionPipeline` still emits a constant `NoteEvent.DefaultVelocity`).
+     The polyphonic path already carries real velocity (Basic Pitch amplitude) —
+     a different code path, not this item.
+   - **Treble/bass staff split** — open for the *monophonic* default
+     (`MusicXmlScoreWriter` is still one staff). Already done for the polyphonic
+     path (`StaffSplitter`, Stage 3b); not yet ported back to the monophonic writer.
 
 ---
 

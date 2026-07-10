@@ -1007,3 +1007,128 @@ determined by feeding a sustained 440 Hz tone (bin 48 = A4 lit across the whole 
 the MeltySynth mixdown — is not guaranteed bit-identical across CPU architectures (SIMD). The
 same accommodation the render golden already makes (tolerance, not byte-equality) applies to
 any future polyphonic golden.
+
+### Stage 3 — polyphonic score building: parallel grand-staff types, not an extended monophonic `Score`
+
+**Decision: model the grand staff with new types in `AudioClaudio.Domain.Polyphony` (`Chord`,
+`ChordElement`, `Staff`, `GrandStaffMeasure`, `GrandStaffScore`, plus the `ChordGrouper`/`StaffSplitter`/
+`PolyphonicQuantizer`/`GrandStaffFlattener` functions that build and flatten them) rather than widen the
+monophonic `Score`/`Measure`/`ScoreElement`/`Quantizer`/`MusicXmlScoreWriter` to carry more than one
+simultaneous pitch.**
+
+**Why: the monophonic types are single-voice by construction, not by convention.** `ScoreElement` carries
+exactly one `Pitch?`; `Measure` holds exactly one ordered `ScoreElement` list — there is no second voice
+to widen into. And `Quantizer`'s overlap step already *drops* simultaneous notes on purpose ("clip each
+note to the next onset; a note with no room is dropped"), because the YIN front end feeding it can only
+produce one pitch at a time. Those types are also load-bearing for the MVP's own correctness claim: the
+byte-exact `MusicXmlScoreWriter` golden (Step 11, `fixtures/golden/musicxml/twinkle.musicxml`) and the
+entire Step 9 closed-loop suite are pinned to their exact behavior. Reworking any of them for chords risks
+all of that at once, for a feature that has nothing to do with YIN or the closed loop. A parallel type
+family sidesteps that risk: the monophonic golden, the closed-loop suite, and every prior test kept
+passing unchanged through Stage 3. The two paths share only the primitives beneath them (`Pitch`, the
+sample-time types, `Tempo`/`TimeSignature`/`Subdivision`/`QuantizationGrid`) — exactly where sharing is
+safe. The payoff shows on the output side too: `GrandStaffFlattener.ToNoteEvents` flattens a
+`GrandStaffScore` back to `IReadOnlyList<NoteEvent>`, so the *existing* Step-7 `INoteEventWriter` writes
+the polyphonic `score.mid` with no new MIDI-writing code.
+
+**Model = homophonic-per-staff, not independent inner voices.** A `GrandStaffMeasure` holds two
+independent `ChordElement` sequences (`Treble`, `Bass`); each `ChordElement` is one or more pitches
+sharing a single quantized onset+duration — a chord, not several independently-timed voices on one staff.
+`ChordGrouper.Group` collapses notes whose onset falls within one window of a chord's *anchor* (its
+earliest note, measured from the anchor, not chained note-to-note — a defined rule, so a wide arpeggio
+becomes several chords, never ambiguously one), and `StaffSplitter.Split` assigns each chord (or, for one
+straddling the split, its treble/bass fragments separately) to a staff by register (default split at
+middle C, MIDI 60). Both are total, deterministic functions needing no voice-leading inference. Widening
+to true independent inner voices later means widening `GrandStaffMeasure` itself — an honest scope note,
+not something already latent in today's shape.
+
+**No byte-exact golden for the grand-staff writer (deliberate, for now).** Unlike the monophonic
+`MusicXmlScoreWriter` (Step 11's committed byte-identical `twinkle.musicxml`), `GrandStaffMusicXmlWriter`
+is covered by *structural* + per-staff bar-conservation + key-signature-spelling tests, not a byte-exact
+fixture. Its determinism is asserted by construction (LF newlines, no BOM, fixed element order) and it is
+validated in practice by `xmllint` + Verovio rendering of the real Death output; a committed grand-staff
+golden is a reasonable later addition but was not required to ship Stage 3.
+
+### Stage 4 — the note-level measurement harness (recorded here since every later F1 rests on it)
+
+**The rule: standard MIR note-level precision/recall/F1, one-to-one matching.** `TranscriptionEvaluator.Evaluate`
+counts a candidate note a true positive against a reference note when its pitch is *exactly* equal (an
+octave error is a wrong note, never partial credit) and its onset falls within
+`NoteMatchOptions.OnsetToleranceSeconds` (±50 ms default — the standard MIR window). Matching is one-to-one:
+both note-sets are sorted into one deterministic order (onset, then pitch, then input index) and each
+reference greedily claims its nearest-onset unclaimed equal-pitch candidate — so duplicated candidates
+cannot inflate the score, and the result never depends on input order. Onset tolerance is stated in
+**seconds**, not samples, deliberately: a candidate (22.05 kHz model output) and a reference (44.1 kHz)
+can be denominated at different rates, and seconds is the one common unit both convert to at the edge.
+
+**Recorded plainly: this is a deterministic greedy assignment, not a globally-optimal bipartite matching**
+(Hopcroft-Karp/Hungarian, which some MIR toolkits use for the identical metric). Because each reference
+grabs its own nearest unclaimed candidate with no lookahead, an adversarial arrangement can undercount
+true positives by one relative to the true maximum matching (constructed case: references at onsets 10 and
+13, tolerance ±3, candidates at 10 and 8 — the greedy claims 1 match where the optimal finds 2). This is a
+deliberate simplification, not a discovered defect: it keeps the algorithm simple and fully deterministic,
+and its failure mode — a rare one-note undercount — is far smaller than the ±15–22% F1 gap the rest of
+Stage 4 exists to explain. No code change unless exact optimal matching is later wanted.
+
+### Stage 4 — time alignment is deliberately time-only; it never consults pitch
+
+`OnsetAlignment.GlobalScale` and `.DtwWarp` build their correspondence and cost from onset **times**
+alone; neither reads pitch. `GlobalScale` rescales the candidate's whole onset span linearly onto the
+reference's (one gross tempo ratio); `DtwWarp` runs the standard match/insert/delete DP over onset-time
+distance (`|Δt|`, fixed diagonal→delete→insert backtrack tie order for reproducibility), reduces the path
+to strictly-increasing anchors, and applies a piecewise-linear warp — so *local* rubato is cancelled too.
+
+**Why time-only, deliberately:** the whole purpose of `evaluate --align`/`--warp` is to answer "once
+timing drift is removed, how much pitch did we actually recover?" If the aligner could warp *toward*
+whichever candidate happens to share the reference's pitch, a wrong-pitch transcription could be dragged
+into apparent onset agreement by the alignment step itself — making the F1 circular (the metric partly
+grading the thing it is supposed to check independently). Keeping alignment blind to pitch means every F1
+point is an independently-earned pitch-recovery signal. It still produced a real measured gain: DTW beat
+`GlobalScale` at every tolerance — TP 270→322 / F1 18.1%→21.6% at ±250 ms; 175→224 / 11.7%→15.0% at
+±150 ms; 135→187 / 9.0%→12.5% at ±100 ms — a result that counts *because* it was earned without pitch.
+
+### Stage 4b — decoder thresholds are a notation-cleanliness knob, not an accuracy lever
+
+`NoteDecoderOptions.Default` stays Basic Pitch's stock 0.5 / 0.3 / 11, and `PolyDecoderOptions.FromArgs`
+defaults every `transcribe` threshold flag to it — nothing changes unless a flag is turned. **This is an
+empirical finding.** Sweeping all three thresholds against the DTW metric on the real Death audio found F1
+pinned within a narrow band across the whole useful range (~14–15% at ±150 ms, ~21–22% at ±250 ms):
+raising thresholds trades recall for precision at roughly constant F1, because the ceiling is bounded by
+onset-timing precision and exact-pitch matching (pitch-class content is already ≈87%), not by
+over-generation. What tuning *does* buy is a readable score: `--onset-threshold 0.6 --frame-threshold 0.4
+--min-note-len 16` cuts the note count 1887 → 1188 (≈ the ~1100-note reference's density) at essentially
+zero F1 cost. Baking those numbers into the Domain default would trade "faithful stock port, maximum
+recall" for values overfit to one piece with no accuracy benefit — so the default stays the faithful port
+and the tuned recommendation is documented (README), not silently shipped.
+
+### Stage 4c — key signature is declared, like tempo; enharmonic spelling follows via a line-of-fifths `PitchSpeller`
+
+A bare MIDI number is 12-fold ambiguous in notation (MIDI 61 is C♯ in D major, D♭ in A♭ major). In the
+same spirit as R6.3's declared (not estimated) tempo, `transcribe --key <fifths>` takes the key signature
+as a stated argument (sharps positive, flats negative; default 0) rather than attempting key detection.
+`PitchSpeller.Spell` resolves the ambiguity by the classic **line-of-fifths, nearest-to-centre** rule:
+diatonic notes spell natural, chromatics spell in the key's own accidental direction (A♭ major →
+D♭/E♭/G♭/A♭/B♭, never D♯/G♯/A♯), ties go to fewer accidentals. Pure and total, verified by an all-keys
+round-trip property (every `(fifths −7..7, midi 21..108)` pair reconstructs its exact MIDI number). `key`
+threads into `GrandStaffMusicXmlWriter`, which emits the real `<fifths>` and spells every `<pitch>` and
+note-name lyric through the speller — on the real Death audio, `--key -4` emits `<fifths>-4</fifths>` and
+545 flats / 0 sharps, where the pre-4c writer would have engraved every chromatic as a sharp. Velocity
+already survives into `raw.mid`/`score.mid` via Basic Pitch's amplitude; a MusicXML `<dynamics>` mark is a
+separate, lossier representation, deliberately deferred.
+
+### Stage 5 — polyphony is the default `transcribe` engine; `--mono` is the opt-out
+
+**Decision (Cornelius): `transcribe` runs the polyphonic Basic Pitch engine by default; `--mono` selects
+the monophonic YIN pipeline.** `--poly` is still accepted and names the default explicitly; an explicit
+`--mono` always wins. Resolved by `TranscribeModeResolver.Resolve` (Cli.Commands), TDD'd, with only the
+default dispatch flipped — `TranscribeCommand` (the monophonic path) and its tests are unchanged.
+
+**The honest tension, recorded rather than hidden.** The monophonic engine is the one that carries the
+project's earned correctness proof (the Step 9 closed loop: exact count/pitch/onset, ±10¢); the polyphonic
+default is a "capable preview" at ~15–22% note-level F1 on hard real audio. So the default a new user hits
+is now the *less-proven* engine. The call was made deliberately — real piano music is polyphonic, and the
+grand-staff output is the more useful default for it — and the README/CLAUDE Limitations state plainly
+that `--mono` is the guaranteed-correct path and that the closed-loop claim is about it, not the default.
+Documenting the trade-off is the price of making the choice honestly. Shipped as **v0.2.0** (a minor bump:
+a whole new engine, the `evaluate` command, grand-staff MusicXML, and the alignment/threshold/key tooling
+— substantially more than a patch).
