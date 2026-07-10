@@ -120,6 +120,21 @@ switch (args[0])
             EvaluateCommand.Run(evalCandidate, reference, new NoteMatchOptions(tolMs / 1000.0), Console.WriteLine);
             return 0;
         }
+    case "evaluate-audio" when args.Length >= 3:
+        {
+            // claudio evaluate-audio <original.wav> <reproduction.wav>
+            // Timbre-robust pitch-content similarity — "does the re-synthesis sound like the original?".
+            // Compares chromagrams (per-frame pitch-class energy), so a real piano and a SoundFont render
+            // of the transcription are comparable by NOTES, not by timbre. 1.0 = identical pitch content.
+            const int FrameSize = 4096, Hop = 2048;
+            using var audioA = WavAudioSource.FromFile(args[1], new FrameParameters(FrameSize, Hop));
+            using var audioB = WavAudioSource.FromFile(args[2], new FrameParameters(FrameSize, Hop));
+            var chromaA = Chromagram.FromFrames(audioA.Frames, FrameSize);
+            var chromaB = Chromagram.FromFrames(audioB.Frames, FrameSize);
+            double similarity = ChromaSimilarity.Compare(chromaA, chromaB);
+            Console.WriteLine($"Chroma (pitch-content) similarity: {similarity:P1}  ({chromaA.Count} vs {chromaB.Count} frames)");
+            return 0;
+        }
     case "listen":
         {
             // claudio listen [--tempo N] [--out-dir .] [--view] [--record] [--skip-silence]
@@ -311,6 +326,7 @@ static int Usage()
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>] [--align|--warp]  -> note-level precision/recall/F1 vs a reference; --align cancels the global tempo difference, --warp (DTW) also removes local rubato");
+    Console.Error.WriteLine("  evaluate-audio <original.wav> <reproduction.wav>  -> timbre-robust pitch-content (chroma) similarity: does the re-synthesis sound like the original? 1.0 = identical notes over time");
     return 1;
 }
 

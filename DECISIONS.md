@@ -1179,3 +1179,28 @@ F1 (pitch-class) 75%→77% combined with the tuned thresholds (default engine 64
 closed loop mattered: the register skew that motivated the filter (candidate has ~2× the reference's bass
 notes) could equally have been the OMR reference *under-counting* bass, in which case cutting those notes
 would be gaming; the ground-truth validation rules that out.
+
+### Audio-to-audio evaluation — compare the re-synthesis to the original, timbre-robustly (the reference-free accuracy measure)
+
+Every note-level / pitch-content metric scores against `Death.reference.mid`, an OMR transcription that is
+itself only ~85–90% accurate — both a ceiling on any measurable accuracy and a source of unfair penalties.
+`evaluate-audio <original.wav> <reproduction.wav>` (Cli) sidesteps the reference entirely: the **original
+recording is the ground truth**. It renders the transcription's `raw.mid` back to audio and compares it to
+the original by **chromagram** (`Chromagram`, Domain.Spectral — per-frame pitch-class *power*, L2-normalized)
+via mean per-frame cosine similarity with a bounded offset search (`ChromaSimilarity`, Domain.Evaluation).
+
+**Chroma is the load-bearing choice.** A raw-waveform or full-spectrum comparison would be dominated by the
+*timbre* gap — a real piano vs the GeneralUser GS SoundFont sound nothing alike even playing identical
+notes — and would measure almost nothing about note accuracy. Folding each moment's spectral energy into 12
+pitch classes discards octave and instrument colour, leaving *which notes are sounding*, so the two are
+comparable by content. And because `raw.mid` preserves the performance's own timing, the two recordings stay
+frame-aligned, so rubato is a non-issue here too.
+
+**Result on Death:** original vs re-synthesis = **78.6%** chroma similarity, calibrated by
+original-vs-itself = **100%** (tool sanity) and original-vs-same-rhythm-transposed-to-the-wrong-pitches =
+**18%** (discrimination floor). The 18% floor proves the metric measures *pitch content* — same rhythm,
+wrong notes collapses — so 78.6% (~4.4× the floor) means the engine reproduces most of the original's
+moment-to-moment notes: a strong, honest accuracy number, free of the reference's errors. Higher-recall
+settings edge out precision-tuned ones here (78.6% vs 77.3%), so for "sounds like the original" the fuller
+output wins; the harmonic-ghost filter (a precision fix for *notation* cleanliness) is neutral-to-slightly-
+negative on this metric and stays default-on for the score, not for this.

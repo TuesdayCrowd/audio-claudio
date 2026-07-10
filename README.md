@@ -127,7 +127,7 @@ dotnet test                        # full suite: unit + property + the closed lo
 dotnet test --filter Category=Fast # skip the slow closed-loop properties
 ```
 
-Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has five
+Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has six
 commands:
 
 ```bash
@@ -136,6 +136,7 @@ claudio listen [--tempo 100] [--out-dir .] [--view] [--record] [--skip-silence] 
 claudio play <file.mid> [--soundfont <path>]                                           # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>]                               # deterministically render a MIDI file to WAV
 claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align|--warp]  # note-level precision/recall/F1 vs a reference; --align/--warp remove tempo drift/rubato before scoring
+claudio evaluate-audio <original.wav> <reproduction.wav>  # timbre-robust pitch-content (chroma) similarity: does a re-synthesis SOUND like the original? 1.0 = identical notes over time
 ```
 
 ### Options reference
@@ -241,6 +242,26 @@ This is the yardstick the polyphonic engine was tuned against (see
 piece used to develop and measure it there is a commercially copyrighted
 recording kept outside the repository — point `evaluate` at any note-set you
 consider ground truth.
+
+**`evaluate-audio <original.wav> <reproduction.wav>`** — how much a re-synthesis
+*sounds like* the original, by pitch content.
+
+| Option | Default | Effect |
+|---|---|---|
+| `<original.wav>` | *(required)* | The source recording. |
+| `<reproduction.wav>` | *(required)* | A `render` of the transcription's `raw.mid` — the notes played back through the SoundFont. |
+
+This sidesteps the reference problem entirely: the original recording *is* the
+ground truth, so there is no OMR error and no performance-vs-score rubato to
+fight. It compares the two files' **chromagrams** — each moment's spectral
+energy folded into the 12 pitch classes — so a real piano and a SoundFont
+re-synthesis are comparable by the *notes they play*, not their (very different)
+timbre. The score is the mean per-frame cosine similarity (offset-searched to
+absorb latency), `1.0` for identical pitch content over time. As calibration, an
+identical file scores `100%` and a version with the same rhythm but transposed to
+the wrong pitches scores `~18%` — so a real transcription re-synthesis landing in
+the high-70s genuinely reproduces most of the original's notes. Because `raw.mid`
+keeps the performance's own timing, the two recordings stay aligned frame-for-frame.
 
 There is no packaged `claudio` binary yet, so run them today through
 `dotnet run`:
