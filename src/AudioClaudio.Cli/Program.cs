@@ -37,7 +37,9 @@ switch (args[0])
                 : null;
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
             bool noteNames = Array.IndexOf(args, "--note-names") >= 0;
-            bool poly = Array.IndexOf(args, "--poly") >= 0;
+            // As of v0.2.0 the polyphonic Basic Pitch engine is the default; --mono opts back into the
+            // monophonic YIN pipeline (the closed-loop-proven path).
+            bool poly = TranscribeModeResolver.Resolve(args) == TranscribeMode.Polyphonic;
             if (poly)
             {
                 // Polyphonic path (Basic Pitch). raw.mid is the honest many-note output; score.mid/
@@ -305,7 +307,7 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--poly [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]]   -> raw.mid, score.mid, score.musicxml; omit --tempo to auto-estimate it; --poly uses the polyphonic Basic Pitch engine (many simultaneous notes); --key sets the key signature (sharps +, flats -, e.g. -4 = A-flat major) for correct enharmonic spelling; the three thresholds tune note density");
+    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default; --mono uses the monophonic YIN pipeline (and auto-estimates tempo when --tempo is omitted); --key sets the key signature (sharps +, flats -, e.g. -4 = A-flat major) for enharmonic spelling; the three thresholds tune note density");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
     Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>] [--align|--warp]  -> note-level precision/recall/F1 vs a reference; --align cancels the global tempo difference, --warp (DTW) also removes local rubato");
