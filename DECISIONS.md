@@ -1161,3 +1161,21 @@ gated to apply only when it improves the score, or made robust to outlier onsets
 **Not a pass/fail property.** Unlike the monophonic Step-9 closed loop (which demands exact recovery), this
 is a *diagnostic* reporting F1; its only assertion is a regression floor (synthetic F1 ≥ 55%) well below the
 observed ~80%, guarding an engine/decoder regression, not specifying the ceiling.
+
+### Sub-octave harmonic-ghost suppression — a precision fix validated on the closed loop (not metric-gaming)
+
+`HarmonicGhostFilter.Suppress` (Domain.Polyphony) drops a note when a note exactly one octave above it
+overlaps in time and is at least 1.1× as loud — the sub-harmonic artifact a neural transcriber spawns
+*below* a real note. Default-on in `BasicPitchTranscriber` (toggleable); conservative by design (the
+octave-above must be meaningfully louder) so genuine bass octaves, where the lower note is comparably loud,
+survive.
+
+**Validated as genuine ghost-removal on the synthetic closed loop** (perfect ground truth), the honest way
+to tell a real precision fix from gaming a flawed reference: it removed *only false positives* — true
+positives unchanged (104), FP 38→33, **recall flat at 91.2%**, precision 73.2%→75.9%, F1 81.2%→82.9%.
+Recall holding while precision rises is the signature of removing ghosts, not real notes (a blunt threshold
+raise cuts recall in lockstep — Stage 4b). On the real Death audio it lifts the timing-free pitch-content
+F1 (pitch-class) 75%→77% combined with the tuned thresholds (default engine 64%→68%). This is why the
+closed loop mattered: the register skew that motivated the filter (candidate has ~2× the reference's bass
+notes) could equally have been the OMR reference *under-counting* bass, in which case cutting those notes
+would be gaming; the ground-truth validation rules that out.

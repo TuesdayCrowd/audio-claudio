@@ -34,19 +34,22 @@ public sealed class BasicPitchTranscriber : ITranscriber, IDisposable
     private readonly Tempo _tempo;
     private readonly TimeSignature _timeSignature;
     private readonly Subdivision _subdivision;
+    private readonly bool _suppressHarmonicGhosts;
 
     public BasicPitchTranscriber(
         string modelPath,
         NoteDecoderOptions? decoderOptions = null,
         Tempo? tempo = null,
         TimeSignature? timeSignature = null,
-        Subdivision subdivision = Subdivision.Sixteenth)
+        Subdivision subdivision = Subdivision.Sixteenth,
+        bool suppressHarmonicGhosts = true)
     {
         _model = new BasicPitchModel(modelPath);
         _decoderOptions = decoderOptions ?? NoteDecoderOptions.Default;
         _tempo = tempo ?? new Tempo(120);
         _timeSignature = timeSignature ?? TimeSignature.FourFour;
         _subdivision = subdivision;
+        _suppressHarmonicGhosts = suppressHarmonicGhosts;
     }
 
     public TranscriptionResult Transcribe(IAudioSource source)
@@ -88,13 +91,18 @@ public sealed class BasicPitchTranscriber : ITranscriber, IDisposable
                 velocity));
         }
 
-        events.Sort((a, b) => a.Onset.Samples != b.Onset.Samples
+        // Shed sub-harmonic ghosts (a precision fix that keeps recall — validated on the closed loop).
+        List<NoteEvent> result = _suppressHarmonicGhosts
+            ? HarmonicGhostFilter.Suppress(events).ToList()
+            : events;
+
+        result.Sort((a, b) => a.Onset.Samples != b.Onset.Samples
             ? a.Onset.Samples.CompareTo(b.Onset.Samples)
             : a.Pitch.MidiNumber.CompareTo(b.Pitch.MidiNumber));
 
         var grid = new QuantizationGrid(rate22, _tempo, _timeSignature, _subdivision);
-        Score score = Quantizer.Quantize(events, grid);
-        return new TranscriptionResult(score, events);
+        Score score = Quantizer.Quantize(result, grid);
+        return new TranscriptionResult(score, result);
     }
 
     // Runs the model over the (front-padded) signal in overlapping windows and stitches the
