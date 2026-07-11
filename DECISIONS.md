@@ -1335,3 +1335,28 @@ F1 bar so the suite only gets harder.
 
 **This same harness proves Stage 4.** Transkun (the third engine) will be measured against this exact
 general corpus — one oracle, every engine held to the same bar.
+
+## v2 Stage 2 — velocity from onset energy (mono path) (2026-07-10)
+
+**What landed.** The monophonic pipeline stamped every note with a constant `NoteEvent.DefaultVelocity`
+(64); it now derives a real per-note velocity from the attack energy. `VelocityEstimator.FromAttackEnergy`
+(Domain, pure) maps the peak RMS just after onset to a MIDI velocity (1..127) on a perceptual **dBFS**
+scale; `TranscriptionPipeline.RefineVelocities` (Application, after `RefineOffsets`) applies it as a pure
+**1:1 relabel** — pitch/onset/duration/count untouched, so the closed loop's R9.2 checks are invisible to
+it (its comparator is velocity-blind, verified). The velocity flows through the `Quantizer` into the
+`Score` (`ScoreElement.Velocity`), so `raw.mid` and `score.mid` now carry dynamics.
+
+**Validated (`VelocityRecoveryTests`).** Synthesize ONE pitch struck at ascending velocities, transcribe,
+require the recovered velocities to be non-constant and to track the played ordering (fixing the pitch
+isolates dynamics from the register confound). Played [24, 48, 72, 96, 120] → recovered [50, 79, 101, 116]
+(4 of 5) — a near-exact dynamics track (mp→mf→ff). The softest strike (velocity 24) is missed by the
+*onset* detector, not the velocity map (onset sensitivity is a separate Stage 2 item).
+
+**Calibration + its honest limits.** The dBFS window (−29..−53 dBFS → velocity 8..127, ~5 vel/dB) is tuned
+to the committed GeneralUser GS SoundFont at a mid register. Two documented limits: (1) absolute microphone
+gain shifts where a real performance lands — the *relative* ordering (a crescendo, a soft passage) is
+recovered regardless; (2) it conflates dynamics with register (a bass and a treble note at the same MIDI
+velocity render at different RMS). A per-pitch energy normalization would fix (2) but is beyond this first
+cut. Non-constant, ordering-correct velocity feeding pp..ff is a real improvement over a flat constant —
+what the workplan asked for. Wiring this velocity to **dynamic marks** in the mono `MusicXmlScoreWriter`
+(as the grand-staff writer already does) is Stage 3 (notation).

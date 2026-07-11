@@ -90,6 +90,11 @@ public sealed class TranscriptionPipeline : ITranscriber
             events, observations, _settings.OffsetSettleFrames, _settings.OffsetReleaseRatio,
             _settings.OffsetPersistFrames, rate);
 
+        // Stage 2 (v2): stamp a real per-note velocity from the attack energy, so the score carries
+        // dynamics (pp..ff) instead of a flat constant. A pure 1:1 relabel — same count/pitch/onset/
+        // duration — so the closed loop's R9.2 checks are untouched.
+        events = RefineVelocities(events, observations, _settings.VelocityAttackFrames);
+
         // Step 6: build the grid and quantize (static, no `new Quantizer()`). Tempo is estimated
         // from the just-detected events when requested — valid because detection is tempo-independent
         // (CLAUDE.md background) and tempo is only ever consumed here, at quantization.
@@ -487,6 +492,57 @@ public sealed class TranscriptionPipeline : ITranscriber
             long refinedEndSample = baseSample + ((long)endFrame * hop);
             long refinedDuration = Math.Max(1, refinedEndSample - e.Onset.Samples);
             refined.Add(new NoteEvent(e.Pitch, e.Onset, new SampleDuration(refinedDuration, rate), e.Velocity));
+        }
+
+        return refined;
+    }
+
+    /// <summary>
+    /// Stamps each note with a velocity estimated from its attack energy — the peak per-frame RMS in the
+    /// first <paramref name="attackFrames"/> frames from its onset — via <see cref="VelocityEstimator"/>.
+    /// A pure 1:1 relabel: pitch, onset, and duration are copied unchanged and the note count is preserved,
+    /// so it cannot touch the closed loop's count/pitch/onset/duration checks (velocity is not one of them).
+    /// Runs in Application after offset refinement; the Domain segmenter's constant velocity is overridden
+    /// here rather than in Domain, keeping the energy→velocity model a composition-root concern.
+    /// </summary>
+    private static IReadOnlyList<NoteEvent> RefineVelocities(
+        IReadOnlyList<NoteEvent> events,
+        IReadOnlyList<FrameObservation> observations,
+        int attackFrames)
+    {
+        if (events.Count == 0 || observations.Count < 2)
+        {
+            return events;
+        }
+
+        long baseSample = observations[0].Start.Samples;
+        long hop = observations[1].Start.Samples - baseSample;
+        int frameCount = observations.Count;
+        int window = Math.Max(1, attackFrames);
+
+        int FrameIndexOf(long samplePos) =>
+            (int)Math.Clamp((samplePos - baseSample) / hop, 0, frameCount - 1);
+
+        var refined = new List<NoteEvent>(events.Count);
+        for (int idx = 0; idx < events.Count; idx++)
+        {
+            NoteEvent e = events[idx];
+            int onsetFrame = FrameIndexOf(e.Onset.Samples);
+            // Bound the attack search by the NEXT note's onset (as RefineOffsets does), so a longer
+            // attack window can never pick up the next note's onset energy — explicit, not coincidental.
+            int nextOnset = idx + 1 < events.Count ? FrameIndexOf(events[idx + 1].Onset.Samples) : frameCount;
+            int last = Math.Min(Math.Min(onsetFrame + window, frameCount), nextOnset);
+            double attackPeak = 0.0;
+            for (int j = onsetFrame; j < last; j++)
+            {
+                if (observations[j].Energy > attackPeak)
+                {
+                    attackPeak = observations[j].Energy;
+                }
+            }
+
+            int velocity = VelocityEstimator.FromAttackEnergy(attackPeak);
+            refined.Add(new NoteEvent(e.Pitch, e.Onset, e.Duration, velocity));
         }
 
         return refined;
