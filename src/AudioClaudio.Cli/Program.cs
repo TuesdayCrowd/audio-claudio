@@ -48,13 +48,18 @@ switch (args[0])
                 // score.musicxml are quantized with the (still monophonic) quantizer for now.
                 Directory.CreateDirectory(outDir);
                 string modelPath = ModelLocator.Resolve(TryReadOption(args, "--model"));
-                int key = TryReadOption(args, "--key") is { } k // key signature: sharps +, flats − (A♭ major = −4)
-                    ? int.Parse(k, System.Globalization.CultureInfo.InvariantCulture)
-                    : 0;
+                if (!TryReadKeyOverride(args, out int? keyOverride, out string? keyError)) // sharps +, flats −; overrides auto-detect
+                {
+                    Console.Error.WriteLine(keyError);
+                    return 1;
+                }
+
                 using var polySource = WavAudioSource.FromFile(args[1], new FrameParameters(1024, 256));
                 var decoderOptions = PolyDecoderOptions.FromArgs(args); // --onset-threshold/--frame-threshold/--min-note-len (Stage 4b)
                 using var polyTx = new BasicPitchTranscriber(modelPath, decoderOptions, tempo: tempo is { } bpm ? new Tempo(bpm) : null);
                 TranscriptionResult polyResult = polyTx.Transcribe(polySource);
+                // Auto-detect the key signature from the notes (Krumhansl-Schmuckler) unless --key declares it.
+                int key = keyOverride ?? KeyDetector.Detect(polyResult.RawEvents.Select(e => e.Pitch).ToList());
                 var polyWriter = new DryWetMidiWriter();
                 using (var raw = File.Create(Path.Combine(outDir, "raw.mid")))
                     polyWriter.Write(polyResult.RawEvents, polyResult.Score.Tempo, raw); // honest un-quantized polyphony
@@ -70,7 +75,7 @@ switch (args[0])
                 var quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, polyGrid);
                 using (var score = File.Create(Path.Combine(outDir, "score.mid")))
                     polyWriter.Write(quantized, polyResult.Score.Tempo, score);
-                Console.WriteLine($"Polyphonic transcription: {polyResult.RawEvents.Count} notes -> raw.mid; {quantized.Count} quantized -> score.mid + score.musicxml (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0})");
+                Console.WriteLine($"Polyphonic transcription: {polyResult.RawEvents.Count} notes -> raw.mid; {quantized.Count} quantized -> score.mid + score.musicxml (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0}{(keyOverride is null ? " detected" : " declared")})");
                 File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
                 return 0;
             }
@@ -88,10 +93,15 @@ switch (args[0])
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
             Directory.CreateDirectory(outDir);
             bool noteNames = Array.IndexOf(args, "--note-names") >= 0;
-            int key = TryReadOption(args, "--key") is { } k
-                ? int.Parse(k, System.Globalization.CultureInfo.InvariantCulture)
-                : 0;
+            if (!TryReadKeyOverride(args, out int? keyOverride, out string? keyError))
+            {
+                Console.Error.WriteLine(keyError);
+                return 1;
+            }
+
             var read = MidiFileReader.ReadFile(args[1], rate, flattenPedal: false); // notation wants raw key-press durations
+            // Auto-detect the key signature from the notes (Krumhansl-Schmuckler) unless --key declares it.
+            int key = keyOverride ?? KeyDetector.Detect(read.Events.Select(e => e.Pitch).ToList());
             // Auto-estimate the tempo from the note onsets when --tempo is omitted (median inter-onset
             // interval); the MIDI's own tempo is only the fallback when there is too little rhythm.
             string? tempoArg = TryReadOption(args, "--tempo");
@@ -111,7 +121,7 @@ switch (args[0])
             var quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, grid);
             using (var score = File.Create(Path.Combine(outDir, "score.mid")))
                 writer.Write(quantized, scoreTempo, score);
-            Console.WriteLine($"Notated {read.Events.Count} notes ({scoreTempo.BeatsPerMinute:F0} BPM{(tempoArg is null ? " estimated" : "")}) -> score.musicxml + score.mid (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0})");
+            Console.WriteLine($"Notated {read.Events.Count} notes ({scoreTempo.BeatsPerMinute:F0} BPM{(tempoArg is null ? " estimated" : "")}) -> score.musicxml + score.mid (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0}{(keyOverride is null ? " detected" : " declared")})");
             return 0;
         }
     case "render" when args.Length >= 3:
@@ -359,10 +369,10 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven: note-level F1 >= 0.75 at 50ms onset tolerance, seed-4242 corpus); --mono uses the monophonic YIN pipeline (exact-recovery closed loop; auto-estimates tempo when --tempo is omitted); --key sets the key signature (sharps +, flats -, e.g. -4 = A-flat major) for enharmonic spelling; the three thresholds tune note density; --legato (with --mono) opts into legato note recovery (a wobble-vs-legato trade-off, off by default); --coarse-rhythm (with --mono) floors note values at an eighth for cleaner rhythm from uneven playing");
+    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven: note-level F1 >= 0.75 at 50ms onset tolerance, seed-4242 corpus); --mono uses the monophonic YIN pipeline (exact-recovery closed loop; auto-estimates tempo when --tempo is omitted); --key overrides the auto-detected key signature (sharps +, flats -, e.g. -4 = A-flat major) that drives enharmonic spelling; the three thresholds tune note density; --legato (with --mono) opts into legato note recovery (a wobble-vs-legato trade-off, off by default); --coarse-rhythm (with --mono) floors note values at an eighth for cleaner rhythm from uneven playing");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]   (both honor the CC64 sustain pedal)");
-    Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (tempo auto-estimated from the onsets unless --tempo)");
+    Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (tempo auto-estimated from the onsets unless --tempo; key auto-detected unless --key)");
     Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>] [--align|--warp]  -> note-level precision/recall/F1 vs a reference; --align cancels the global tempo difference, --warp (DTW) also removes local rubato");
     Console.Error.WriteLine("  evaluate-audio <original.wav> <reproduction.wav>  -> timbre-robust pitch-content (chroma) similarity: does the re-synthesis sound like the original? 1.0 = identical notes over time");
     return 1;
@@ -373,6 +383,23 @@ static string? TryReadOption(string[] args, string name)
     for (int i = 0; i < args.Length - 1; i++)
         if (args[i] == name) return args[i + 1];
     return null;
+}
+
+// Parse an optional --key override, validating it to a real key signature (fifths −7..+7). Absent → the
+// key is auto-detected. Fails fast with a clean message rather than letting a nonsensical value crash the
+// speller or silently emit a garbage <fifths> (v2 Stage 3b review finding).
+static bool TryReadKeyOverride(string[] args, out int? fifths, out string? error)
+{
+    fifths = null;
+    error = null;
+    if (TryReadOption(args, "--key") is not { } raw)
+        return true;
+
+    if (!AudioClaudio.Cli.Commands.KeyOption.TryParse(raw, out int value, out error))
+        return false;
+
+    fifths = value;
+    return true;
 }
 
 // Best-effort cross-platform default-browser open (Phase-2 §8 item 3). Never throws: the URL is
