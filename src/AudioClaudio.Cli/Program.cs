@@ -90,10 +90,13 @@ switch (args[0])
                 ? int.Parse(k, System.Globalization.CultureInfo.InvariantCulture)
                 : 0;
             var read = MidiFileReader.ReadFile(args[1], rate, flattenPedal: false); // notation wants raw key-press durations
-            double bpm = TryReadOption(args, "--tempo") is { } t
-                ? double.Parse(t, System.Globalization.CultureInfo.InvariantCulture)
-                : read.Tempo.BeatsPerMinute;
-            var grid = new QuantizationGrid(rate, new Tempo(bpm), TimeSignature.FourFour, Subdivision.Sixteenth);
+            // Auto-estimate the tempo from the note onsets when --tempo is omitted (median inter-onset
+            // interval); the MIDI's own tempo is only the fallback when there is too little rhythm.
+            string? tempoArg = TryReadOption(args, "--tempo");
+            Tempo scoreTempo = tempoArg is null
+                ? TempoEstimator.Estimate(read.Events, read.Tempo)
+                : new Tempo(double.Parse(tempoArg, System.Globalization.CultureInfo.InvariantCulture));
+            var grid = new QuantizationGrid(rate, scoreTempo, TimeSignature.FourFour, Subdivision.Sixteenth);
             var chordWindow = new SampleDuration(rate.Hz / 20, rate); // ~50 ms merge window
             var grandStaff = PolyphonicQuantizer.Quantize(read.Events, grid, chordWindow);
             var writer = new DryWetMidiWriter();
@@ -101,8 +104,8 @@ switch (args[0])
                 new GrandStaffMusicXmlWriter(noteNames, fifths: key).Write(grandStaff, mx);
             var quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, grid);
             using (var score = File.Create(Path.Combine(outDir, "score.mid")))
-                writer.Write(quantized, new Tempo(bpm), score);
-            Console.WriteLine($"Notated {read.Events.Count} notes ({bpm:F0} BPM) -> score.musicxml + score.mid (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0})");
+                writer.Write(quantized, scoreTempo, score);
+            Console.WriteLine($"Notated {read.Events.Count} notes ({scoreTempo.BeatsPerMinute:F0} BPM{(tempoArg is null ? " estimated" : "")}) -> score.musicxml + score.mid (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0})");
             return 0;
         }
     case "render" when args.Length >= 3:
@@ -353,7 +356,7 @@ static int Usage()
     Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default; --mono uses the monophonic YIN pipeline (and auto-estimates tempo when --tempo is omitted); --key sets the key signature (sharps +, flats -, e.g. -4 = A-flat major) for enharmonic spelling; the three thresholds tune note density");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]   (both honor the CC64 sustain pedal)");
-    Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (uses the MIDI's own tempo unless --tempo)");
+    Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (tempo auto-estimated from the onsets unless --tempo)");
     Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>] [--align|--warp]  -> note-level precision/recall/F1 vs a reference; --align cancels the global tempo difference, --warp (DTW) also removes local rubato");
     Console.Error.WriteLine("  evaluate-audio <original.wav> <reproduction.wav>  -> timbre-robust pitch-content (chroma) similarity: does the re-synthesis sound like the original? 1.0 = identical notes over time");
     return 1;
