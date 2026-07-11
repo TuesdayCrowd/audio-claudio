@@ -1,0 +1,14 @@
+{
+  "fs": 44100,
+  "windowSize": 4096,
+  "hopSize": 1024,
+  "nMels": 229,
+  "nWindows": 6,
+  "eps": 1e-05,
+  "fMin": 30.0,
+  "fMax": 8000.0,
+  "rfftBins": 2049,
+  "segmentSizeSeconds": 16.0,
+  "segmentHopSeconds": 8.0,
+  "nSymbols": 90
+}

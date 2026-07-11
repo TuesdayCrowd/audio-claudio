@@ -1,65 +1,55 @@
-# v2 Stage 3 — Notation quality (general, corpus-measured)
+# v2 Stage 4 — Transkun engine, self-contained via ONNX
 
-**Plan:** `docs/plans/2026-07-10-v2-release-workplan.md` §Stage 3. Branch `v2-stage0-rebaseline`
-(merge held for the v2.0.0 tag). Mono closed loop stays **bit-exact green** and the MusicXML goldens
-stay byte-stable throughout. Cornelius's calls (2026-07-11): **key auto-detected as default** (`--key`
-overrides), **basic triplets are in scope** this stage.
+**Plan:** `docs/plans/2026-07-10-v2-release-workplan.md` §Stage 4. Branch `v2-stage0-rebaseline` (merge held
+for the v2.0.0 tag). A third `ITranscriber` (Yujia-Yan **Transkun**, Neural Semi-CRF, MIT) running in-process
+via ONNX — its win is **notation fidelity** (real durations, native velocity, native sustain/soft pedal).
+**Selectable, not the default, until earned**; accuracy measured on the Stage-1 general corpus. Mono closed
+loop stays bit-exact; the poly gate holds.
 
-**Method (measurement-first / honest).** Notation levers are measured on **ground-truth note-sets**
-(known rhythm/key/hand/dynamics), fed straight into the notation layer — *not* end-to-end through Basic
-Pitch's ~80% F1, so a number reflects the quantizer/splitter/key-detector, not engine noise. Each lever
-states **baseline → target**. TDD; adversarial review at each sub-stage boundary; Sonnet produces, Opus
-gates.
+**Reality (2026-07-11):** the workplan marks 4a "done", but its artifacts (ONNX, frozen buffers, ref3b/ref3c
+fixtures, spike scripts) lived in an ephemeral job dir and are **gone**. The transkun venv survives (torch
+2.13 / onnx / onnxruntime / transkun + `2.0.pt`). So **4a is re-derived this cycle and its outputs committed
+to the repo** (Cornelius, 2026-07-11: commit the ~55 MB ONNX directly to git) so Stage 4 becomes reproducible
+from committed code + fixtures like everything else. Batch: **4a→4c** (Cornelius).
 
----
+## Stage 4a: Regenerate + commit the ONNX export (Python spike)
 
-## Stage 3a: Notation-quality harness + baselines
+**Goal**: re-derive the `featuresBatch → S` ONNX export from `2.0.pt`; validate; extract frozen buffers +
+TDD fixtures; commit all of it.
+**Success Criteria**: opset-17 ONNX runs in `Microsoft.ML.OnnxRuntime`; `corr ≈ 1.0000` / tiny relErr vs
+PyTorch on random features; `freq2mels` + `windows` + the 90-symbol map + params extracted; `ref3b` (mel)
+and `ref3c` (Viterbi) fixtures generated; ONNX + buffers + MIT license committed under
+`fixtures/models/transkun/`.
+**Tests**: a Python parity check (PyTorch `S` vs ONNX `S`); the committed artifacts load in C#.
+**Status**: Complete — `transkun.onnx` 53 MB single-file, `corr=1.000000` maxRelErr ~5e-6 (random + dynamic
+T), loads/runs in onnxruntime from the repo. Buffers (freq2mels/windows/symbols) + params + ref3b/ref3c
+fixtures + MIT license + regeneration script committed under `fixtures/models/transkun/`. Finds vs the
+workplan: config MUST come from `2.0.conf` (baseSize 64/nHead 8); the export blocker was 5-D **SDPA** (fixed
+by a 4-D reshape), not `diag_embed` (which exported cleanly); `S`-only is the core-first boundary (velocity/
+sub-frame need `ctx` post-decode → 4e).
 
-**Goal**: a deterministic generator of scores with known {note-value (incl. triplets), key, per-note
-hand, dynamic band} + metric helpers, capturing today's baseline for every lever.
-**Success Criteria**: baseline numbers recorded as tests (note-value exact-match %, key-detect %,
-hand-split %, dynamic-band %); dynamics/pedal/auto-tempo generalized + tested on the corpus.
-**Tests**: `NotationCorpusGen` determinism; metric-helper unit tests; baseline gates (assert-current).
-**Status**: Complete — baselines (seed 5137, 40 cases): note-value 76.5%, key 10.0%, hand 89.0%.
+## Stage 4b: Mel front end in C# (Infrastructure)
 
-## Stage 3b: Key detection (Krumhansl-Schmuckler)
+**Goal**: audio → `featuresBatch`, matching transkun's front end: framing (n_fft/hop) → per-segment
+normalize → the 6 windows → `Radix2Fft` (ortho) → |·|² → `freq2mels` → log-norm.
+**Success Criteria**: bit-close to the `ref3b` fixture (state the tolerance — cross-impl FFT drift, like the
+render golden).
+**Tests**: TDD vs `ref3b`; Parseval sanity; determinism.
+**Status**: Not Started
 
-**Goal**: `KeyDetector.Detect(pitches) -> fifths` (Domain, BCL-only, pure). Wire as the **default** in
-`transcribe`/`notate`; `--key` overrides. Report the detected key.
-**Success Criteria**: key accuracy on the tonal corpus ≥ target (baseline → target); `--key` still forces;
-default byte-goldens unaffected (writer takes explicit fifths).
-**Tests**: K-S profile correlation on known keys; tie determinism; CLI override precedence.
-**Status**: Complete — key detection 10.0% → 92.5% (gate ≥85%); `--key` validated (review fix). CI-green push.
+## Stage 4c: Semi-CRF Viterbi decode in C# (Domain, BCL-only)
 
-## Stage 3c: Temporal hand-split
+**Goal**: port `viterbiBackward` (inference path only) — `S` → note intervals (onset frame, offset frame,
+pitch) + the two pedal tracks.
+**Success Criteria**: intervals match the `ref3c` fixture exactly.
+**Tests**: TDD vs `ref3c`; determinism; a tiny hand-checked `S` decodes to the expected notes.
+**Status**: Not Started
 
-**Goal**: `HandSplitter` — online two-hand assignment (moving per-hand centers + middle-C prior +
-no-cross constraint) replacing the fixed middle-C cut in `PolyphonicQuantizer`. Keep `StaffSplitter`
-(middle-C) as the documented baseline.
-**Success Criteria**: hand-assignment accuracy on the hand-tagged corpus ≥ target (esp. crossing cases) >
-the middle-C baseline; smoke-tested on **both** mono and poly engine output (no crash, sane staff balance).
-**Tests**: crossing cases recovered; determinism; per-staff bar conservation preserved.
-**Status**: Complete — hand assignment 89.1% → 100.0% on continuous crossings (gate ≥97%, +5pt). Goldens untouched.
+## Stage 4d (next batch): TranskunTranscriber + parity gate
 
-## Stage 3d: Basic triplets
-
-**Goal**: triplet-capable grid (divisions=12/quarter), quantizer snapping to a triplet-aware value set,
-and `GrandStaffMusicXmlWriter` emitting `<time-modification>` + `<tuplet>` start/stop brackets; flattener
-round-trips. Mono path untouched (separate types).
-**Success Criteria**: triplet note-value recovery on the corpus ≥ target; a new byte-golden for a
-triplet score; `xmllint` + MusicXML-4.0 structural check pass; per-staff bar conservation holds.
-**Tests**: triplet grouping/bracketing golden; flatten round-trip; straight-time output unchanged.
-**Status**: Complete — note-value 76.5% → 100.0% at the Twelfth grid; opt-in `--triplets` (default clean
-sixteenth, no spurious triplets); writer emits `<time-modification>`+`<tuplet>` (xmllint OK); mono grid
-values bit-exact; closed loop 28/28 green.
-
-## Stage 3e: Close R11.2 + reconcile docs
-
-**Goal**: emit a representative grand-staff score (dynamics + pedal + key + hands + triplets), document +
-schedule the **human** MuseScore-load verification (R11.2); reconcile DECISIONS/CLAUDE.md/plan status.
-**Success Criteria**: a recorded MuseScore pass action item with a concrete sample file; status tables
-updated; suite green.
-**Tests**: doc-lint (existing) stays green; sample score validates structurally.
-**Status**: Complete — DECISIONS "v2 Stage 3" + CLAUDE.md banner reconciled; a representative triplet
-grand-staff sample committed (`fixtures/golden/musicxml/triplet-grand-staff.musicxml`, byte-golden +
-xmllint-clean) as the R11.2 artifact; R11.2 human MuseScore check documented + scheduled for Cornelius.
+`TranskunTranscriber : ITranscriber` (mel → ONNX → Viterbi → `NoteEvent`s + pedal), segment stitching (a
+note across a boundary recovered once), `transcribe --model transkun`, runtime measured. **4d-parity: ≥99 %
+note-level F1 agreement PyTorch≡ONNX — must pass before 4d is "done"; offramp = subprocess/drop if it can't.**
+Then 4e (velocity/sub-frame heads, deferred — core-first) and 4f (HuggingFace publish — outward, confirm
+with Cornelius).
+**Status**: Not Started (out of this batch)

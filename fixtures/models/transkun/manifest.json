@@ -1,0 +1,59 @@
+{
+  "freq2mels": {
+    "file": "freq2mels.f32",
+    "shape": [
+      2049,
+      229
+    ],
+    "dtype": "f32"
+  },
+  "windows": {
+    "file": "windows.f32",
+    "shape": [
+      6,
+      4096
+    ],
+    "dtype": "f32"
+  },
+  "symbols": {
+    "file": "symbols.i32",
+    "shape": [
+      90
+    ],
+    "dtype": "i32"
+  },
+  "ref3b_audio": {
+    "file": "ref3b_audio.f32",
+    "shape": [
+      66150
+    ],
+    "dtype": "f32"
+  },
+  "ref3b_features": {
+    "file": "ref3b_features.f32",
+    "shape": [
+      66,
+      229,
+      6
+    ],
+    "dtype": "f32"
+  },
+  "ref3c_S": {
+    "file": "ref3c_S.f32",
+    "shape": [
+      66,
+      66,
+      90
+    ],
+    "dtype": "f32"
+  },
+  "ref3c_syn_S": {
+    "file": "ref3c_syn_S.f32",
+    "shape": [
+      6,
+      6,
+      90
+    ],
+    "dtype": "f32"
+  }
+}
