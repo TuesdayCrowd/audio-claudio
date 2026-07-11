@@ -42,6 +42,43 @@ switch (args[0])
             // As of v0.2.0 the polyphonic Basic Pitch engine is the default; --mono opts back into the
             // monophonic YIN pipeline (the closed-loop-proven path).
             bool poly = TranscribeModeResolver.Resolve(args) == TranscribeMode.Polyphonic;
+            if (poly && TryReadOption(args, "--model") == "transkun")
+            {
+                // Transkun engine (v2 Stage 4): notation-fidelity piano transcription (real durations +
+                // sustain pedal), self-contained via ONNX. Core-first — frame-resolution timing, no velocity.
+                Directory.CreateDirectory(outDir);
+                if (!TryReadKeyOverride(args, out int? tkKeyOverride, out string? tkKeyError))
+                {
+                    Console.Error.WriteLine(tkKeyError);
+                    return 1;
+                }
+
+                var tkRate = new SampleRate(44100);
+                using var tkSource = WavAudioSource.FromFile(args[1], new FrameParameters(1024, 256));
+                using var tk = new TranskunTranscriber(TranskunModelLocator.Resolve(), new Radix2Fft());
+                (var tkNotes, var tkPedal) = tk.TranscribeDetailed(tkSource);
+                Tempo tkTempo = tempo is { } tb ? new Tempo(tb) : TempoEstimator.Estimate(tkNotes, new Tempo(120));
+                int tkKey = tkKeyOverride ?? KeyDetector.Detect(tkNotes.Select(e => e.Pitch).ToList());
+
+                var tkWriter = new DryWetMidiWriter();
+                using (var raw = File.Create(Path.Combine(outDir, "raw.mid")))
+                    tkWriter.Write(tkNotes, tkTempo, raw);
+
+                var tkSubdivision = Array.IndexOf(args, "--triplets") >= 0 ? Subdivision.Twelfth : Subdivision.Sixteenth;
+                var tkGrid = new QuantizationGrid(tkRate, tkTempo, TimeSignature.FourFour, tkSubdivision);
+                var tkChordWindow = new SampleDuration(tkRate.Hz / 20, tkRate);
+                var tkGrandStaff = PolyphonicQuantizer.Quantize(tkNotes, tkGrid, tkChordWindow);
+                var tkPedalMarks = tkPedal.Select(c => ((int)tkGrid.SamplesToTick(c.Sample), c.Down)).ToList();
+                using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
+                    new GrandStaffMusicXmlWriter(noteNames, fifths: tkKey).Write(tkGrandStaff, mx, tkPedalMarks);
+                var tkQuantized = GrandStaffFlattener.ToNoteEvents(tkGrandStaff, tkGrid);
+                using (var score = File.Create(Path.Combine(outDir, "score.mid")))
+                    tkWriter.Write(tkQuantized, tkTempo, score);
+                Console.WriteLine($"Transkun transcription: {tkNotes.Count} notes -> raw.mid; {tkQuantized.Count} quantized -> score.mid + score.musicxml (grand staff, {tkGrandStaff.Measures.Count} bars, key {tkKey:+#;-#;0}, {tkPedal.Count / 2} pedal spans)");
+                File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
+                return 0;
+            }
+
             if (poly)
             {
                 // Polyphonic path (Basic Pitch). raw.mid is the honest many-note output; score.mid/
@@ -373,7 +410,7 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven: note-level F1 >= 0.75 at 50ms onset tolerance, seed-4242 corpus); --mono uses the monophonic YIN pipeline (exact-recovery closed loop; auto-estimates tempo when --tempo is omitted); --key overrides the auto-detected key signature (sharps +, flats -, e.g. -4 = A-flat major) that drives enharmonic spelling; the three thresholds tune note density; --legato (with --mono) opts into legato note recovery (a wobble-vs-legato trade-off, off by default); --coarse-rhythm (with --mono) floors note values at an eighth for cleaner rhythm from uneven playing; --triplets (polyphonic) engraves eighth-note triplets (off by default — auto-triplet quantization risks spurious triplets on straight music)");
+    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven: note-level F1 >= 0.75 at 50ms onset tolerance, seed-4242 corpus); --mono uses the monophonic YIN pipeline (exact-recovery closed loop; auto-estimates tempo when --tempo is omitted); --model transkun selects the self-contained Transkun engine (notation-fidelity: real durations + sustain pedal; core-first, no velocity; >=99% PyTorch parity); --key overrides the auto-detected key signature (sharps +, flats -, e.g. -4 = A-flat major) that drives enharmonic spelling; the three thresholds tune note density; --legato (with --mono) opts into legato note recovery (a wobble-vs-legato trade-off, off by default); --coarse-rhythm (with --mono) floors note values at an eighth for cleaner rhythm from uneven playing; --triplets (polyphonic) engraves eighth-note triplets (off by default — auto-triplet quantization risks spurious triplets on straight music)");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]   (both honor the CC64 sustain pedal)");
     Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names] [--triplets]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (tempo auto-estimated from the onsets unless --tempo; key auto-detected unless --key; --triplets engraves eighth-note triplets)");

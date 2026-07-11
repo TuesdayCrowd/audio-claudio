@@ -56,4 +56,9 @@ note across a boundary recovered once), `transcribe --model transkun`, runtime m
 note-level F1 agreement PyTorch≡ONNX — must pass before 4d is "done"; offramp = subprocess/drop if it can't.**
 Then 4e (velocity/sub-frame heads, deferred — core-first) and 4f (HuggingFace publish — outward, confirm
 with Cornelius).
-**Status**: Not Started (out of this batch)
+**Status**: 4d Complete — `TranskunTranscriber` (core-first: frame-resolution, no velocity) with full
+16 s/8 s segment stitching + merge; `transcribe --model transkun` wired (grand staff + pedal + key detect).
+**Parity gate PASSES at F1 = 100.0 %** (≥ 99 % required) on two-bar (9≡9) and a 21.8 s cross-boundary clip
+(35≡35) vs the native transkun CLI at ±50 ms — committed native MIDIs so it runs in CI. Runtime ~1.3×
+realtime (~7 s for 5.45 s; sparse-mel optimization, bit-exact vs ref3b). Native reference clips committed
+under `fixtures/models/transkun/parity/`. **4e / 4f remain (next).**

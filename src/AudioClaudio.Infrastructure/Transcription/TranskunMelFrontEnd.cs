@@ -24,6 +24,8 @@ public sealed class TranskunMelFrontEnd
     private readonly int _rfftBins;
     private readonly double _eps;
     private readonly double _logEps;
+    private readonly int[] _melFirst; // first nonzero rfft bin per mel filter
+    private readonly int[] _melLast;  // last nonzero rfft bin per mel filter (inclusive)
 
     public TranskunMelFrontEnd(TranskunBuffers buffers, IFourierTransform fft)
     {
@@ -37,6 +39,31 @@ public sealed class TranskunMelFrontEnd
         _rfftBins = p.RfftBins;
         _eps = p.Eps;
         _logEps = Math.Log(_eps);
+
+        // Mel filters are triangular — each spans a small contiguous band of rfft bins and is exactly zero
+        // elsewhere. Precompute each filter's nonzero range so the mel matmul skips the zeros (exact, ~100×
+        // faster than the dense 2049×229 product — the transcriber's hot loop).
+        _melFirst = new int[_nMels];
+        _melLast = new int[_nMels];
+        for (int m = 0; m < _nMels; m++)
+        {
+            int first = -1, last = -1;
+            for (int k = 0; k < _rfftBins; k++)
+            {
+                if (buffers.Freq2Mels[k * _nMels + m] != 0f)
+                {
+                    if (first < 0)
+                    {
+                        first = k;
+                    }
+
+                    last = k;
+                }
+            }
+
+            _melFirst[m] = first < 0 ? 0 : first;
+            _melLast[m] = last < 0 ? -1 : last;
+        }
     }
 
     /// <summary>Compute <c>featuresBatch[nFrame, nMels, nWindows]</c> for one segment of mono audio.</summary>
@@ -107,13 +134,14 @@ public sealed class TranskunMelFrontEnd
                     power[k] = (c.Real * c.Real + c.Imaginary * c.Imaginary) * orthoSq;
                 }
 
+                float[] freq2mels = _buffers.Freq2Mels;
                 for (int m = 0; m < _nMels; m++)
                 {
                     double acc = 0.0;
-                    int fbBase = m; // freq2mels is [rfftBins, nMels] row-major → index k*nMels + m
-                    for (int k = 0; k < _rfftBins; k++)
+                    int last = _melLast[m]; // freq2mels is [rfftBins, nMels] row-major → index k*nMels + m
+                    for (int k = _melFirst[m]; k <= last; k++)
                     {
-                        acc += power[k] * _buffers.Freq2Mels[k * _nMels + fbBase];
+                        acc += power[k] * freq2mels[k * _nMels + m];
                     }
 
                     features[f, m, w] = (float)((Math.Log(acc + _eps) - _logEps) * invNegLogEps);
