@@ -1520,8 +1520,9 @@ tier of the ranked guarantee hierarchy — **Transkun-via-ONNX = statistical + �
 earned. Runtime ~1.3× realtime (a sparse-`freq2mels` mel optimization, bit-exact, cut it ~4×; the
 172 MB/segment `S` now dominates).
 
-**4f — publish (DEFERRED by Cornelius, 2026-07-11).** The artifact (both ONNX, buffers, license, decode spec,
-`MODEL_CARD.md`) is committed and publish-ready, crediting Yujia Yan and linking upstream. Cornelius chose to
-**defer the HuggingFace publish** and keep the artifact **repo-only for now** (it is already fully
-self-contained in-repo); the public push happens later, on his explicit go + target (it is outward-facing, and
-a release under his account is his call). Stage 4 is otherwise complete (4a–4e).
+**4f — PUBLISHED to HuggingFace (2026-07-11, post-v2.0.0).** The complete package — both ONNX (`transkun.onnx`
++ `transkun-heads.onnx`, LFS), the frozen buffers, `params`/`manifest`, `LICENSE`, the model card
+(`README.md`), the decode spec (`DECODE_SPEC.md`), the `ref3b`/`ref3c` validation fixtures, and the
+regeneration scripts — is public at **<https://huggingface.co/TuesdayCrowd/transkun-onnx>** (license MIT,
+crediting Yujia Yan et al., linking upstream + the audio-claudio C# reference decoder). Uploaded via the `hf`
+CLI. (Was deferred at the v2.0.0 ship; published on Cornelius's go right after.) Stage 4 fully complete.
