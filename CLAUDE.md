@@ -21,13 +21,14 @@ Claude Code: read all of it before touching anything.
 **v2 release cycle in progress (started 2026-07-10).** The plan is
 [`docs/plans/2026-07-10-v2-release-workplan.md`](docs/plans/2026-07-10-v2-release-workplan.md);
 its job is to realize the Phase-2 vision (§8) with v1's discipline — every new capability *proven* on a
-**general** synthetic corpus, no more single-piece chasing. **Stages 0–4 are done** (branch
-`v2-stage0-rebaseline`, CI-green on x64, merge held for the cohesive v2.0.0 tag; **Stage 4 = the
-self-contained Transkun engine via ONNX**: `transcribe --model transkun`, mel front end + semi-CRF Viterbi
-decode ported to C#, the transformer/scorer/heads in a committed 53 MB ONNX — **note-IDENTICAL to native
-PyTorch: F1 = 100 % @ ±25 ms + exact velocity**, gated in CI against committed native-reference MIDIs; the
-third guarantee tier is now earned. 4f HuggingFace publish is prepared + outward-facing, pending Cornelius.
-See DECISIONS "v2 Stage 4"): reported
+**general** synthetic corpus, no more single-piece chasing. **Stages 0–4 shipped as `v2.0.0`** (2026-07-11;
+**Stage 4 = the self-contained Transkun engine via ONNX**: `transcribe --model transkun`, mel front end +
+semi-CRF Viterbi decode ported to C#, the transformer/scorer/heads in a committed 53 MB ONNX —
+**note-IDENTICAL to native PyTorch: F1 = 100 % @ ±25 ms + exact velocity**, gated in CI against committed
+native-reference MIDIs; the third guarantee tier is now earned). **Stage 5 (robustness/packaging) + 4f (the
+HuggingFace publish) are deferred to the v2.1 cycle** (Cornelius, 2026-07-11 — "publish this as v2, save
+Stage 5 for v2.1"); the Transkun artifact is committed + publish-ready + repo-only for now. See DECISIONS
+"v2 Stage 4"/"v2 Stage 3". Reported
 numbers now come only from the committed corpus in [`docs/CORPUS.md`](docs/CORPUS.md) (mono = bit-exact
 closed-loop recovery; poly = **closed-loop-proven**, note-level F1 ≥ 0.75 @ ±50 ms, measured 79.6% on the
 seed-4242 corpus, 451 notes, gated in CI); the polyphonic default's "preview" label is **lifted** now that

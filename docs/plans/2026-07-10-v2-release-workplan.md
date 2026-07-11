@@ -1,5 +1,11 @@
 # audio-claudio v2 — release workplan
 
+> **STATUS (2026-07-11): shipped as v2.0.0.** Stages 0–4 are complete and tagged **v2.0.0**
+> (Stage 4 = the self-contained Transkun engine via ONNX, ≥99 % PyTorch parity — measured 100 % + exact
+> velocity). **Stage 5 (packaging / robustness) is deferred to the v2.1 cycle** (Cornelius, 2026-07-11), and
+> Stage 4f (the HuggingFace publish) is deferred with it — the artifact is committed, publish-ready, and
+> repo-only for now. Per-stage rationale is in `DECISIONS.md` ("v2 …"); this doc is the historical spec.
+
 ## Why this exists (the refocus)
 
 v0.2.0 drifted into replicating **one** piece — the *Death* piano recording — judged by **one**
@@ -157,7 +163,7 @@ parity gate (≥99%)**, has a corpus-measured accuracy number and a stated runti
 notation; the ONNX artifact committed (and, on approval, published) with license + attribution + a usable
 decode spec.
 
-## Stage 5 — Robustness, UX, packaging
+## Stage 5 — Robustness, UX, packaging — **DEFERRED to v2.1**
 
 **Goal:** a tool, not a `dotnet run` demo.
 - Ship a packaged **`claudio`** executable (self-contained per platform).
