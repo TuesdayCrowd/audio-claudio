@@ -105,17 +105,24 @@ register, which would measure the SoundFont's decay rather than the engine.
 
 ### Seed & case count
 
-Seed **4242**, **8 cases** (114 reference notes) in the committed diagnostic. Scored by
-`TranscriptionEvaluator` (exact pitch; onset-tolerant, one-to-one matching) at ±50, 100,
-and 150 ms, micro-averaged across cases.
+Seed **4242**, **32 cases** (451 reference notes, 564 transcribed) in the committed gate.
+Scored by `TranscriptionEvaluator` (exact pitch; onset-tolerant, one-to-one matching) at
+±50, 100, and 150 ms, micro-averaged across cases. A deep run overrides the count via
+`POLY_CLOSED_LOOP_CASES` (the polyphonic analogue of `CLOSED_LOOP_CASES`). The @±50 ms F1
+is converged at this size (±0.2 pt vs a 24-case draw), so the number is a claim, not a
+small-sample artifact.
 
-### Measured result (baseline)
+### Measured result (the committed gate)
 
-Note-level **F1 ≈ 82 %** — 81.3 % / 82.1 % / 82.9 % at ±50 / 100 / 150 ms (recall ~90 %,
-precision ~76 %). Today this is asserted only as a *regression floor* (F1 ≥ 55 %) by a
-**diagnostic**, not a gate. Promoting it to a committed-threshold **property suite** —
-so the polyphonic engine earns the same kind of guarantee the monophonic one already
-has — is v2 Stage 1, and lifts the engine's "preview" label.
+Note-level **F1 79.6 %** at ±50 ms (81.4 % / 82.0 % at ±100 / 150 ms; recall ~90 %,
+precision ~72 %). The gate (`PolyphonicClosedLoopTests`, v2 Stage 1) requires **F1 ≥ 0.75
+at ±50 ms** — the committed threshold (Cornelius, 2026-07-10) — and runs on every CI push
+(the ONNX inference is ~4–5 s for the whole corpus). Every real improvement raises the
+bar; a drop below it is a regression; the worst offending cases are quarantined (WAV +
+reference MIDI) for promotion to `fixtures/regressions/polyphonic/` — a subdirectory the mono
+regression scan skips, replayed by `PolyphonicRegressionCorpusTests` — so the suite only gets harder.
+This earns the polyphonic engine a guarantee of the same *kind* as the monophonic loop's,
+but ordinal (a statistical F1 bar) rather than exact — the two are ranked, never flattened.
 
 ---
 
@@ -141,7 +148,7 @@ uniform "proven":
 | Engine | Guarantee | Corpus |
 |---|---|---|
 | Monophonic (YIN) | **Bit-exact closed-loop recovery** — exact count/pitch/onset, duration where audible | Corpus 1 |
-| Polyphonic (Basic Pitch) | **Statistical** — corpus F1 ≥ a committed threshold at a stated onset tolerance (Stage 1) | Corpus 2 |
+| Polyphonic (Basic Pitch) | **Statistical** — corpus note-level F1 ≥ 0.75 at ±50 ms (measured 79.6 %), gated in CI (Stage 1) | Corpus 2 |
 | Transkun-via-ONNX | **Statistical + a ≥ 99 % PyTorch-parity** gate (Stage 4) | Corpus 2 |
 
 Each carries its own number and its own limits; the default (polyphonic) states its

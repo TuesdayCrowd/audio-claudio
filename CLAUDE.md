@@ -21,13 +21,14 @@ Claude Code: read all of it before touching anything.
 **v2 release cycle in progress (started 2026-07-10).** The plan is
 [`docs/plans/2026-07-10-v2-release-workplan.md`](docs/plans/2026-07-10-v2-release-workplan.md);
 its job is to realize the Phase-2 vision (§8) with v1's discipline — every new capability *proven* on a
-**general** synthetic corpus, no more single-piece chasing. **Stage 0 (re-baseline) is done:** reported
+**general** synthetic corpus, no more single-piece chasing. **Stages 0–1 are done:** reported
 numbers now come only from the committed corpus in [`docs/CORPUS.md`](docs/CORPUS.md) (mono = bit-exact
-closed-loop recovery; poly = F1 ≈ 82 % on the seed-4242 corpus); the polyphonic default is labelled a
-**"preview — not yet closed-loop-proven"** until Stage 1's polyphonic closed-loop gate lifts it; and the
-old *Death*-recording chroma chase is retired as a goal (`evaluate-audio` stays a general tool). The
+closed-loop recovery; poly = **closed-loop-proven**, note-level F1 ≥ 0.75 @ ±50 ms, measured 79.6% on the
+seed-4242 corpus, 451 notes, gated in CI); the polyphonic default's "preview" label is **lifted** now that
+its closed-loop gate passes; and the old *Death*-recording chroma chase is retired as a goal
+(`evaluate-audio` stays a general tool). The
 guarantee hierarchy is ranked, never flattened (mono bit-exact / poly statistical F1 / Transkun-via-ONNX
-statistical + ≥99 % PyTorch parity). See `DECISIONS.md` "v2 re-baseline". The v0.1/v0.2 history below stands.
+statistical + ≥99 % PyTorch parity). See `DECISIONS.md` "v2 re-baseline" and "v2 Stage 1". The v0.1/v0.2 history below stands.
 
 **Steps 0–3 are complete and on `main`.** Step 0 scaffold + guards + CI + `DECISIONS.md`;
 the Domain primitives `Pitch`, `PitchMath.CentsBetween`, `SampleRate`,
@@ -118,9 +119,9 @@ conservation. Accuracy iteration (Stage 4) — `OnsetAlignment.GlobalScale`/`Dtw
 stays an honest pitch-recovery signal); `--onset-threshold`/`--frame-threshold`/`--min-note-len`
 (`PolyDecoderOptions`) tune the decoder's note density; `PitchSpeller.Spell` (line-of-fifths,
 nearest-to-centre) gives key-aware enharmonic spelling via a **declared** `--key <fifths>` (like tempo —
-declared, not estimated). **Accuracy (see the v2 re-baseline above and `docs/CORPUS.md`):** the engine's
-*intrinsic* fidelity on the general synthetic corpus is note-level F1 ≈ 82% (81.3/82.1/82.9% at ±50/100/150
-ms, seed-4242). On one real copyrighted piece (audio + reference kept outside the repo, never committed) it
+declared, not estimated). **Accuracy (v2 Stage 1 closed-loop gate, see `docs/CORPUS.md`):** the engine is
+closed-loop-proven at note-level F1 ≥ 0.75 @ ±50 ms on the seed-4242 corpus (32 cases, 451 notes), measured
+79.6% (81.4/82.0% at ±100/150 ms). On one real copyrighted piece (audio + reference kept outside the repo, never committed) it
 measures ~15–22% by onset tolerance — but that gap is performance rubato + the OMR reference's own error,
 **not** the engine's pitch/onset fidelity, so ~15–22% is *not* an engine ceiling. The three decoder
 thresholds are a notation-cleanliness knob (tuned values cut the note count ~a third toward the reference's
@@ -134,9 +135,7 @@ density at ~zero F1 cost), not an accuracy lever. Build/test green (431 tests).
   detector (the rare ~0.4% octave residual, and the live-frame ≈ MIDI 42–93 range limits on real mic audio);
   velocity-from-energy and a treble/bass split for the *monophonic* path specifically (both already true of
   the polyphonic path — Basic Pitch amplitude, `StaffSplitter` — but not ported back to
-  YIN/`MusicXmlScoreWriter`); a closed-loop-style correctness *guarantee* for polyphony (the
-  `PolyphonicClosedLoop` diagnostic already measures F1 ≈ 82% on the general synthetic corpus, but a
-  committed-threshold *gate* — v2 Stage 1 — is not yet landed);
+  YIN/`MusicXmlScoreWriter`);
   and a legato / coarser-grid note-off for cleaner rhythm from uneven beginner playing. The step plans and
   the authoritative API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note honest if
   work resumes.
@@ -680,8 +679,8 @@ The CLI is the only place adapters are constructed and wired to ports.
 Recorded so the MVP can decline scope without losing the ideas. Rough order of
 value:
 
-1. **Polyphony — shipped as the default `transcribe` engine in `v0.2.0`, but not yet closed-loop-proven**
-   (v2 Stage 0 labels it a *preview*; Stage 1 promotes the diagnostic below to a committed-F1 gate). (see
+1. **Polyphony — the default `transcribe` engine (`v0.2.0`), closed-loop-proven in v2 Stage 1**
+   (note-level F1 ≥ 0.75 @ ±50 ms on the seed-4242 corpus, gated in CI). (see
    "Where the project is right now" above; `--mono` keeps the monophonic path).
    Spotify Basic Pitch's ONNX serialization via Microsoft.ML.OnnxRuntime, a
    second `ITranscriber` adapter behind the same port, exactly as anticipated
@@ -690,12 +689,12 @@ value:
    synthesize→transcribe oracle has no honest ground truth for a real, copyrighted
    performance. Accuracy is instead measured by a new `evaluate` harness (Stage 1)
    scoring against a real reference recording's note-set; that is how the
-   ~15–22% real-world F1 above was established. A polyphonic closed-loop **diagnostic**
-   (`PolyphonicClosedLoop`, test project) measures the engine's *intrinsic*
-   fidelity at **F1 ≈ 82%** (81.3/82.1/82.9% at ±50/100/150 ms, seed-4242) on clean
-   synthesized chords — showing that ~15–22% real-world figure is dominated by rubato +
-   OMR-reference error, not the engine (see `DECISIONS.md` and `docs/CORPUS.md`). A strict exact-recovery *guarantee* like the
-   monophonic loop remains open.
+   ~15–22% real-world F1 above was established. The polyphonic closed-loop **gate**
+   (`PolyphonicClosedLoopTests`, v2 Stage 1) measures the engine's *intrinsic*
+   fidelity at **F1 79.6%** @±50 ms (82.0% @±150 ms, seed-4242, 451 notes) on clean
+   synthesized chords and requires F1 ≥ 0.75 — showing that ~15–22% real-world figure is dominated by
+   rubato + OMR-reference error, not the engine (see `DECISIONS.md` and `docs/CORPUS.md`). It is a
+   statistical gate, ranked below (never flattened into) the monophonic loop's exact recovery.
 2. **Tempo estimation — DONE (shipped in `v0.1.2`).** Not the histogram/
    autocorrelation approach sketched here: `TempoEstimator` uses the median
    inter-onset interval (a grid-fit search was tried first and rejected — it

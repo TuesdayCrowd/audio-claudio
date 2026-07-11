@@ -1280,7 +1280,9 @@ erased; it still stands below as labelled, non-headline context):
 - **Polyphonic (Basic Pitch):** note-level F1 **81.3 / 82.1 / 82.9 %** at ±50 / 100 / 150 ms on the
   seed-4242 synthetic corpus (8 cases, 114 reference notes; recall ~90 %, precision ~76 %). Still asserted
   only as a diagnostic *floor* (≥ 55 %), not a gate — Stage 1 promotes it to a committed-threshold property
-  suite.
+  suite. *(Superseded by the "v2 Stage 1" entry below: the committed gate uses a larger 32-case /
+  451-note corpus where the converged F1 @±50 ms is **79.6 %** — that is the current headline; this 8-case
+  figure was the Stage-0 snapshot.)*
 
 **Default stays polyphonic** (Cornelius, 2026-07-10 — "piano is two hands"): no revert to mono and no
 poly→mono→poly churn. The honesty is carried by transparency instead — a **"preview — not yet
@@ -1297,3 +1299,39 @@ that tie on Death (77.5 % vs 78.6 % chroma) still stands and is exactly why Tran
 silver bullet. It re-enters in Stage 4 as a **notation-fidelity** engine (real key-press durations, native
 velocity, native pedal), measured on this same general corpus and *not* defaulted until earned — the same
 discipline every engine here is held to.
+
+## v2 Stage 1 — polyphony earned: the closed-loop gate (2026-07-10)
+
+**What landed.** The polyphonic closed loop is promoted from a *diagnostic* (regression floor F1 ≥ 0.55,
+"not a pass/fail property") to a **committed-F1 property gate** (`PolyphonicClosedLoopTests`): generate a
+fixed-seed (4242) corpus of 32 random chord scores, synthesize each with the MeltySynth oracle, transcribe
+with Basic Pitch, micro-average note-level F1, and **require F1 ≥ 0.75 at ±50 ms**. This restores v1's
+defining property — polyphonic correctness that is *measured*, not asserted — and lifts the "preview" label.
+
+**The gate spec (Cornelius, 2026-07-10):** threshold **0.75**, onset tolerance **±50 ms** (the strictest of
+the three the diagnostic reports — the most honest note-level timing claim). Measured **F1 79.6 %** @±50 ms
+(81.4 / 82.0 % @±100 / 150 ms; recall ~90 %, precision ~72 %) over 451 reference notes → 4.6 pt of headroom.
+
+**Corpus size = 32, chosen by convergence, not convenience.** The old 8-case diagnostic reported 81.3 %
+@±50 ms; 24 and 32 cases both land at 79.6–79.8 % — the honest converged mean. Committing the gate at the
+8-case number would have set a subtly inflated baseline a future *correct* engine could "regress" below by
+sampling luck alone. 451 notes makes "≈80 %" a claim, not an artifact. Cost is trivial (~4–5 s for the whole
+corpus; ONNX inference is ~0.15 s/case), so the corpus is sized for credibility, not speed.
+
+**Why not exact recovery (like the mono loop).** Basic Pitch is a neural model; it never returns a score
+bit-for-bit (~80 % F1 on clean synth chords is its ceiling — see the diagnostic entry above). So the earned
+guarantee is **ordinal**: a stated statistical F1 bar over a stated seed at a stated tolerance (v2 workplan
+Principle 1). The three engines' guarantees are **ranked, never flattened**: mono = bit-exact recovery;
+poly = this F1 gate; Transkun-via-ONNX (Stage 4) will add a ≥ 99 % PyTorch-parity gate on top.
+
+**Runs in CI, can't flake.** `ci.yml` runs the full suite (no `--filter`), so the Slow gate runs on every
+push. The corpus is deterministic (plain seeded `Random`, not CsCheck's threaded `Sample`), so the only
+cross-run variance is the recorded ONNX SIMD drift across CPU architectures — which the 4.6 pt headroom
+is expected to absorb (the 79.6 % is an ARM64 dev measurement; the first x64 CI run confirms it). On failure
+the worst ≤ 8 cases are quarantined (WAV = the exact transcriber input; reference MIDI = the score) for
+diagnosis and promotion to **`fixtures/regressions/polyphonic/`** — a subdirectory the mono regression scan
+(top-level `*.mid` only) never picks up, replayed by `PolyphonicRegressionCorpusTests` at the gate's per-case
+F1 bar so the suite only gets harder.
+
+**This same harness proves Stage 4.** Transkun (the third engine) will be measured against this exact
+general corpus — one oracle, every engine held to the same bar.

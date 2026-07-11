@@ -6,7 +6,7 @@ using AudioClaudio.Domain;
 namespace AudioClaudio.Tests.ClosedLoop;
 
 /// <summary>
-/// Generates random <b>polyphonic</b> scores for the closed-loop fidelity diagnostic — the chord-wise
+/// Generates random <b>polyphonic</b> scores for the closed-loop fidelity gate — the chord-wise
 /// analogue of <see cref="ClosedLoopGen"/>. A case is a sequence of chords (each 1–4 distinct pitches
 /// sharing one onset), separated by rests, sustained ~a quarter note.
 ///
@@ -15,12 +15,13 @@ namespace AudioClaudio.Tests.ClosedLoop;
 /// can register — so including them would measure the <i>SoundFont's decay</i>, not the <i>engine</i>.
 /// This is the same physical-audibility discipline <see cref="ClosedLoopGen"/> applies (DECISIONS.md,
 /// "closed-loop corpus constrained to physically-audible note durations"). Onset+pitch are what the
-/// diagnostic scores (durations ignored), so a fast decay past the declared note-off is harmless here as
+/// gate scores (durations ignored), so a fast decay past the declared note-off is harmless here as
 /// long as the attack is detectable — which the cap guarantees.
 /// </summary>
 public static class PolyphonicClosedLoopGen
 {
     public const int SampleRateHz = 44100;
+    public const int DefaultSeed = 4242;        // the committed gate corpus seed (fully reproducible: plain Random, not CsCheck Sample)
     public const int SubdivisionsPerBeat = 4;   // sixteenth grid
     public const int MidiLow = 40;              // E2
     public const int RootCeiling = 60;          // chord roots stay ≤ middle C…
@@ -67,7 +68,7 @@ public static class PolyphonicClosedLoopGen
 
     /// <summary>A deterministic, seeded corpus of <paramref name="count"/> polyphonic cases — each a
     /// handful of chords totalling a few seconds of audio (short enough for repeated ONNX inference).</summary>
-    public static IEnumerable<IReadOnlyList<NoteEvent>> Cases(int count, int seed = 4242)
+    public static IEnumerable<IReadOnlyList<NoteEvent>> Cases(int count, int seed = DefaultSeed)
     {
         var rng = new Random(seed);
         for (int c = 0; c < count; c++)

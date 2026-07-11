@@ -9,7 +9,7 @@ namespace AudioClaudio.Tests.ClosedLoop;
 /// The polyphonic closed-loop generator: random <b>chord</b> sequences (notes sharing an onset),
 /// well-separated and in a range this SoundFont can actually sustain, so the closed loop measures the
 /// engine's intrinsic fidelity rather than the SoundFont's decay. These pin the structural invariants
-/// the diagnostic relies on; the diagnostic itself (synthesize → transcribe → F1) is a Slow test.
+/// the gate relies on; the gate itself (synthesize → transcribe → F1) is a Slow test.
 /// </summary>
 public class PolyphonicClosedLoopGenTests
 {
