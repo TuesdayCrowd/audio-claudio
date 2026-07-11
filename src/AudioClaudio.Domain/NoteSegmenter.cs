@@ -2,9 +2,11 @@ namespace AudioClaudio.Domain;
 
 /// <summary>
 /// Combines detected onsets with the per-frame pitch track to produce discrete
-/// NoteEvents (R5.2). Each onset opens a note; the note is labelled with the first
-/// stable voiced pitch found at/after the onset and closed at a transition to
-/// unvoiced or a different pitch. Pure and deterministic (non-negotiable 3).
+/// NoteEvents (R5.2). Each onset opens a note; <b>within that onset's span, a legato
+/// pitch change</b> — a new stable pitch reached with no re-attack of its own — opens a
+/// further note (v2 Stage 2). Each note is labelled with its stable voiced pitch and
+/// closed at a transition to unvoiced or a different pitch. Pure and deterministic
+/// (non-negotiable 3).
 /// </summary>
 public sealed class NoteSegmenter
 {
@@ -40,33 +42,71 @@ public sealed class NoteSegmenter
 
         for (int i = 0; i < onsetFrames.Count; i++)
         {
-            int startFrame = onsetFrames[i];
-            int limit = i + 1 < onsetFrames.Count ? onsetFrames[i + 1] : n;
+            int spanStart = onsetFrames[i];
+            int spanLimit = i + 1 < onsetFrames.Count ? onsetFrames[i + 1] : n;
 
-            (Pitch Pitch, int StableStart)? stable = FindStablePitch(frames, startFrame, limit);
-            if (stable is not { } found)
+            // Walk the span, emitting one note per stable-pitch RUN. The first run's note is timestamped
+            // at the onset (the detected attack). A later run of a DIFFERENT stable pitch is a LEGATO
+            // transition — connected notes with no re-attack of their own — so it becomes a new note
+            // starting at the pitch change. A run whose pitch equals the note just emitted (a YIN wobble
+            // returning to the same pitch, or the still-voiced tail after a decay-floor cut) is skipped,
+            // so a momentary flicker never splits one note into two (R5.3/R5.4 preserved). On the
+            // closed-loop corpus — every note followed by an unvoiced rest, no in-span pitch change — this
+            // emits exactly one note per onset, unchanged.
+            int cursor = spanStart;
+            int emittedInSpan = 0;
+            Pitch lastEmitted = default;
+            bool firstRun = true;   // only the span's FIRST run may claim the onset frame (the attack)
+            while (cursor < spanLimit)
             {
-                continue;   // spurious onset with no stable voiced pitch → drop
+                (Pitch Pitch, int StableStart)? stable = FindStablePitch(frames, cursor, spanLimit);
+                if (stable is not { } found)
+                {
+                    break;   // no (more) stable voiced pitch remaining in this span
+                }
+
+                int endFrame = FindEndFrame(frames, found.StableStart, spanLimit, found.Pitch);
+
+                long endSamples = endFrame < n
+                    ? frames[endFrame].Start.Samples
+                    : frames[n - 1].Start.Samples + hop;
+
+                // The span's FIRST run carries the onset (the attack transient may precede the stable
+                // pitch, so duration is measured from the onset — exactly the pre-legato behavior). A
+                // legato run starts at its own pitch-change boundary (there onset == StableStart, so this
+                // is its run length). The `firstRun` flag — not "nothing emitted yet" — is what claims the
+                // onset, so a dropped short first run can never lend its span-start to a later wobble run.
+                SamplePosition onset = firstRun ? frames[spanStart].Start : frames[found.StableStart].Start;
+                long durationSamples = endSamples - onset.Samples;
+
+                bool sameAsPrevious = emittedInSpan > 0 && found.Pitch.MidiNumber == lastEmitted.MidiNumber;
+                if (sameAsPrevious)
+                {
+                    // A wobble returning to the note's pitch (or the still-voiced tail after a decay cut):
+                    // don't split — extend the note just emitted through this run rather than dropping it.
+                    NoteEvent prev = events[^1];
+                    events[^1] = new NoteEvent(
+                        prev.Pitch, prev.Onset, new SampleDuration(endSamples - prev.Onset.Samples, rate), prev.Velocity);
+                }
+                else if (durationSamples >= _options.MinNoteDuration.Samples)
+                {
+                    events.Add(new NoteEvent(
+                        found.Pitch, onset, new SampleDuration(durationSamples, rate), _options.Velocity));
+                    lastEmitted = found.Pitch;
+                    emittedInSpan++;
+                }
+
+                firstRun = false;
+                cursor = endFrame > cursor ? endFrame : cursor + 1;   // guarantee forward progress
+
+                // Without legato recovery, only the span's FIRST stable run becomes a note (one note per
+                // onset — the proven default). Legato recovery continues the walk to catch in-span pitch
+                // changes.
+                if (!_options.RecoverLegato)
+                {
+                    break;
+                }
             }
-
-            int endFrame = FindEndFrame(frames, found.StableStart, limit, found.Pitch);
-
-            SamplePosition onset = frames[startFrame].Start;
-            long endSamples = endFrame < n
-                ? frames[endFrame].Start.Samples
-                : frames[n - 1].Start.Samples + hop;
-            long durationSamples = endSamples - onset.Samples;
-
-            if (durationSamples < _options.MinNoteDuration.Samples)
-            {
-                continue;   // shorter than the minimum note duration → flicker (R5.3)
-            }
-
-            events.Add(new NoteEvent(
-                found.Pitch,
-                onset,
-                new SampleDuration(durationSamples, rate),
-                _options.Velocity));
         }
 
         return events;

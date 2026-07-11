@@ -1360,3 +1360,29 @@ velocity render at different RMS). A per-pitch energy normalization would fix (2
 cut. Non-constant, ordering-correct velocity feeding pp..ff is a real improvement over a flat constant —
 what the workplan asked for. Wiring this velocity to **dynamic marks** in the mono `MusicXmlScoreWriter`
 (as the grand-staff writer already does) is Stage 3 (notation).
+
+## v2 Stage 2 — legato recovery + coarse-grid note-off (both opt-in) (2026-07-10)
+
+**Legato recovery (`--legato`; `NoteSegmenterOptions.RecoverLegato`, default OFF).** The segmenter emitted
+one note per onset, so a legato pitch change WITHIN an onset span — connected notes with no re-attack — was
+lost. It now walks each span emitting a note per stable-pitch run, so a legato transition opens a new note
+(timestamped at the pitch-change boundary; the first run keeps the attack onset). **Made opt-in after the
+closed loop caught it as a default:** a monophonic pitch track cannot reliably tell a real legato
+transition from a YIN pitch *wobble* (a low note's partials beat and wobble the track — a known effect on
+this corpus, see the `RefineOffsets` note), so legato-as-default added a spurious wobble-note and broke
+bit-exact recovery (count 8 ≠ 7 on one case). Off, the segmenter is exactly the proven one-note-per-onset;
+on, it recovers legato at the cost of the occasional wobble-note — a real trade-off, so the user opts in.
+Even when on, two guards limit spurious splits: a run whose pitch equals the note just emitted (a wobble
+returning to the pitch) is skipped, and the flicker floor is measured on each run's OWN length so a
+dropped short first run cannot lend its span-start onset to a later (e.g. wobble) run.
+
+**Coarse-grid note-off (`--coarse-rhythm`; `TranscriptionSettings.CoarseRhythm`, default OFF).**
+`QuantizationGrid.NearestStandardValueTicks` gained a `coarseGridTicks` unit: note VALUES snap to standard
+values aligned to that grid (whole multiples of it), so uneven playing rounds to cleaner rhythm — an
+eighth-note grid drops the sixteenth and dotted-eighth while keeping eighth/quarter/dotted-quarter/half/…
+Onsets are never coarsened, only the note value. Default 0 = the full standard-value set (the closed
+loop's proven behavior). A first, composable lever for Stage 3's holistic rhythm-quantization work.
+
+Both hold the same discipline as velocity: the mono closed loop stays bit-exact green (both off by
+default), and each is a documented, tested opt-in. Legato is batch-only (`Transcribe`); the live
+`StreamNotes` preview is unchanged (its saved files come from the batch pass).

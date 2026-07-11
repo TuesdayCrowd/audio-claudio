@@ -16,12 +16,12 @@ namespace AudioClaudio.Cli.Commands;
 /// </summary>
 public static class TranscribeCommand
 {
-    public static void Run(string inputWav, double? tempoBpm, string outDir, bool includeNoteNames = false)
+    public static void Run(string inputWav, double? tempoBpm, string outDir, bool includeNoteNames = false, bool recoverLegato = false, bool coarseRhythm = false)
     {
         Directory.CreateDirectory(outDir);
 
         bool estimate = tempoBpm is null;
-        var settings = TranscriptionSettings.ForTempo(tempoBpm ?? 120.0) with { EstimateTempo = estimate };
+        var settings = TranscriptionSettings.ForTempo(tempoBpm ?? 120.0) with { EstimateTempo = estimate, RecoverLegato = recoverLegato, CoarseRhythm = coarseRhythm };
         var pipeline = new TranscriptionPipeline(settings, new Radix2Fft()); // Domain FFT (Option A)
 
         TranscriptionResult result;

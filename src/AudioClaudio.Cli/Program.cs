@@ -37,6 +37,8 @@ switch (args[0])
                 : null;
             string outDir = TryReadOption(args, "--out-dir") ?? ".";
             bool noteNames = Array.IndexOf(args, "--note-names") >= 0;
+            bool legato = Array.IndexOf(args, "--legato") >= 0; // v2 Stage 2: opt-in legato recovery (--mono path)
+            bool coarseRhythm = Array.IndexOf(args, "--coarse-rhythm") >= 0; // v2 Stage 2: coarse-grid note-off (--mono path)
             // As of v0.2.0 the polyphonic Basic Pitch engine is the default; --mono opts back into the
             // monophonic YIN pipeline (the closed-loop-proven path).
             bool poly = TranscribeModeResolver.Resolve(args) == TranscribeMode.Polyphonic;
@@ -73,7 +75,7 @@ switch (args[0])
                 return 0;
             }
 
-            TranscribeCommand.Run(args[1], tempo, outDir, noteNames);
+            TranscribeCommand.Run(args[1], tempo, outDir, noteNames, legato, coarseRhythm);
             File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
             return 0;
         }
@@ -357,7 +359,7 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven: note-level F1 >= 0.75 at 50ms onset tolerance, seed-4242 corpus); --mono uses the monophonic YIN pipeline (exact-recovery closed loop; auto-estimates tempo when --tempo is omitted); --key sets the key signature (sharps +, flats -, e.g. -4 = A-flat major) for enharmonic spelling; the three thresholds tune note density");
+    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven: note-level F1 >= 0.75 at 50ms onset tolerance, seed-4242 corpus); --mono uses the monophonic YIN pipeline (exact-recovery closed loop; auto-estimates tempo when --tempo is omitted); --key sets the key signature (sharps +, flats -, e.g. -4 = A-flat major) for enharmonic spelling; the three thresholds tune note density; --legato (with --mono) opts into legato note recovery (a wobble-vs-legato trade-off, off by default); --coarse-rhythm (with --mono) floors note values at an eighth for cleaner rhythm from uneven playing");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]   (both honor the CC64 sustain pedal)");
     Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (tempo auto-estimated from the onsets unless --tempo)");

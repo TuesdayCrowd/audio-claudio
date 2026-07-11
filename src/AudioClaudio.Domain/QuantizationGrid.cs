@@ -91,14 +91,25 @@ public readonly record struct QuantizationGrid
     /// representable standard note value, returning its length in ticks. Ties break
     /// toward the shorter value (deterministic — non-negotiable 3). Never returns
     /// less than the shortest standard value, so a quantized note cannot vanish.
+    ///
+    /// <paramref name="coarseGridTicks"/> is the <b>coarse-grid note-off</b> unit (v2 Stage 2): when
+    /// &gt; 0, only standard values that align to that grid (whole multiples of it) are considered, so
+    /// uneven playing rounds to cleaner note values instead of jittery sixteenths/dotted-eighths. E.g. an
+    /// eighth-note grid (2 ticks on a sixteenth grid) keeps eighth/quarter/dotted-quarter/half/… and drops
+    /// the sixteenth and dotted-eighth. 0 (the default) considers every value — the proven behavior.
     /// </summary>
-    public int NearestStandardValueTicks(double rawTicks)
+    public int NearestStandardValueTicks(double rawTicks, int coarseGridTicks = 0)
     {
         IReadOnlyList<int> values = StandardValueTicks; // ascending
-        int best = values[0];
-        double bestDistance = Math.Abs(rawTicks - best);
+        int best = -1;
+        double bestDistance = double.MaxValue;
         foreach (int value in values)
         {
+            if (coarseGridTicks > 0 && value % coarseGridTicks != 0)
+            {
+                continue; // not aligned to the coarse-note-off grid
+            }
+
             double distance = Math.Abs(rawTicks - value);
             if (distance < bestDistance)
             {
@@ -107,6 +118,6 @@ public readonly record struct QuantizationGrid
             }
         }
 
-        return best;
+        return best >= 0 ? best : values[^1]; // no aligned value (grid coarser than a whole note) → the largest
     }
 }

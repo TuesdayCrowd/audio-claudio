@@ -79,6 +79,7 @@ public sealed class TranscriptionPipeline : ITranscriber
         {
             MinNoteDuration = new SampleDuration(minSamples, rate), // R5.3 flicker floor
             StabilityFrames = _settings.StabilityFrames,
+            RecoverLegato = _settings.RecoverLegato, // v2 Stage 2: opt-in legato recovery (default off)
             // R5.2's decay-below-floor is the composition root's call (Step 5's R5.2 coverage
             // row); disabled here (TranscriptionSettings.DecayFloorRatio defaults to 0) in favor
             // of the RefineOffsets post-process below — see its remarks for why.
@@ -102,7 +103,10 @@ public sealed class TranscriptionPipeline : ITranscriber
             ? TempoEstimator.Estimate(events, new Tempo(_settings.TempoBpm))
             : new Tempo(_settings.TempoBpm);
         var grid = new QuantizationGrid(rate, tempo, _settings.TimeSignature, _settings.Subdivision);
-        Score score = Quantizer.Quantize(events, grid);
+        // Coarse-grid note-off (opt-in): snap note values to an eighth-note grid (half a quarter beat). Off
+        // by default (coarseGrid = 0 → the proven full standard-value set the closed loop runs on).
+        int coarseGrid = _settings.CoarseRhythm ? grid.TicksPerBeat / 2 : 0;
+        Score score = Quantizer.Quantize(events, grid, coarseGrid);
 
         return new TranscriptionResult(score, events);
     }

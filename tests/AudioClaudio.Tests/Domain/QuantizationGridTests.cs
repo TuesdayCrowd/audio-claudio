@@ -122,4 +122,28 @@ public class QuantizationGridTests
         Assert.Equal(4, grid.NearestStandardValueTicks(5.0));
         Assert.Equal(6, grid.NearestStandardValueTicks(7.0));
     }
+
+    [Theory]
+    [Trait("Category", "Fast")]
+    // Coarse-grid note-off at an eighth (2 ticks): only eighth-aligned values {2,4,6,8,12,16} survive.
+    [InlineData(1.0, 2)]  // sixteenth -> eighth
+    [InlineData(3.0, 2)]  // dotted-eighth (unaligned) -> eighth (tie 2 vs 4 breaks shorter)
+    [InlineData(3.4, 4)]  // nearer the quarter
+    [InlineData(4.0, 4)]  // quarter is aligned
+    [InlineData(6.0, 6)]  // dotted-quarter is a multiple of the eighth, so it survives
+    [InlineData(0.2, 2)]  // clamps up to the eighth; a note cannot vanish
+    public void NearestStandardValueTicks_with_eighth_coarse_grid_drops_finer_values(double rawTicks, int expected)
+    {
+        var grid = Grid(48000, 120, Subdivision.Sixteenth);
+        Assert.Equal(expected, grid.NearestStandardValueTicks(rawTicks, coarseGridTicks: 2));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void CoarseGridTicks_zero_keeps_the_full_standard_value_set()
+    {
+        var grid = Grid(48000, 120, Subdivision.Sixteenth);
+        Assert.Equal(1, grid.NearestStandardValueTicks(1.0, coarseGridTicks: 0)); // sixteenth kept
+        Assert.Equal(3, grid.NearestStandardValueTicks(3.0, coarseGridTicks: 0)); // dotted-eighth kept
+    }
 }

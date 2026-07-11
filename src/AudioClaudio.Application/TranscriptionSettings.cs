@@ -98,6 +98,22 @@ public sealed record TranscriptionSettings
     public int VelocityAttackFrames { get; init; } = 4;
 
     /// <summary>
+    /// Opt in to legato note recovery (v2 Stage 2) → <see cref="NoteSegmenterOptions.RecoverLegato"/>.
+    /// Off by default: it recovers connected notes with no re-attack, but a monophonic pitch track cannot
+    /// reliably separate a real legato transition from a YIN wobble, so it trades the occasional
+    /// wobble-note for the recovery. The proven closed loop runs with it off (one note per onset).
+    /// </summary>
+    public bool RecoverLegato { get; init; }
+
+    /// <summary>
+    /// Coarse-grid note-off (v2 Stage 2): when true, quantized note values are floored at an eighth note,
+    /// so uneven playing rounds to cleaner rhythm instead of jittery sixteenths/dotted-eighths. Off by
+    /// default (the proven closed loop keeps the full sixteenth-resolution value set). Onsets are never
+    /// coarsened — only the note value. The CLI's <c>--coarse-rhythm</c> opts in.
+    /// </summary>
+    public bool CoarseRhythm { get; init; }
+
+    /// <summary>
     /// The DECLARED tempo. Used directly for quantization unless <see cref="EstimateTempo"/> is
     /// set, in which case it is instead the fallback returned when estimation has too little data
     /// to work with (<see cref="TempoEstimator.Estimate"/>).

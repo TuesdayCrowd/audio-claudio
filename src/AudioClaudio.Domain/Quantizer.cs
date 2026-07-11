@@ -10,7 +10,10 @@ namespace AudioClaudio.Domain;
 /// </summary>
 public static class Quantizer
 {
-    public static Score Quantize(IReadOnlyList<NoteEvent> events, QuantizationGrid grid)
+    /// <param name="coarseGridTicks">The coarse-grid note-off unit (v2 Stage 2): note values are snapped
+    /// to standard values aligned to this grid (whole multiples of it), rounding jittery rhythm to cleaner
+    /// values. 0 (default) keeps the full standard-value set — the proven behavior the closed loop runs on.</param>
+    public static Score Quantize(IReadOnlyList<NoteEvent> events, QuantizationGrid grid, int coarseGridTicks = 0)
     {
         ArgumentNullException.ThrowIfNull(events);
 
@@ -25,7 +28,7 @@ public static class Quantizer
             }
 
             long onsetTick = grid.SamplesToTick(ev.Onset.Samples);
-            int durationTicks = grid.NearestStandardValueTicks(ev.Duration.Samples / grid.SamplesPerTick);
+            int durationTicks = grid.NearestStandardValueTicks(ev.Duration.Samples / grid.SamplesPerTick, coarseGridTicks);
             notes.Add(new GridNote(onsetTick, durationTicks, ev.Pitch, ev.Velocity));
         }
 

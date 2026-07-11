@@ -168,6 +168,8 @@ a bare `--flag` is a boolean switch.
 |---|---|---|
 | `<in.wav>` | *(required)* | 16/24-bit PCM WAV, mono or multichannel (downmixed to mono). |
 | `--mono` | off (polyphonic) | Use the **monophonic** YIN pipeline (one note at a time) — the *exact-recovery* closed-loop path — instead of the default polyphonic engine (which has its own, *statistical*, closed-loop gate; see [Limitations](#limitations)). Auto-estimates tempo when `--tempo` is omitted. |
+| `--legato` | off | *(with `--mono`)* Recover legato notes — a pitch change with no re-attack opens a new note. A deliberate trade-off: a monophonic detector cannot perfectly separate a real legato slur from a pitch wobble, so this recovers connected notes at the cost of the occasional spurious note. Off keeps the proven one-note-per-onset behavior. |
+| `--coarse-rhythm` | off | *(with `--mono`)* Floor note *values* at an eighth note, so uneven/beginner playing engraves as cleaner rhythm (drops jittery sixteenths and dotted-eighths). Onsets are never coarsened, only note lengths. |
 | `--tempo <bpm>` | 120 (poly) / auto (`--mono`) | Grid tempo. The polyphonic default uses 120 BPM unless set; `--mono` estimates it from the notes' onset spacing when omitted (see [Limitations](#limitations)). |
 | `--out-dir <dir>` | `.` | Where `raw.mid`, `score.mid`, `score.musicxml`, and `log.txt` are written. Created if absent. |
 | `--note-names` | off | Print each note's scientific-pitch name (e.g. `C4`, `F#5`) as a lyric beneath it in `score.musicxml`. |
