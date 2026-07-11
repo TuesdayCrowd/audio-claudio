@@ -53,6 +53,12 @@ public sealed class TranscriptionPipeline : ITranscriber
         var yinOptions = new YinOptions(threshold: _settings.YinThreshold); // Step 4
 
         // Per-frame: YIN estimate, magnitude spectrum, and a FrameObservation for the segmenter.
+        // Per-frame: YIN estimate, magnitude spectrum, and a FrameObservation for the segmenter. Plain
+        // YIN (no continuity): the pYIN-lite octave-correction seam (YinPitchDetector.Detect's previous
+        // param + ApplyContinuity) exists and is unit-tested, but it is NOT wired here — a causal
+        // continuity correction cannot be fed safely by this pipeline (it fights real octave leaps next to
+        // a ringing note and homogenizes the pitch track the segmenter relies on), so the proven plain-YIN
+        // path stays the default. See DECISIONS.md, "pYIN-lite".
         var magnitudeSpectra = new List<IReadOnlyList<double>>(frames.Count);
         var observations = new List<FrameObservation>(frames.Count);
         foreach (var frame in frames)
@@ -278,6 +284,8 @@ public sealed class TranscriptionPipeline : ITranscriber
 
             previousMagnitudes = magnitudes;
 
+            // Live uses plain YIN (no continuity): pYIN-lite's octave correction needs onset-aware reset,
+            // which the batch Transcribe pass owns — and the live session's SAVED files come from that pass.
             PitchEstimate estimate = YinPitchDetector.Detect(frame, yinOptions);
             observations.Add(new FrameObservation(frame.Start, GuardedPitchFromEstimate(estimate), Rms(frame.Samples)));
 

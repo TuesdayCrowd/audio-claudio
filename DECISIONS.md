@@ -1386,3 +1386,37 @@ loop's proven behavior). A first, composable lever for Stage 3's holistic rhythm
 Both hold the same discipline as velocity: the mono closed loop stays bit-exact green (both off by
 default), and each is a documented, tested opt-in. Legato is batch-only (`Transcribe`); the live
 `StreamNotes` preview is unchanged (its saved files come from the batch pass).
+
+## v2 Stage 2 — pYIN-lite: octave correction built + tested; a SAFE pipeline integration is unsolved (2026-07-11)
+
+**What was built (kept).** The YIN detector gained an octave-correction SEAM:
+`YinPitchDetector.Detect(frame, options, previous)` collects the runner-up candidate periods
+(`PitchCandidate`) and delegates to the pure, unit-tested `YinPitchDetector.ApplyContinuity`. Given the
+previous voiced estimate, if this frame's YIN pick jumped ~a full octave AND a candidate sits at the
+previous pitch and is a DEEPER dip than YIN's pick, that continuity candidate wins — the right call for an
+isolated within-note octave glitch (the true pitch is the deeper dip). Fully unit-tested: octave up/down
+corrections, the four cases where it must NOT act (non-octave jump, no near candidate, too-aperiodic
+candidate, unvoiced previous), and the boundary-leap case. `YinOptions` carries its tuning constants.
+
+**Why it is NOT wired into the pipeline (the finding, after three attempts — each broke the same
+full-range closed-loop case, an A5→A6 octave leap after a ringing A5):**
+1. **Naive continuity** (bias to the previous voiced pitch): a within-note YIN wobble becomes a spurious
+   note; and the previous note rings through a short rest, so the real octave LEAP is pulled back an octave.
+2. **Require the continuity candidate to be a deeper dip than YIN's pick:** fails for a FRESH HIGH note next
+   to a RINGING LOW note — the low note's dip is inherently deeper (more periods in the window), so it
+   wrongly wins.
+3. **Reset continuity at each detected onset** (two-pass — onsets before pitch): still fails — at the onset
+   frame the ringing previous note dominates the audio, so plain YIN there already reads the OLD pitch, and
+   continuity then propagates it into the new note's frames, HOMOGENIZING the pitch track and erasing the
+   stable-new-pitch run the segmenter relies on. Plain YIN already recovers these correctly (the segmenter
+   ignores the one-frame ring and finds the stable new pitch).
+
+**Root cause + decision.** A *causal* continuity correction cannot tell a within-note octave ERROR from a
+real octave LEAP next to a ringing note without a musical model of note identity, and it destroys the
+per-frame pitch-track information segmentation needs. The residual octave errors it targets are SUSTAINED
+(they look like real notes), which only a probabilistic track model (full pYIN's HMM) resolves — and that is
+a BACKWARD pass, breaking the causal ~41 ms live path (R10.4; the pYIN tension recorded at the start of
+Stage 2). So the **proven plain-YIN default stays**; the tested `ApplyContinuity`/`PitchCandidate` seam
+remains as the foundation for a future offline/HMM-based integration. Confidence stays YIN's (1 −
+aperiodicity). The rare ~0.4% octave/onset residual is therefore **still open, and honestly so** — a causal
+pYIN-lite cannot close it without regressing real octave leaps.
