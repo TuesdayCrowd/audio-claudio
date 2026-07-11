@@ -14,13 +14,21 @@ Python/torch at runtime** behind `audio-claudio`'s `ITranscriber` port.
 
 ## What the ONNX computes
 
-`transkun.onnx` maps **`featuresBatch` → `S`**:
+`transkun.onnx` maps **`featuresBatch` → (`S`, `ctx`)**:
 
 - input `featuresBatch` `[nBatch, T, 229, 6]` — log-mel features (229 mel bins × 6 windows), `T` dynamic.
 - output `S` `[T, T, nBatch*90]` — the semi-CRF pairwise interval scores. `S[e, b, k]` scores a note on
   track `k` spanning frames `b→e` (diagonal `e==b` = a single-frame note). The 90 tracks are
   `symbols = [-64, -67, 21..108]`: index 0 = sustain pedal (CC64), 1 = soft pedal (CC67), 2–89 = MIDI
   21–108. (The `S_skip` "no-event" score is provably 0 and is hardcoded in C#.)
+- output `ctx` `[90, T, 256]` (Stage 4e) — the backbone features, gathered at decoded interval endpoints to
+  drive the attribute heads. `S` is byte-for-byte the same as the S-only 4a export (corr 1.0).
+
+**`transkun-heads.onnx`** (Stage 4e) maps the gathered interval features **`attr` `[N, 768]`**
+(`[ctx_a, ctx_b, ctx_a·ctx_b]`) → **`velLogits` `[N, 128]`** (`velocityPredictor`; velocity = argmax) and
+**`ofRaw` `[N, 4]`** (`refinedOFPredictor`: two sub-frame onset/offset value logits → a ContinuousBernoulli
+mean in `[-0.5, 0.5]` frames, + two presence logits). This adds real velocity + sub-frame timing on top of
+the frame-level decode — validated note-identical to the native CLI (velocity exact, onsets ~1 ms).
 
 Two ops needed care in export (see `export_transkun.py`): the backbone's **5-D `scaled_dot_product_attention`**
 is reshaped to 4-D (a mathematical identity — SDPA batches all but the last two dims) because the ONNX
@@ -32,7 +40,9 @@ maxRelErr ≈ 5e-6** vs PyTorch on random and dynamic-`T` inputs.
 
 | File | What |
 |---|---|
-| `transkun.onnx` | the export (opset 17, weights inlined, single file, ~53 MB) |
+| `transkun.onnx` | the main export `featuresBatch → (S, ctx)` (opset 17, weights inlined, ~53 MB) |
+| `transkun-heads.onnx` | the velocity + onset/offset attribute heads `attr → (velLogits, ofRaw)` (~3.4 MB) |
+| `export_transkun_heads.py` | Stage-4e regeneration (main graph with `ctx` + the heads) |
 | `freq2mels.f32` `[2049, 229]` | mel filterbank (`torchaudio.melscale_fbanks`, 30–8000 Hz) — Stage 4b |
 | `windows.f32` `[6, 4096]` | analysis windows (row 0 Hann, rows 1–5 learned Gaussian) — Stage 4b |
 | `symbols.i32` `[90]` | the track→symbol map `[-64, -67, 21..108]` |

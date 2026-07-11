@@ -54,5 +54,36 @@ public sealed class TranskunModel : IDisposable
         return s.ToArray();
     }
 
+    /// <summary>Run and return BOTH <c>S</c> flat <c>[T*T*90]</c> and the backbone features <c>ctx</c> flat
+    /// <c>[90*T*256]</c> (<c>ctx[track,frame,d] = ctx[(track*T + frame)*256 + d]</c>), for the Stage-4e
+    /// velocity + sub-frame heads gathered at decoded interval endpoints.</summary>
+    public (float[] S, float[] Ctx) RunWithCtx(float[,,] featuresBatch, out int t)
+    {
+        ArgumentNullException.ThrowIfNull(featuresBatch);
+        int nFrame = featuresBatch.GetLength(0);
+        int nMels = featuresBatch.GetLength(1);
+        int nWin = featuresBatch.GetLength(2);
+
+        var input = new DenseTensor<float>(new[] { 1, nFrame, nMels, nWin });
+        int idx = 0;
+        for (int f = 0; f < nFrame; f++)
+        {
+            for (int m = 0; m < nMels; m++)
+            {
+                for (int w = 0; w < nWin; w++)
+                {
+                    input.Buffer.Span[idx++] = featuresBatch[f, m, w];
+                }
+            }
+        }
+
+        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results =
+            _session.Run(new[] { NamedOnnxValue.CreateFromTensor(InputName, input) });
+        Tensor<float> s = results.First(r => r.Name == OutputName).AsTensor<float>();
+        Tensor<float> ctx = results.First(r => r.Name == "ctx").AsTensor<float>();
+        t = s.Dimensions[0];
+        return (s.ToArray(), ctx.ToArray());
+    }
+
     public void Dispose() => _session.Dispose();
 }

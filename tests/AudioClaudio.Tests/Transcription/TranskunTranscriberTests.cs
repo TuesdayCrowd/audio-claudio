@@ -40,8 +40,12 @@ public class TranskunTranscriberTests
         _out.WriteLine($"transcribed in {sw.Elapsed.TotalSeconds:F1}s -> {notes.Count} notes, {pedal.Count} pedal changes");
         foreach (NoteEvent n in notes)
         {
-            _out.WriteLine($"  midi {n.Pitch.MidiNumber,3}  on {n.Onset.Samples / 44100.0:F3}s  dur {n.Duration.Samples / 44100.0:F3}s");
+            _out.WriteLine($"  midi {n.Pitch.MidiNumber,3}  on {n.Onset.Samples / 44100.0:F3}s  dur {n.Duration.Samples / 44100.0:F3}s  vel {n.Velocity}");
         }
+
+        // Stage 4e: velocity is real (the head), not a constant — the scale is played ~mf/f (native 95..99).
+        Assert.True(notes.Select(n => n.Velocity).Distinct().Count() > 1, "velocity should vary (the 4e head)");
+        Assert.All(notes, n => Assert.InRange(n.Velocity, 60, 120));
 
         // Native transkun recovers the C-major scale 60,62,64,65,67,69,71,72 (+ one spurious short 76).
         var pitches = notes.Select(n => n.Pitch.MidiNumber).ToHashSet();

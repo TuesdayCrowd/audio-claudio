@@ -13,20 +13,26 @@ namespace AudioClaudio.Infrastructure.Transcription;
 /// The Transkun engine behind the <see cref="ITranscriber"/> port (v2 Stage 4d): mono audio →
 /// <see cref="TranskunMelFrontEnd"/> → the exported ONNX (<see cref="TranskunModel"/>) → the semi-CRF
 /// decode (<see cref="SemiCrfViterbi"/>) → note + pedal intervals, over the model's 16 s / 8 s overlapping
-/// segments, stitched. This is the <b>core-first</b> port (Cornelius): frame-resolution timing, no velocity
-/// and no sub-frame onset/offset refinement (those MLP heads are Stage 4e). A faithful port of transkun's
-/// <c>transcribe</c>/<c>transcribeFrames</c> — the note-drop rules, the <c>forcedStartPos</c> carry, the
-/// merge-across-segments and the final overlap resolution are ported exactly, so a boundary-spanning note is
-/// recovered once. No Python at runtime.
+/// segments, stitched. A faithful port of transkun's <c>transcribe</c>/<c>transcribeFrames</c> — the
+/// note-drop rules, the <c>forcedStartPos</c> carry, the merge-across-segments and the final overlap
+/// resolution are ported exactly, so a boundary-spanning note is recovered once. <b>Stage 4e</b> adds the
+/// two attribute heads (<see cref="TranskunHeads"/>): real per-note <b>velocity</b> and <b>sub-frame</b>
+/// onset/offset (<c>ofValue</c>) + presence (<c>ofPresence</c>), gathered from <c>ctx</c> at the decoded
+/// interval endpoints. No Python at runtime.
+///
+/// <see cref="Transcribe"/>'s <see cref="TranscriptionResult.Score"/> is a lossy monophonic quantization
+/// (as the Basic Pitch path's is); the honest polyphonic output is <see cref="TranscribeDetailed"/>'s notes
+/// + pedal, which the CLI uses.
 /// </summary>
 public sealed class TranskunTranscriber : ITranscriber, IDisposable
 {
-    private const int NoteVelocity = NoteEvent.DefaultVelocity; // core-first: no velocity head
-    private const int SustainSymbol = -64;                       // targetMIDIPitch[0] = CC64
+    private const int SustainSymbol = -64; // targetMIDIPitch[0] = CC64
+    private const int CtxDim = 256;        // baseSize(64) × scoringExpansionFactor(4)
 
     private readonly TranskunBuffers _buffers;
     private readonly TranskunMelFrontEnd _mel;
     private readonly TranskunModel _model;
+    private readonly TranskunHeads _heads;
     private readonly SampleRate _rate;
     private readonly int _fs;
     private readonly int _hop;
@@ -45,6 +51,7 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
         _buffers = TranskunBuffers.Load(modelDir);
         _mel = new TranskunMelFrontEnd(_buffers, fft);
         _model = new TranskunModel(Path.Combine(modelDir, "transkun.onnx"));
+        _heads = new TranskunHeads(Path.Combine(modelDir, "transkun-heads.onnx"));
 
         TranskunParams p = _buffers.Params;
         _fs = p.Fs;
@@ -90,6 +97,11 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
     // carry, shift to real time, and merge across the 8 s overlap so a boundary-spanning note appears once.
     private List<TkNote> DecodeAllSegments(float[] audio)
     {
+        if ((long)audio.Length + 2L * _padSamples > int.MaxValue)
+        {
+            throw new ArgumentException("Audio is too long for the Transkun engine (> ~13 hours).", nameof(audio));
+        }
+
         int n = _padSamples + audio.Length + _padSamples;
         var x = new float[n];
         Array.Copy(audio, 0, x, _padSamples, audio.Length);
@@ -108,12 +120,11 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
             double beginTime = (double)i / _fs - _padSeconds;
 
             float[,,] features = _mel.Compute(segment);
-            int t = features.GetLength(0);
-            float[] s = _model.Run(features, out _);
+            (float[] s, float[] ctx) = _model.RunWithCtx(features, out int t);
             IReadOnlyList<IReadOnlyList<SemiCrfViterbi.Interval>> intervals =
                 SemiCrfViterbi.Decode(s, t, nSym, startPos);
 
-            List<TkNote> curEvents = BuildSegmentEvents(intervals, beginTime, startPos);
+            List<TkNote> curEvents = BuildSegmentEvents(intervals, ctx, t, beginTime, startPos);
             MergeSegment(curEvents, eventsByType);
         }
 
@@ -132,34 +143,81 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
         return ResolveOverlapping(all);
     }
 
-    // Build one segment's notes from the decoded intervals (core-first), advance the forcedStartPos carry, and
-    // shift to real time. Per track: the lastEnd clamp, hasOnset = begin>0, hasOffset = end<lastFrameIdx.
+    // Build one segment's notes from the decoded intervals, advance the forcedStartPos carry, and shift to
+    // real time. Stage 4e: gather ctx at each interval's endpoints, run the velocity + onset/offset heads,
+    // and apply real velocity + sub-frame ofValue + ofPresence. Per track: the lastEnd clamp; the note times
+    // are (begin+ofValue0)/(end+ofValue1)·frameDur; hasOnset = begin>0 OR ofPresence0; likewise hasOffset.
     private List<TkNote> BuildSegmentEvents(
-        IReadOnlyList<IReadOnlyList<SemiCrfViterbi.Interval>> intervals, double beginTime, int[] startPos)
+        IReadOnlyList<IReadOnlyList<SemiCrfViterbi.Interval>> intervals, float[] ctx, int t, double beginTime, int[] startPos)
     {
+        int nSym = _buffers.Symbols.Length;
+
+        // Pass 1 — gather the interval features in track order (matching transkun's fetchIntervalFeaturesBatch):
+        // attr row = [ctx_a, ctx_b, ctx_a·ctx_b] where ctx_a = ctx[track, begin], ctx_b = ctx[track, end].
+        int nIntervals = 0;
+        for (int track = 0; track < nSym; track++)
+        {
+            nIntervals += intervals[track].Count;
+        }
+
+        var attr = new float[nIntervals * TranskunHeads.AttrDim];
+        int row = 0;
+        for (int track = 0; track < nSym; track++)
+        {
+            foreach (SemiCrfViterbi.Interval iv in intervals[track])
+            {
+                int baseA = (track * t + iv.Begin) * CtxDim;
+                int baseB = (track * t + iv.End) * CtxDim;
+                int o = row * TranskunHeads.AttrDim;
+                for (int d = 0; d < CtxDim; d++)
+                {
+                    float a = ctx[baseA + d];
+                    float b = ctx[baseB + d];
+                    attr[o + d] = a;
+                    attr[o + CtxDim + d] = b;
+                    attr[o + 2 * CtxDim + d] = a * b;
+                }
+
+                row++;
+            }
+        }
+
+        (float[] velLogits, float[] ofRaw) = nIntervals > 0
+            ? _heads.Run(attr, nIntervals)
+            : (Array.Empty<float>(), Array.Empty<float>());
+
+        // Pass 2 — build notes per track (same order), applying the head outputs + the lastEnd clamp.
         var curEvents = new List<TkNote>();
-        for (int track = 0; track < _buffers.Symbols.Length; track++)
+        int cursor = 0;
+        for (int track = 0; track < nSym; track++)
         {
             int pitch = _buffers.Symbols[track];
             double lastEnd = 0.0;
             int lastClosedEnd = 0;
             foreach (SemiCrfViterbi.Interval iv in intervals[track])
             {
-                double start = iv.Begin * _frameDur;
-                double end = iv.End * _frameDur;
+                int velocity = Math.Clamp(ArgMax(velLogits, cursor * TranskunHeads.VelocityClasses, TranskunHeads.VelocityClasses), 1, 127);
+                double of0 = OfValue(ofRaw[cursor * 4 + 0]);
+                double of1 = OfValue(ofRaw[cursor * 4 + 1]);
+                bool presence0 = ofRaw[cursor * 4 + 2] > 0f;
+                bool presence1 = ofRaw[cursor * 4 + 3] > 0f;
+                cursor++;
+
+                double start = (iv.Begin + of0) * _frameDur;
+                double end = (iv.End + of1) * _frameDur;
                 start = Math.Max(start, lastEnd);
                 end = Math.Max(end, start + 1e-8);
                 lastEnd = end;
 
-                bool hasOnset = iv.Begin > 0;
-                bool hasOffset = iv.End < _lastFrameIdx;
+                bool hasOnset = iv.Begin > 0 || presence0;
+                bool hasOffset = iv.End < _lastFrameIdx || presence1;
                 if (hasOffset)
                 {
                     lastClosedEnd = iv.End;
                 }
 
                 double shiftedStart = Math.Max(start + beginTime, 0.0);
-                curEvents.Add(new TkNote(pitch, shiftedStart, Math.Max(end + beginTime, shiftedStart), hasOnset, hasOffset));
+                curEvents.Add(new TkNote(pitch, shiftedStart, Math.Max(end + beginTime, shiftedStart), hasOnset, hasOffset, velocity));
             }
 
             startPos[track] = Math.Max(lastClosedEnd - _stepFrames, 0);
@@ -168,6 +226,41 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
         // Same-pitch events within one segment merge in temporal order (transcribeFrames sorts before the merge).
         curEvents.Sort(CompareByTime);
         return curEvents;
+    }
+
+    private static int ArgMax(float[] a, int offset, int count)
+    {
+        int best = 0;
+        float bestVal = a[offset];
+        for (int i = 1; i < count; i++)
+        {
+            if (a[offset + i] > bestVal)
+            {
+                bestVal = a[offset + i];
+                best = i;
+            }
+        }
+
+        return best;
+    }
+
+    // transkun's sub-frame value: the mean of a ContinuousBernoulli(logits), recentred to [-0.5, 0.5]. The
+    // closed form is numerically unstable near p=0.5, so it Taylor-expands there (matches torch's impl).
+    private static double OfValue(double logit)
+    {
+        double p = 1.0 / (1.0 + Math.Exp(-logit));
+        double mean;
+        if (p < 0.499 || p > 0.501)
+        {
+            mean = p / (2.0 * p - 1.0) + 1.0 / (Math.Log(1.0 - p) - Math.Log(p));
+        }
+        else
+        {
+            double x = p - 0.5;
+            mean = 0.5 + (1.0 / 3.0 + 16.0 / 45.0 * x * x) * x;
+        }
+
+        return Math.Clamp((mean - 0.5) / 0.99, -0.5, 0.5);
     }
 
     // Merge a segment's events into the running per-pitch lists: overlap + new onset replaces; overlap + no
@@ -237,7 +330,7 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
             long onset = (long)Math.Round(e.Start * _fs);
             long end = (long)Math.Round(e.End * _fs);
             long duration = Math.Max(1, end - onset);
-            notes.Add(new NoteEvent(new Pitch(e.Pitch), new SamplePosition(onset, _rate), new SampleDuration(duration, _rate), NoteVelocity));
+            notes.Add(new NoteEvent(new Pitch(e.Pitch), new SamplePosition(onset, _rate), new SampleDuration(duration, _rate), e.Velocity));
         }
 
         notes.Sort((a, b) => a.Onset.Samples != b.Onset.Samples
@@ -272,17 +365,22 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
         return c != 0 ? c : a.Pitch.CompareTo(b.Pitch);
     }
 
-    public void Dispose() => _model.Dispose();
+    public void Dispose()
+    {
+        _model.Dispose();
+        _heads.Dispose();
+    }
 
     private sealed class TkNote
     {
-        public TkNote(int pitch, double start, double end, bool hasOnset, bool hasOffset)
+        public TkNote(int pitch, double start, double end, bool hasOnset, bool hasOffset, int velocity)
         {
             Pitch = pitch;
             Start = start;
             End = end;
             HasOnset = hasOnset;
             HasOffset = hasOffset;
+            Velocity = velocity;
         }
 
         public int Pitch { get; }
@@ -290,5 +388,6 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
         public double End { get; set; }
         public bool HasOnset { get; }
         public bool HasOffset { get; set; }
+        public int Velocity { get; }
     }
 }

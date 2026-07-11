@@ -46,11 +46,50 @@ public class TranskunParityTests
         IReadOnlyList<NoteEvent> nativeNotes =
             MidiFileReader.ReadFile(RepoPaths.Fixture("models", "transkun", "parity", nativeMidi), Rate, flattenPedal: false).Events;
 
-        NoteSetEvaluation eval = TranscriptionEvaluator.Evaluate(csNotes, nativeNotes, new NoteMatchOptions(0.050));
+        // Stage 4e added sub-frame refinement, so C# onsets now match native to ~1 ms — tolerance 25 ms.
+        NoteSetEvaluation eval = TranscriptionEvaluator.Evaluate(csNotes, nativeNotes, new NoteMatchOptions(0.025));
+
+        // Velocity agreement: match each native note to the same-pitch C# note nearest in onset, and compare
+        // velocities (both are the argmax of the same head, so exact modulo rare ctx-drift argmax flips).
+        double velSum = 0.0;
+        int matched = 0, velExact = 0;
+        foreach (NoteEvent nat in nativeNotes)
+        {
+            NoteEvent? best = null;
+            double bestDelta = 0.026;
+            foreach (NoteEvent cs in csNotes)
+            {
+                if (cs.Pitch.MidiNumber != nat.Pitch.MidiNumber)
+                {
+                    continue;
+                }
+
+                double delta = System.Math.Abs((cs.Onset.Samples - nat.Onset.Samples) / 44100.0);
+                if (delta < bestDelta)
+                {
+                    bestDelta = delta;
+                    best = cs;
+                }
+            }
+
+            if (best is { } m)
+            {
+                matched++;
+                int d = System.Math.Abs(m.Velocity - nat.Velocity);
+                velSum += d;
+                if (d == 0)
+                {
+                    velExact++;
+                }
+            }
+        }
+
+        double meanVelDelta = matched == 0 ? 0.0 : velSum / matched;
         _out.WriteLine(
             $"{System.IO.Path.GetFileName(wavPath)}: C# {csNotes.Count} vs native {nativeNotes.Count} notes -> " +
-            $"P={eval.Precision:P1} R={eval.Recall:P1} F1={eval.F1:P1}");
+            $"P={eval.Precision:P1} R={eval.Recall:P1} F1={eval.F1:P1}; velocity exact {velExact}/{matched} (mean |Δ|={meanVelDelta:F2})");
 
         Assert.True(eval.F1 >= 0.99, $"parity F1 {eval.F1:P1} below the 99% gate on {nativeMidi}");
+        Assert.True(meanVelDelta <= 2.0, $"mean velocity delta {meanVelDelta:F2} exceeds 2 on {nativeMidi}");
     }
 }

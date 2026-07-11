@@ -61,4 +61,12 @@ with Cornelius).
 **Parity gate PASSES at F1 = 100.0 %** (≥ 99 % required) on two-bar (9≡9) and a 21.8 s cross-boundary clip
 (35≡35) vs the native transkun CLI at ±50 ms — committed native MIDIs so it runs in CI. Runtime ~1.3×
 realtime (~7 s for 5.45 s; sparse-mel optimization, bit-exact vs ref3b). Native reference clips committed
-under `fixtures/models/transkun/parity/`. **4e / 4f remain (next).**
+under `fixtures/models/transkun/parity/`.
+
+**4e Complete** — velocity + sub-frame onset/offset refinement. Re-exported `transkun.onnx` to also output
+`ctx` (S byte-identical, corr 1.0) + added `transkun-heads.onnx` (the two MLP heads). `TranskunHeads` runs
+them; `TranskunTranscriber` gathers `ctx` at decoded endpoints → real velocity (argmax) + `ofValue`
+(ContinuousBernoulli) sub-frame timing + `ofPresence`. Now note-identical to native at **±25 ms F1 = 100 %
+AND velocity EXACT** (9/9, 35/35). The 3 confirmed 4d-review findings resolved (Score lossy-Score documented,
+int-overflow guarded, ofPresence applied). **4f remains: publish the Transkun-ONNX artifact to HuggingFace —
+outward-facing, confirm with Cornelius.**
