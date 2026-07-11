@@ -94,4 +94,22 @@ public class GrandStaffMusicXmlWriterTests
             Assert.Equal(16, treble);   // one 4/4 bar = 16 duration units at divisions=4
         }
     }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Emits_dynamic_marks_when_the_velocity_level_changes()
+    {
+        var events = new List<NoteEvent>
+        {
+            new(new Pitch(60), new SamplePosition(0, R), new SampleDuration(44100, R), 100),     // bar 1: loud → ff
+            new(new Pitch(62), new SamplePosition(44100, R), new SampleDuration(44100, R), 40),  // bar 2: soft → p
+        };
+        GrandStaffScore score = PolyphonicQuantizer.Quantize(events, Grid, new SampleDuration(1000, R));
+
+        XDocument doc = XDocument.Parse(new GrandStaffMusicXmlWriter().WriteToString(score));
+        var marks = doc.Descendants("dynamics").SelectMany(d => d.Elements().Select(e => e.Name.LocalName)).ToList();
+
+        Assert.Contains("ff", marks); // velocity 100
+        Assert.Contains("p", marks);  // velocity 40
+    }
 }

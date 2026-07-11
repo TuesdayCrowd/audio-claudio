@@ -23,10 +23,15 @@ for "matches the PDF"). Record whether Transkun's score is measurably + visibly 
 **Gate**: if Transkun's notation is clearly better, proceed; if not, reassess. **Status**: In Progress.
 
 ## Stage 2 — Score-building improvements (each measured)
-**Goal**: close the gap between our score and the reference. Likely levers: rhythm/note-value
-quantization (tempo estimate + subdivision), treble/bass voicing, **velocity → dynamics** and **pedal
-marks** in MusicXML (Transkun gives both; we currently drop them), key/accidental spelling (have it),
-ghost/rest cleanup. Each change judged by the Stage-1 metric + render. **Status**: Not Started.
+**Goal**: close the gap between our score and the reference. Levers, judged by render + metric:
+- **Tempo** — DONE: `notate` auto-estimates from onsets (`TempoEstimator`) unless `--tempo`.
+- **Dynamics** — DONE: `DynamicMarks.From(velocity)` + `GrandStaffMusicXmlWriter` emits a `<dynamics>`
+  mark (pp…ff) when the measure's loudness level changes. (Frequent on noisy velocities; hysteresis is a
+  possible refinement.)
+- **Voicing** — treble/bass split is a fixed middle-C cut; smarter hand assignment. **← NEXT**
+- **Pedal marks** — emit `Ped. ___*` from CC64 (Transkun gives it). (After voicing, per Cornelius.)
+- Remaining: key/accidental spelling (have it), rhythm/note-value + rest cleanup.
+**Status**: In Progress (tempo + dynamics done).
 
 ## Stage 3 — Transkun as a first-class source
 **Goal**: make Transkun's output reachable from the pipeline. Decision: a Python-subprocess `ITranscriber`

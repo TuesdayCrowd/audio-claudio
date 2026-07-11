@@ -64,10 +64,11 @@ public sealed class GrandStaffMusicXmlWriter
         int divisions = score.Subdivision.TicksPerQuarter();
         bool tiedTreble = false;
         bool tiedBass = false;
+        string? currentDynamic = null;
         for (int i = 0; i < score.Measures.Count; i++)
         {
             AppendMeasure(sb, score, score.Measures[i], measureNumber: i + 1, isFirst: i == 0,
-                          divisions, ref tiedTreble, ref tiedBass);
+                          divisions, ref tiedTreble, ref tiedBass, ref currentDynamic);
         }
 
         sb.Append("  </part>").Append(Nl);
@@ -77,7 +78,7 @@ public sealed class GrandStaffMusicXmlWriter
 
     private void AppendMeasure(StringBuilder sb, GrandStaffScore score, GrandStaffMeasure measure,
                                int measureNumber, bool isFirst, int divisions,
-                               ref bool tiedTreble, ref bool tiedBass)
+                               ref bool tiedTreble, ref bool tiedBass, ref string? currentDynamic)
     {
         sb.Append($"    <measure number=\"{measureNumber}\">").Append(Nl);
         if (isFirst)
@@ -101,6 +102,41 @@ public sealed class GrandStaffMusicXmlWriter
             sb.Append("          <line>4</line>").Append(Nl);
             sb.Append("        </clef>").Append(Nl);
             sb.Append("      </attributes>").Append(Nl);
+        }
+
+        // Emit a dynamic mark when the measure's loudness level (from note velocities) changes.
+        int maxVelocity = 0;
+        foreach (ChordElement element in measure.Treble)
+        {
+            if (element.Kind == ElementKind.Note && element.Velocity > maxVelocity)
+            {
+                maxVelocity = element.Velocity;
+            }
+        }
+
+        foreach (ChordElement element in measure.Bass)
+        {
+            if (element.Kind == ElementKind.Note && element.Velocity > maxVelocity)
+            {
+                maxVelocity = element.Velocity;
+            }
+        }
+
+        if (maxVelocity > 0)
+        {
+            string dynamic = DynamicMarks.From(maxVelocity);
+            if (dynamic != currentDynamic)
+            {
+                sb.Append("      <direction placement=\"below\">").Append(Nl);
+                sb.Append("        <direction-type>").Append(Nl);
+                sb.Append("          <dynamics>").Append(Nl);
+                sb.Append($"            <{dynamic}/>").Append(Nl);
+                sb.Append("          </dynamics>").Append(Nl);
+                sb.Append("        </direction-type>").Append(Nl);
+                sb.Append("        <staff>1</staff>").Append(Nl);
+                sb.Append("      </direction>").Append(Nl);
+                currentDynamic = dynamic;
+            }
         }
 
         int trebleDuration = 0;
