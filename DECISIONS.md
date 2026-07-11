@@ -1520,7 +1520,8 @@ tier of the ranked guarantee hierarchy — **Transkun-via-ONNX = statistical + �
 earned. Runtime ~1.3× realtime (a sparse-`freq2mels` mel optimization, bit-exact, cut it ~4×; the
 172 MB/segment `S` now dominates).
 
-**4f — publish (outward, pending Cornelius).** The artifact (both ONNX, buffers, license, decode spec,
-`MODEL_CARD.md`) is committed and publish-ready, crediting Yujia Yan and linking upstream. The actual
-HuggingFace push is **outward-facing and awaits Cornelius's explicit go + target** (the available HF tooling is
-read-only; a public model release under his account is his call).
+**4f — publish (DEFERRED by Cornelius, 2026-07-11).** The artifact (both ONNX, buffers, license, decode spec,
+`MODEL_CARD.md`) is committed and publish-ready, crediting Yujia Yan and linking upstream. Cornelius chose to
+**defer the HuggingFace publish** and keep the artifact **repo-only for now** (it is already fully
+self-contained in-repo); the public push happens later, on his explicit go + target (it is outward-facing, and
+a release under his account is his call). Stage 4 is otherwise complete (4a–4e).
