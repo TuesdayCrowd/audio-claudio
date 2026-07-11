@@ -21,12 +21,16 @@ Claude Code: read all of it before touching anything.
 **v2 release cycle in progress (started 2026-07-10).** The plan is
 [`docs/plans/2026-07-10-v2-release-workplan.md`](docs/plans/2026-07-10-v2-release-workplan.md);
 its job is to realize the Phase-2 vision (§8) with v1's discipline — every new capability *proven* on a
-**general** synthetic corpus, no more single-piece chasing. **Stages 0–1 are done:** reported
+**general** synthetic corpus, no more single-piece chasing. **Stages 0–2 are done:** reported
 numbers now come only from the committed corpus in [`docs/CORPUS.md`](docs/CORPUS.md) (mono = bit-exact
 closed-loop recovery; poly = **closed-loop-proven**, note-level F1 ≥ 0.75 @ ±50 ms, measured 79.6% on the
 seed-4242 corpus, 451 notes, gated in CI); the polyphonic default's "preview" label is **lifted** now that
 its closed-loop gate passes; and the old *Death*-recording chroma chase is retired as a goal
-(`evaluate-audio` stays a general tool). The
+(`evaluate-audio` stays a general tool). **Stage 2 (core detection quality):** mono velocity-from-energy
+(real dynamics in `raw.mid`/`score.mid`), opt-in `--legato` + `--coarse-rhythm`, and a pYIN-lite
+octave-correction seam built + unit-tested but **NOT wired** — a *causal* correction can't be fed safely
+(it regresses real octave leaps and homogenizes the pitch track; the residual needs an HMM that breaks the
+live path), so plain YIN stays the proven default (see DECISIONS "pYIN-lite"). The
 guarantee hierarchy is ranked, never flattened (mono bit-exact / poly statistical F1 / Transkun-via-ONNX
 statistical + ≥99 % PyTorch parity). See `DECISIONS.md` "v2 re-baseline" and "v2 Stage 1". The v0.1/v0.2 history below stands.
 
