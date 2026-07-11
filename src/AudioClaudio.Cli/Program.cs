@@ -100,8 +100,12 @@ switch (args[0])
             var chordWindow = new SampleDuration(rate.Hz / 20, rate); // ~50 ms merge window
             var grandStaff = PolyphonicQuantizer.Quantize(read.Events, grid, chordWindow);
             var writer = new DryWetMidiWriter();
+            // Sustain-pedal marks (CC64) become pedal lines in the score, positioned by grid tick.
+            var pedalMarks = read.PedalChanges
+                .Select(c => ((int)grid.SamplesToTick(c.Sample), c.Down))
+                .ToList();
             using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
-                new GrandStaffMusicXmlWriter(noteNames, fifths: key).Write(grandStaff, mx);
+                new GrandStaffMusicXmlWriter(noteNames, fifths: key).Write(grandStaff, mx, pedalMarks);
             var quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, grid);
             using (var score = File.Create(Path.Combine(outDir, "score.mid")))
                 writer.Write(quantized, scoreTempo, score);

@@ -28,10 +28,15 @@ for "matches the PDF"). Record whether Transkun's score is measurably + visibly 
 - **Dynamics** — DONE: `DynamicMarks.From(velocity)` + `GrandStaffMusicXmlWriter` emits a `<dynamics>`
   mark (pp…ff) when the measure's loudness level changes. (Frequent on noisy velocities; hysteresis is a
   possible refinement.)
-- **Voicing** — treble/bass split is a fixed middle-C cut; smarter hand assignment. **← NEXT**
-- **Pedal marks** — emit `Ped. ___*` from CC64 (Transkun gives it). (After voicing, per Cornelius.)
+- **Pedal marks** — DONE: `MidiFileReader` exposes CC64 changes on `MidiReadResult.PedalChanges`;
+  `notate` converts them to grid ticks; `GrandStaffMusicXmlWriter` emits `<pedal line="yes">` start/stop
+  directions (below the bass staff, positioned by `<offset>`). Transkun's 188 pedal events → pedal lines.
+- **Voicing** — DEFERRED (investigated): the fixed middle-C split is adequate for Death's wide register
+  (the dense treble is genuine high-register RH, not a mis-split); a real improvement needs temporal
+  hand-tracking (a substantial, subjective effort), not a per-chord heuristic. Left as a dedicated
+  follow-up.
 - Remaining: key/accidental spelling (have it), rhythm/note-value + rest cleanup.
-**Status**: In Progress (tempo + dynamics done).
+**Status**: In Progress (tempo + dynamics + pedal done; voicing deferred).
 
 ## Stage 3 — Transkun as a first-class source
 **Goal**: make Transkun's output reachable from the pipeline. Decision: a Python-subprocess `ITranscriber`

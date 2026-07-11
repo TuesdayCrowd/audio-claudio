@@ -16,10 +16,14 @@ public readonly record struct MidiReadResult
     public IReadOnlyList<NoteEvent> Events { get; }
     public Tempo Tempo { get; }
 
-    public MidiReadResult(IReadOnlyList<NoteEvent> events, Tempo tempo)
+    /// <summary>The sustain-pedal (CC64) presses/releases, in sample positions — for notation (pedal marks).</summary>
+    public IReadOnlyList<SustainPedal.Change> PedalChanges { get; }
+
+    public MidiReadResult(IReadOnlyList<NoteEvent> events, Tempo tempo, IReadOnlyList<SustainPedal.Change> pedalChanges)
     {
         Events = events;
         Tempo = tempo;
+        PedalChanges = pedalChanges;
     }
 }
 
@@ -52,14 +56,9 @@ public static class MidiFileReader
                 (int)note.Velocity));
         }
 
-        if (!flattenPedal)
-        {
-            return new MidiReadResult(events, new Tempo(bpm));
-        }
-
-        // Fold the sustain pedal (CC64) into note durations, so a pedalled transcription doesn't play
-        // dry through the pedal-less note→synth path (our own writer emits no CC64, so this is a no-op
-        // for our MIDIs). Value ≥ 64 = pedal down.
+        // Read the sustain-pedal (CC64) changes (value ≥ 64 = down). They are exposed on the result for
+        // notation (pedal marks) and, when flattening, folded into note durations so a pedalled MIDI
+        // synthesizes correctly through the pedal-less note→synth path (our own writer emits no CC64).
         var pedalChanges = midi.GetTimedEvents()
             .Where(te => te.Event is ControlChangeEvent cc && (byte)cc.ControlNumber == 64)
             .OrderBy(te => te.Time)
@@ -68,7 +67,8 @@ public static class MidiFileReader
                 (byte)((ControlChangeEvent)te.Event).ControlValue >= 64))
             .ToList();
 
-        return new MidiReadResult(SustainPedal.Flatten(events, pedalChanges), new Tempo(bpm));
+        IReadOnlyList<NoteEvent> notes = flattenPedal ? SustainPedal.Flatten(events, pedalChanges) : events;
+        return new MidiReadResult(notes, new Tempo(bpm), pedalChanges);
     }
 
     public static MidiReadResult ReadFile(string path, SampleRate rate, bool flattenPedal = true)

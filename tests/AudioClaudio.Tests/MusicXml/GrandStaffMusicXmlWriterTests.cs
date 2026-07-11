@@ -112,4 +112,20 @@ public class GrandStaffMusicXmlWriterTests
         Assert.Contains("ff", marks); // velocity 100
         Assert.Contains("p", marks);  // velocity 40
     }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Emits_pedal_marks_from_pedal_changes()
+    {
+        // SampleScore is two 4/4 bars (16 ticks each at divisions=4). Pedal down at tick 0 (bar 1),
+        // up at tick 20 (bar 2, offset 4).
+        var pedal = new (int Tick, bool Down)[] { (0, true), (20, false) };
+
+        string xml = new GrandStaffMusicXmlWriter().WriteToString(SampleScore(), pedal);
+        XDocument doc = XDocument.Parse(xml);
+
+        var types = doc.Descendants("pedal").Select(p => p.Attribute("type")?.Value).ToList();
+        Assert.Contains("start", types); // pedal down
+        Assert.Contains("stop", types);  // pedal up
+    }
 }

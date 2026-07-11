@@ -30,17 +30,26 @@ public sealed class GrandStaffMusicXmlWriter
         _fifths = fifths;
     }
 
+    private static readonly IReadOnlyList<(int Tick, bool Down)> NoPedal = System.Array.Empty<(int, bool)>();
+
     /// <summary>Serialize to UTF-8 (no BOM) MusicXML on the stream.</summary>
-    public void Write(GrandStaffScore score, Stream destination)
+    public void Write(GrandStaffScore score, Stream destination) => Write(score, destination, NoPedal);
+
+    /// <summary>Serialize with sustain-pedal marks (grid ticks; <c>Down</c> = press).</summary>
+    public void Write(GrandStaffScore score, Stream destination, IReadOnlyList<(int Tick, bool Down)> pedal)
     {
-        byte[] bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(WriteToString(score));
+        byte[] bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(WriteToString(score, pedal));
         destination.Write(bytes, 0, bytes.Length);
     }
 
     /// <summary>Serialize to a MusicXML 4.0 string (LF newlines).</summary>
-    public string WriteToString(GrandStaffScore score)
+    public string WriteToString(GrandStaffScore score) => WriteToString(score, NoPedal);
+
+    /// <summary>Serialize with sustain-pedal marks positioned by grid tick (<c>Down</c> = press).</summary>
+    public string WriteToString(GrandStaffScore score, IReadOnlyList<(int Tick, bool Down)> pedal)
     {
         ArgumentNullException.ThrowIfNull(score);
+        ArgumentNullException.ThrowIfNull(pedal);
 
         var sb = new StringBuilder();
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>").Append(Nl);
@@ -62,13 +71,14 @@ public sealed class GrandStaffMusicXmlWriter
         sb.Append("  <part id=\"P1\">").Append(Nl);
 
         int divisions = score.Subdivision.TicksPerQuarter();
+        int ticksPerMeasure = score.TimeSignature.BeatsPerMeasure * divisions * 4 / score.TimeSignature.BeatUnit;
         bool tiedTreble = false;
         bool tiedBass = false;
         string? currentDynamic = null;
         for (int i = 0; i < score.Measures.Count; i++)
         {
             AppendMeasure(sb, score, score.Measures[i], measureNumber: i + 1, isFirst: i == 0,
-                          divisions, ref tiedTreble, ref tiedBass, ref currentDynamic);
+                          divisions, ref tiedTreble, ref tiedBass, ref currentDynamic, pedal, ticksPerMeasure);
         }
 
         sb.Append("  </part>").Append(Nl);
@@ -78,7 +88,8 @@ public sealed class GrandStaffMusicXmlWriter
 
     private void AppendMeasure(StringBuilder sb, GrandStaffScore score, GrandStaffMeasure measure,
                                int measureNumber, bool isFirst, int divisions,
-                               ref bool tiedTreble, ref bool tiedBass, ref string? currentDynamic)
+                               ref bool tiedTreble, ref bool tiedBass, ref string? currentDynamic,
+                               IReadOnlyList<(int Tick, bool Down)> pedal, int ticksPerMeasure)
     {
         sb.Append($"    <measure number=\"{measureNumber}\">").Append(Nl);
         if (isFirst)
@@ -137,6 +148,30 @@ public sealed class GrandStaffMusicXmlWriter
                 sb.Append("      </direction>").Append(Nl);
                 currentDynamic = dynamic;
             }
+        }
+
+        // Sustain-pedal marks falling in this measure, positioned by <offset> from the measure start
+        // (below the bass staff, the conventional piano-pedal placement). type start = press, stop = lift.
+        int measureStart = (measureNumber - 1) * ticksPerMeasure;
+        foreach ((int tick, bool down) in pedal)
+        {
+            if (tick < measureStart || tick >= measureStart + ticksPerMeasure)
+            {
+                continue;
+            }
+
+            sb.Append("      <direction placement=\"below\">").Append(Nl);
+            sb.Append("        <direction-type>").Append(Nl);
+            sb.Append($"          <pedal type=\"{(down ? "start" : "stop")}\" line=\"yes\"/>").Append(Nl);
+            sb.Append("        </direction-type>").Append(Nl);
+            int offset = tick - measureStart;
+            if (offset > 0)
+            {
+                sb.Append($"        <offset>{offset}</offset>").Append(Nl);
+            }
+
+            sb.Append("        <staff>2</staff>").Append(Nl);
+            sb.Append("      </direction>").Append(Nl);
         }
 
         int trebleDuration = 0;
