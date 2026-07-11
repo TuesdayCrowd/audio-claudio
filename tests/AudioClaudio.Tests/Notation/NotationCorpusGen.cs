@@ -72,9 +72,22 @@ public static class NotationCorpusGen
         double samplesPerFine = 60.0 / bpm * rate.Hz / FinePerQuarter;
         long ToSamples(int fine) => (long)Math.Round(fine * samplesPerFine, MidpointRounding.AwayFromZero);
 
+        int tonic = (((fifths * 7) % 12) + 12) % 12;
         var truth = new List<NotationNote>();
-        WalkHand(rng, scale, Hand.Left, LeftLo, LeftHi, totalFine, ToSamples, rate, truth);
-        WalkHand(rng, scale, Hand.Right, RightLo, RightHi, totalFine, ToSamples, rate, truth);
+        WalkHand(rng, scale, tonic, Hand.Left, LeftLo, LeftHi, totalFine, ToSamples, rate, truth);
+        WalkHand(rng, scale, tonic, Hand.Right, RightLo, RightHi, totalFine, ToSamples, rate, truth);
+
+        // Each hand opens on the tonic (as tonal music establishes its key) — an rng-neutral post-hoc
+        // override, so the rhythm/hand/crossing structure and every other baseline are unchanged.
+        FrameOnTonic(truth, Hand.Left, tonic, LeftLo, LeftHi);
+        FrameOnTonic(truth, Hand.Right, tonic, RightLo, RightHi);
+
+        // Emit in chronological onset order (both hands interleaved) so a stateful/temporal consumer sees
+        // the real timeline, not one hand then the other. The Events[i] ↔ Truth[i] pairing is preserved by
+        // sorting the truth first, then projecting. (v2 Stage 3b review, finding 2.)
+        truth.Sort((a, b) => a.OnsetSamples != b.OnsetSamples
+            ? a.OnsetSamples.CompareTo(b.OnsetSamples)
+            : a.Pitch.MidiNumber.CompareTo(b.Pitch.MidiNumber));
 
         var events = truth
             .Select(t => new NoteEvent(
@@ -90,7 +103,7 @@ public static class NotationCorpusGen
     // note-value scoring is not confounded by next-onset clipping), an optional rest, occasionally a
     // beat of eighth-triplets, occasionally a register crossing (still tagged with this hand).
     private static void WalkHand(
-        Random rng, HashSet<int> scale, Hand hand, int lo, int hi, int totalFine,
+        Random rng, HashSet<int> scale, int tonic, Hand hand, int lo, int hi, int totalFine,
         Func<int, long> toSamples, SampleRate rate, List<NotationNote> truth)
     {
         int velocity = RepresentativeVelocity(rng); // one dynamic band per hand-phrase
@@ -106,7 +119,7 @@ public static class NotationCorpusGen
                 for (int k = 0; k < 3; k++)
                 {
                     int onset = cursor + k * TripletEighthFine;
-                    truth.Add(NoteAt(rng, scale, hand, lo, hi, onset, TripletEighthFine, velocity, toSamples, rate));
+                    truth.Add(NoteAt(rng, scale, tonic, hand, lo, hi, onset, TripletEighthFine, velocity, toSamples, rate));
                 }
 
                 cursor += FinePerQuarter;
@@ -119,31 +132,75 @@ public static class NotationCorpusGen
                 value = 3; // a sixteenth always fits; keeps the tail inside the span
             }
 
-            truth.Add(NoteAt(rng, scale, hand, lo, hi, cursor, value, velocity, toSamples, rate));
+            truth.Add(NoteAt(rng, scale, tonic, hand, lo, hi, cursor, value, velocity, toSamples, rate));
             int rest = rng.Next(0, 3) == 0 ? 3 : 0; // sometimes a sixteenth rest between notes
             cursor += value + rest;
         }
     }
 
+    // Replace a hand's first note with a tonic-class pitch inside the hand's own register band. Keeps the
+    // onset/value/velocity/hand; does not consume rng, so all other ground truth is unchanged. Clamped to
+    // [lo,hi] so framing never manufactures a spurious crossing. (v2 Stage 3b review, finding 3.)
+    private static void FrameOnTonic(List<NotationNote> truth, Hand hand, int tonic, int lo, int hi)
+    {
+        int idx = truth.FindIndex(t => t.Hand == hand);
+        if (idx < 0)
+        {
+            return;
+        }
+
+        int centre = (lo + hi) / 2;
+        int midi = centre - ((centre - tonic) % 12 + 12) % 12; // nearest tonic-class ≤ centre
+        if (midi < lo)
+        {
+            midi += 12; // lift into the band
+        }
+
+        if (midi > hi)
+        {
+            midi -= 12;
+        }
+
+        truth[idx] = truth[idx] with { Pitch = new Pitch(midi) };
+    }
+
     private static NotationNote NoteAt(
-        Random rng, HashSet<int> scale, Hand hand, int lo, int hi, int onsetFine, int valueFine,
+        Random rng, HashSet<int> scale, int tonic, Hand hand, int lo, int hi, int onsetFine, int valueFine,
         int velocity, Func<int, long> toSamples, SampleRate rate)
     {
         // 1-in-8 notes cross into the other hand's register but keep this hand's tag (the crossing case
         // the fixed middle-C split gets wrong and a temporal tracker can get right).
         bool cross = rng.Next(0, 8) == 0;
         int midi = cross
-            ? (hand == Hand.Left ? PickDiatonic(rng, scale, RightLo, RightLo + 5) : PickDiatonic(rng, scale, LeftHi - 5, LeftHi))
-            : PickDiatonic(rng, scale, lo, hi);
+            ? (hand == Hand.Left ? PickDiatonic(rng, scale, tonic, RightLo, RightLo + 5) : PickDiatonic(rng, scale, tonic, LeftHi - 5, LeftHi))
+            : PickDiatonic(rng, scale, tonic, lo, hi);
         return new NotationNote(new Pitch(midi), onsetFine, toSamples(onsetFine), valueFine, hand, velocity);
     }
 
-    private static int PickDiatonic(Random rng, HashSet<int> scale, int lo, int hi)
+    // Pick a diatonic pitch in [lo,hi], weighting the tonic and dominant scale degrees so the corpus
+    // has a real tonal centre (as tonal music does) rather than a flat diatonic wash — otherwise key
+    // detection has no signal to find. The register/rhythm/hand structure is unchanged.
+    private static int PickDiatonic(Random rng, HashSet<int> scale, int tonic, int lo, int hi)
     {
         var choices = new List<int>();
         for (int m = lo; m <= hi; m++)
         {
-            if (scale.Contains(((m % 12) + 12) % 12))
+            int pc = ((m % 12) + 12) % 12;
+            if (!scale.Contains(pc))
+            {
+                continue;
+            }
+
+            int degree = ((pc - tonic) % 12 + 12) % 12;
+            int weight = degree switch
+            {
+                0 => 4,       // tonic (the strongest key cue)
+                4 => 2,       // mediant — fixes the tonic-triad quality
+                11 => 2,      // leading tone — resolves to the tonic, disambiguating from the dominant key
+                7 => 1,       // dominant kept ordinary so it doesn't pull toward the dominant KEY
+                _ => 1,
+            };
+            for (int w = 0; w < weight; w++)
             {
                 choices.Add(m);
             }

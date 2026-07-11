@@ -45,13 +45,19 @@ public static class NotationMetrics
                 .OrderBy(e => e.Onset.Samples).ToList();
 
             total += handTruth.Count;
+
+            // Position-for-position scoring is only valid when the line flattens to exactly its notes. That
+            // holds here because the smallest onset gap (a sixteenth) equals one grid tick, so distinct
+            // onsets never collide onto one tick. Guard it anyway: a count mismatch means the alignment
+            // assumption broke, so score the whole hand as missed rather than silently pairing the wrong
+            // notes (conservative — never a false match). (v2 Stage 3b review, finding 1.)
+            if (flat.Count != handTruth.Count)
+            {
+                continue;
+            }
+
             for (int i = 0; i < handTruth.Count; i++)
             {
-                if (i >= flat.Count)
-                {
-                    break; // missing notes count as misses
-                }
-
                 long recoveredFine = (long)Math.Round(flat[i].Duration.Samples / samplesPerFine, MidpointRounding.AwayFromZero);
                 if (recoveredFine == handTruth[i].ValueFine)
                 {
