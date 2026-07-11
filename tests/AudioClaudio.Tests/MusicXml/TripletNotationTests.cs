@@ -43,6 +43,50 @@ public class TripletNotationTests
 
     private static string Xml() => new GrandStaffMusicXmlWriter().WriteToString(TripletBar());
 
+    // A representative two-hand sample (G major, an eighth-triplet run + a chord in the treble, a walking
+    // bass, note names on) — the concrete artifact for the R11.2 human MuseScore-load check, and a
+    // byte-golden guarding the triplet writer.
+    private static GrandStaffScore RichSample()
+    {
+        var grid = new QuantizationGrid(Rate, new Tempo(Bpm), TimeSignature.FourFour, Subdivision.Twelfth);
+        var events = new List<NoteEvent>();
+        int[] tripletPitches = { 74, 76, 77 };
+        for (int k = 0; k < 3; k++)
+        {
+            events.Add(new NoteEvent(new Pitch(tripletPitches[k]), new SamplePosition(k * TripletDur, Rate),
+                new SampleDuration(TripletDur, Rate), 96));
+        }
+
+        foreach (int p in new[] { 74, 79 }) // a half-note chord across beats 2–3
+        {
+            events.Add(new NoteEvent(new Pitch(p), new SamplePosition(SamplesPerBeat, Rate),
+                new SampleDuration(2 * SamplesPerBeat, Rate), 96));
+        }
+
+        events.Add(new NoteEvent(new Pitch(76), new SamplePosition(3 * SamplesPerBeat, Rate),
+            new SampleDuration(SamplesPerBeat, Rate), 96)); // beat 4 quarter
+
+        int[] bass = { 43, 50, 47, 43 };
+        for (int beat = 0; beat < 4; beat++)
+        {
+            events.Add(new NoteEvent(new Pitch(bass[beat]), new SamplePosition(beat * SamplesPerBeat, Rate),
+                new SampleDuration(SamplesPerBeat, Rate), 56));
+        }
+
+        return PolyphonicQuantizer.Quantize(events, grid, new SampleDuration(500, Rate));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void RichSample_IsByteIdenticalToTheGolden()
+    {
+        string actual = new GrandStaffMusicXmlWriter(includeNoteNames: true, workTitle: "Triplet grand-staff sample", fifths: 1)
+            .WriteToString(RichSample());
+        string expected = System.IO.File.ReadAllText(
+            AudioClaudio.Tests.TestSupport.RepoPaths.Fixture("golden", "musicxml", "triplet-grand-staff.musicxml"));
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     [Trait("Category", "Fast")]
     public void TripletBeat_IsEngravedAsAThreeTwoTuplet()

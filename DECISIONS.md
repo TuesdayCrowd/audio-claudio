@@ -1420,3 +1420,63 @@ Stage 2). So the **proven plain-YIN default stays**; the tested `ApplyContinuity
 remains as the foundation for a future offline/HMM-based integration. Confidence stays YIN's (1 −
 aperiodicity). The rare ~0.4% octave/onset residual is therefore **still open, and honestly so** — a causal
 pYIN-lite cannot close it without regressing real octave leaps.
+
+## v2 Stage 3 — Notation quality: key detection, temporal hand-split, triplets (2026-07-11)
+
+Measured on a **notation-quality harness** (`tests/…/Notation/`), not eyeballed: a ground-truth corpus
+(`NotationCorpusGen`, seed 5137, 40 cases) whose rhythm, key, per-note hand and dynamics are all known is
+fed straight into the notation layer, so each number reflects the quantizer/splitter/key-detector, **not**
+the transcription engine's ~80 % noise (the workplan's "judged against generated ground truth"). Each lever
+states baseline → target. The corpus is tonal (tonic/mediant/leading-tone weighting + each hand opening on
+the tonic) — an rng-neutral choice (`Random.Next(n)` advances state regardless of `n`), so it gave key
+detection real signal while leaving every other baseline bit-identical.
+
+**Key detection — auto-detected by default, `--key` overrides (Cornelius, 2026-07-11).** `KeyDetector`
+(Domain, BCL-only, pure) is the Krumhansl-Schmuckler algorithm: a 12-bin pitch-class profile correlated
+against the Krumhansl-Kessler major/minor hierarchies rotated to all 24 keys; the best key's signature
+(fifths) wins. It returns **fifths**, so relative major/minor confusion (identical pitch content) costs
+nothing — only a fifth-related confusion moves the answer. Wired as the default in `transcribe`/`notate`
+(like auto-tempo); `--key` overrides. Baseline 10.0 % → **92.5 %** (gate ≥ 85 %).
+
+**Treble/bass split — temporal hand-tracking, replacing the fixed middle-C cut.** `HandSplitter` (Domain)
+tracks two hand centres (an EMA of each hand's recent pitches) and splits each chord at the contiguous
+boundary best matching low pitches to the left centre and high to the right; ties break toward the balanced
+split. Because the centres move with the music, a continuous crossing keeps its notes. Seeded from a
+middle-C prior, it **reproduces the fixed cut on non-crossing input**, so every existing
+`PolyphonicQuantizer`/`GrandStaff` test and byte-golden is unchanged. It cannot recover an *isolated* leap
+(no continuity = no hand signal) — only continuous crossings, which is what real two-hand playing produces
+(measured on `HandCrossingGen`: 89.1 % fixed-cut → **100.0 %** tracker; gate ≥ 97 %). `StaffSplitter`
+(middle-C) is retained as the documented baseline.
+
+**Triplets — opt-in `--triplets` (Cornelius, 2026-07-11: "add basic triplets").** A sixteenth grid
+(4 ticks/quarter) can't place an eighth-triplet on an integer tick, so `Subdivision.Twelfth` (12/quarter =
+LCM of the sixteenth and eighth-triplet grids) is added, and `QuantizationGrid.StandardValueTicks` gains
+triplet values. They resolve to whole ticks **only** when divisions is divisible by 3/6, so the
+sixteenth/eighth/quarter grids exclude them — the mono path and its bit-exact closed loop are provably
+untouched. `GrandStaffMusicXmlWriter` engraves triplets (3:2 `<time-modification>` per note + a `<tuplet>`
+start/stop bracket over complete groups of three); straight decomposition is byte-identical (straight
+values are whole sixteenths), and an exact fallback spells odd clipped lengths from messy engine input
+without throwing or breaking the bar. Made **opt-in** (default = the clean sixteenth grid) because
+auto-quantizing to triplets manufactures spurious triplets on straight music — the same discipline as
+`--legato`. Note-value recovery 76.5 % → **100.0 %** at the Twelfth grid (gate ≥ 98 %).
+
+**Adversarial review (Workflow, 4 agents + verify) found and fixed:** (1) `--key` was parsed with a bare
+`int.Parse` and passed to the speller unvalidated — `--key 2147483647` crashed `PitchSpeller`
+(`Math.Abs(int.MinValue)`), `--key 40` emitted a garbage `<fifths>`; now validated to −7..+7 (`KeyOption`,
+unit-tested). (2) `NoteValueAccuracy` matched recovered↔truth by list index, which a tick collision could
+scramble; a count guard was shown insufficient (a merged chord unpacks to the same count), so it now matches
+by **(onset tick, pitch)** — a collision scores a miss, never a silent mis-pair. (3) corpus events are now
+emitted in onset order; (4) tonic-framing is clamped to each hand's register band.
+
+**Dynamics / sustain-pedal / auto-tempo (already shipped in the grand-staff writer) were generalized and
+corpus-tested here**, not re-implemented.
+
+### R11.2 — the human MuseScore-load check (ACTION: Cornelius) — still open, now scheduled
+
+No MuseScore in CI, so R11.2 (the grand-staff MusicXML "loads cleanly in MuseScore") stays a **human gate**
+that can block the v2.0.0 ship. The writer is validated in CI by the byte-golden + `xmllint` well-formedness
++ the MusicXML-4.0 structural checks (incl. the new triplet markup), and OSMD renders the same output in
+`listen --view`. **Action for Cornelius before Stage 6 ships v2.0.0:** run
+`claudio notate <midi> --triplets --note-names` (and a plain `transcribe`) and open the resulting
+`score.musicxml` in MuseScore; confirm the two staves, clefs, the auto-detected key signature, dynamics,
+sustain-pedal lines, and the triplet brackets all render cleanly. Record the pass here.

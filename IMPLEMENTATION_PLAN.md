@@ -60,4 +60,6 @@ schedule the **human** MuseScore-load verification (R11.2); reconcile DECISIONS/
 **Success Criteria**: a recorded MuseScore pass action item with a concrete sample file; status tables
 updated; suite green.
 **Tests**: doc-lint (existing) stays green; sample score validates structurally.
-**Status**: Not Started
+**Status**: Complete — DECISIONS "v2 Stage 3" + CLAUDE.md banner reconciled; a representative triplet
+grand-staff sample committed (`fixtures/golden/musicxml/triplet-grand-staff.musicxml`, byte-golden +
+xmllint-clean) as the R11.2 artifact; R11.2 human MuseScore check documented + scheduled for Cornelius.

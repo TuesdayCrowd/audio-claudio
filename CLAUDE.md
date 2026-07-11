@@ -21,7 +21,8 @@ Claude Code: read all of it before touching anything.
 **v2 release cycle in progress (started 2026-07-10).** The plan is
 [`docs/plans/2026-07-10-v2-release-workplan.md`](docs/plans/2026-07-10-v2-release-workplan.md);
 its job is to realize the Phase-2 vision (§8) with v1's discipline — every new capability *proven* on a
-**general** synthetic corpus, no more single-piece chasing. **Stages 0–2 are done:** reported
+**general** synthetic corpus, no more single-piece chasing. **Stages 0–3 are done** (branch
+`v2-stage0-rebaseline`, CI-green on x64, merge held for the cohesive v2.0.0 tag): reported
 numbers now come only from the committed corpus in [`docs/CORPUS.md`](docs/CORPUS.md) (mono = bit-exact
 closed-loop recovery; poly = **closed-loop-proven**, note-level F1 ≥ 0.75 @ ±50 ms, measured 79.6% on the
 seed-4242 corpus, 451 notes, gated in CI); the polyphonic default's "preview" label is **lifted** now that
@@ -30,9 +31,16 @@ its closed-loop gate passes; and the old *Death*-recording chroma chase is retir
 (real dynamics in `raw.mid`/`score.mid`), opt-in `--legato` + `--coarse-rhythm`, and a pYIN-lite
 octave-correction seam built + unit-tested but **NOT wired** — a *causal* correction can't be fed safely
 (it regresses real octave leaps and homogenizes the pitch track; the residual needs an HMM that breaks the
-live path), so plain YIN stays the proven default (see DECISIONS "pYIN-lite"). The
+live path), so plain YIN stays the proven default (see DECISIONS "pYIN-lite"). **Stage 3 (notation
+quality, measured on a ground-truth harness that isolates notation from engine noise):** auto **key
+detection** (Krumhansl-Schmuckler `KeyDetector`, default; `--key` overrides + is validated) 10%→**92.5%**;
+**temporal treble/bass hand-split** (`HandSplitter`, replaces the fixed middle-C cut; reproduces it on
+non-crossing input so goldens hold) 89%→**100%** on continuous crossings; opt-in **`--triplets`**
+(`Subdivision.Twelfth` + `<time-modification>`/`<tuplet>`; mono grid provably bit-exact; off by default so
+straight music gets no spurious triplets) note-value 76.5%→**100%**. Open human gate **R11.2** (MuseScore
+load) scheduled for Cornelius (see DECISIONS "v2 Stage 3"). The
 guarantee hierarchy is ranked, never flattened (mono bit-exact / poly statistical F1 / Transkun-via-ONNX
-statistical + ≥99 % PyTorch parity). See `DECISIONS.md` "v2 re-baseline" and "v2 Stage 1". The v0.1/v0.2 history below stands.
+statistical + ≥99 % PyTorch parity). See `DECISIONS.md` "v2 re-baseline", "v2 Stage 1", "v2 Stage 3". The v0.1/v0.2 history below stands.
 
 **Steps 0–3 are complete and on `main`.** Step 0 scaffold + guards + CI + `DECISIONS.md`;
 the Domain primitives `Pitch`, `PitchMath.CentsBetween`, `SampleRate`,
