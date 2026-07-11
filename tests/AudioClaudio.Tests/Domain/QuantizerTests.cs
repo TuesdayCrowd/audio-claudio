@@ -158,4 +158,20 @@ public class QuantizerTests
 
         Assert.NotEqual(at120, at60);
     }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void CoarseRhythm_rounds_a_sixteenth_up_to_an_eighth()
+    {
+        var note = new[] { Event(60, onsetTicks: 0, durationTicks: 1) }; // a sixteenth (1 tick)
+
+        int fine = FirstNoteLen(Quantizer.Quantize(note, Grid48));
+        int coarse = FirstNoteLen(Quantizer.Quantize(note, Grid48, coarseGridTicks: Grid48.TicksPerBeat / 2));
+
+        Assert.Equal(1, fine);   // default keeps the sixteenth
+        Assert.Equal(2, coarse); // coarse-grid note-off rounds it up to an eighth
+
+        static int FirstNoteLen(Score s) =>
+            s.Measures.SelectMany(m => m.Elements).First(e => e.Kind == ElementKind.Note).LengthTicks;
+    }
 }

@@ -18,6 +18,36 @@ Claude Code: read all of it before touching anything.
 
 ## Where the project is right now (read this first)
 
+**v2 release cycle in progress (started 2026-07-10).** The plan is
+[`docs/plans/2026-07-10-v2-release-workplan.md`](docs/plans/2026-07-10-v2-release-workplan.md);
+its job is to realize the Phase-2 vision (§8) with v1's discipline — every new capability *proven* on a
+**general** synthetic corpus, no more single-piece chasing. **Stages 0–4 shipped as `v2.0.0`** (2026-07-11;
+**Stage 4 = the self-contained Transkun engine via ONNX**: `transcribe --model transkun`, mel front end +
+semi-CRF Viterbi decode ported to C#, the transformer/scorer/heads in a committed 53 MB ONNX —
+**note-IDENTICAL to native PyTorch: F1 = 100 % @ ±25 ms + exact velocity**, gated in CI against committed
+native-reference MIDIs; the third guarantee tier is now earned). **Stage 5 (robustness/packaging) + 4f (the
+HuggingFace publish) are deferred to the v2.1 cycle** (Cornelius, 2026-07-11 — "publish this as v2, save
+Stage 5 for v2.1"); the Transkun artifact is committed + publish-ready + repo-only for now. See DECISIONS
+"v2 Stage 4"/"v2 Stage 3". Reported
+numbers now come only from the committed corpus in [`docs/CORPUS.md`](docs/CORPUS.md) (mono = bit-exact
+closed-loop recovery; poly = **closed-loop-proven**, note-level F1 ≥ 0.75 @ ±50 ms, measured 79.6% on the
+seed-4242 corpus, 451 notes, gated in CI); the polyphonic default's "preview" label is **lifted** now that
+its closed-loop gate passes; and the old *Death*-recording chroma chase is retired as a goal
+(`evaluate-audio` stays a general tool). **Stage 2 (core detection quality):** mono velocity-from-energy
+(real dynamics in `raw.mid`/`score.mid`), opt-in `--legato` + `--coarse-rhythm`, and a pYIN-lite
+octave-correction seam built + unit-tested but **NOT wired** — a *causal* correction can't be fed safely
+(it regresses real octave leaps and homogenizes the pitch track; the residual needs an HMM that breaks the
+live path), so plain YIN stays the proven default (see DECISIONS "pYIN-lite"). **Stage 3 (notation
+quality, measured on a ground-truth harness that isolates notation from engine noise):** auto **key
+detection** (Krumhansl-Schmuckler `KeyDetector`, default; `--key` overrides + is validated) 10%→**92.5%**;
+**temporal treble/bass hand-split** (`HandSplitter`, replaces the fixed middle-C cut; reproduces it on
+non-crossing input so goldens hold) 89%→**100%** on continuous crossings; opt-in **`--triplets`**
+(`Subdivision.Twelfth` + `<time-modification>`/`<tuplet>`; mono grid provably bit-exact; off by default so
+straight music gets no spurious triplets) note-value 76.5%→**100%**. Open human gate **R11.2** (MuseScore
+load) scheduled for Cornelius (see DECISIONS "v2 Stage 3"). The
+guarantee hierarchy is ranked, never flattened (mono bit-exact / poly statistical F1 / Transkun-via-ONNX
+statistical + ≥99 % PyTorch parity). See `DECISIONS.md` "v2 re-baseline", "v2 Stage 1", "v2 Stage 3". The v0.1/v0.2 history below stands.
+
 **Steps 0–3 are complete and on `main`.** Step 0 scaffold + guards + CI + `DECISIONS.md`;
 the Domain primitives `Pitch`, `PitchMath.CentsBetween`, `SampleRate`,
 `SamplePosition`/`SampleDuration`, `NoteEvent` (Step 1); the `IAudioSource` **pull** port +
@@ -107,22 +137,23 @@ conservation. Accuracy iteration (Stage 4) — `OnsetAlignment.GlobalScale`/`Dtw
 stays an honest pitch-recovery signal); `--onset-threshold`/`--frame-threshold`/`--min-note-len`
 (`PolyDecoderOptions`) tune the decoder's note density; `PitchSpeller.Spell` (line-of-fifths,
 nearest-to-centre) gives key-aware enharmonic spelling via a **declared** `--key <fifths>` (like tempo —
-declared, not estimated). **Honest ceiling, measured on a real copyrighted piece (audio + reference kept
-outside the repo, never committed):** note-level F1 is ~15–22% by onset tolerance, bounded by onset timing
-+ exact-pitch matching — not over-generation (pitch-class content ≈87%) — so the three decoder thresholds
-are a notation-cleanliness knob (tuned values cut the note count ~a third toward the reference's density at
-~zero F1 cost), not an accuracy lever. Build/test green (431 tests).
+declared, not estimated). **Accuracy (v2 Stage 1 closed-loop gate, see `docs/CORPUS.md`):** the engine is
+closed-loop-proven at note-level F1 ≥ 0.75 @ ±50 ms on the seed-4242 corpus (32 cases, 451 notes), measured
+79.6% (81.4/82.0% at ±100/150 ms). On one real copyrighted piece (audio + reference kept outside the repo, never committed) it
+measures ~15–22% by onset tolerance — but that gap is performance rubato + the OMR reference's own error,
+**not** the engine's pitch/onset fidelity, so ~15–22% is *not* an engine ceiling. The three decoder
+thresholds are a notation-cleanliness knob (tuned values cut the note count ~a third toward the reference's
+density at ~zero F1 cost), not an accuracy lever. Build/test green (431 tests).
 
 - **The v0.1.0 MVP is shipped; `v0.1.1` added live incremental notation; `v0.1.2` added the recording +
-  notation tooling above; `v0.2.0` makes opt-in polyphonic transcription the default `transcribe` engine
-  (above; `--mono` keeps the proven monophonic path).** The lone open human follow-up is the MuseScore GUI
+  notation tooling above; `v0.2.0` makes polyphonic transcription (previously opt-in) the default
+  `transcribe` engine (above; `--mono` keeps the proven monophonic path).** The lone open human follow-up is the MuseScore GUI
   load check for the MusicXML golden (R11.2 — see `DECISIONS.md`), corroborated by OSMD rendering the same
   `MusicXmlScoreWriter` output. Remaining Phase-2 items (§8): pYIN pitch-hardening for the monophonic
   detector (the rare ~0.4% octave residual, and the live-frame ≈ MIDI 42–93 range limits on real mic audio);
   velocity-from-energy and a treble/bass split for the *monophonic* path specifically (both already true of
   the polyphonic path — Basic Pitch amplitude, `StaffSplitter` — but not ported back to
-  YIN/`MusicXmlScoreWriter`); a closed-loop-style correctness guarantee for polyphony (today's accuracy claim
-  rests on the `evaluate` harness against one real reference recording, not a synthesize→transcribe suite);
+  YIN/`MusicXmlScoreWriter`);
   and a legato / coarser-grid note-off for cleaner rhythm from uneven beginner playing. The step plans and
   the authoritative API reference (`docs/plans/CONTRACTS.md`) live in `docs/plans/`; keep this note honest if
   work resumes.
@@ -666,7 +697,8 @@ The CLI is the only place adapters are constructed and wired to ports.
 Recorded so the MVP can decline scope without losing the ideas. Rough order of
 value:
 
-1. **Polyphony — DONE, the default `transcribe` engine as of `v0.2.0`** (see
+1. **Polyphony — the default `transcribe` engine (`v0.2.0`), closed-loop-proven in v2 Stage 1**
+   (note-level F1 ≥ 0.75 @ ±50 ms on the seed-4242 corpus, gated in CI). (see
    "Where the project is right now" above; `--mono` keeps the monophonic path).
    Spotify Basic Pitch's ONNX serialization via Microsoft.ML.OnnxRuntime, a
    second `ITranscriber` adapter behind the same port, exactly as anticipated
@@ -674,13 +706,13 @@ value:
    to the plan as written:** the closed-loop suite was *not* widened to chords — a
    synthesize→transcribe oracle has no honest ground truth for a real, copyrighted
    performance. Accuracy is instead measured by a new `evaluate` harness (Stage 1)
-   scoring against a real reference recording's note-set; that is how the honest
-   ~15–22% F1 ceiling above was established. A polyphonic closed-loop **diagnostic**
-   (`PolyphonicClosedLoop`, test project) now measures the engine's *intrinsic*
-   fidelity at **~80% note-level F1** on clean synthesized chords — showing that
-   ~15–22% real-world figure is dominated by rubato + OMR-reference error, not the
-   engine (see `DECISIONS.md`). A strict exact-recovery *guarantee* like the
-   monophonic loop remains open.
+   scoring against a real reference recording's note-set; that is how the
+   ~15–22% real-world F1 above was established. The polyphonic closed-loop **gate**
+   (`PolyphonicClosedLoopTests`, v2 Stage 1) measures the engine's *intrinsic*
+   fidelity at **F1 79.6%** @±50 ms (82.0% @±150 ms, seed-4242, 451 notes) on clean
+   synthesized chords and requires F1 ≥ 0.75 — showing that ~15–22% real-world figure is dominated by
+   rubato + OMR-reference error, not the engine (see `DECISIONS.md` and `docs/CORPUS.md`). It is a
+   statistical gate, ranked below (never flattened into) the monophonic loop's exact recovery.
 2. **Tempo estimation — DONE (shipped in `v0.1.2`).** Not the histogram/
    autocorrelation approach sketched here: `TempoEstimator` uses the median
    inter-onset interval (a grid-fit search was tried first and rejected — it

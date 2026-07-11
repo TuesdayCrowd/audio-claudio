@@ -799,8 +799,280 @@ branch (wired directly in `Program.cs`, not `TranscribeCommand`) resolves the mo
 `raw.mid` from `RawEvents`, then quantizes `RawEvents` through `PolyphonicQuantizer` into a
 `GrandStaffScore` and writes `score.musicxml` (`GrandStaffMusicXmlWriter`) + `score.mid`
 (`GrandStaffFlattener` → `DryWetMidiWriter`). `--key` is a **declared** key signature (like `--tempo`,
-R6.3), never estimated. `claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms]
+R6.3) that **overrides** the Stage 3 auto-detected default (§12.10) — never estimated itself.
+`claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms]
 [--align|--warp]` is wired alongside `render`/`play`; both MIDIs read via `MidiFileReader` (§7).
+
+### 12.10 Key detection — **definer: v2 Stage 3b** (`AudioClaudio.Domain`, `KeyDetector.cs`)
+
+```csharp
+public static class KeyDetector
+{
+    public static int Detect(IReadOnlyList<Pitch> pitches);                    // occurrence-weighted
+    public static int DetectFromProfile(IReadOnlyList<double> pitchClassWeights);  // 12 bins, index 0 = C
+}
+```
+
+Krumhansl-Schmuckler key-finding: a 12-bin pitch-class weight profile is Pearson-correlated against the
+Krumhansl-Kessler major/minor tonal-hierarchy profiles rotated to all 24 tonics; the best-correlating key's
+signature (**fifths** — sharps +, flats −) wins, ties breaking toward fewest accidentals. An empty/flat
+profile returns `0` (C major). Pure, deterministic, BCL-only. This is a **declared-vs-detected default**
+(same shape as auto-tempo — `CLAUDE.md` §8 item 2): the CLI's `transcribe`/`notate` (§12.9) call `Detect` when
+`--key` is omitted, validated/overridden via `KeyOption` (§12.13); the resulting fifths feeds `PitchSpeller`
+(§12.8) and `GrandStaffMusicXmlWriter`'s `<fifths>` (§12.6). Measured 92.5% key accuracy on the notation
+corpus (gate ≥ 85%, see `DECISIONS.md` "v2 Stage 3").
+
+### 12.11 Temporal hand-split — **definer: v2 Stage 3c** (`AudioClaudio.Domain.Polyphony`, `HandSplitter.cs`)
+
+```csharp
+public sealed class HandSplitter
+{
+    public const double DefaultAlpha = 0.6;
+    public const double DefaultLeftCentre = 52.0;   // E3
+    public const double DefaultRightCentre = 67.0;  // G4
+
+    public HandSplitter(double leftCentre = DefaultLeftCentre, double rightCentre = DefaultRightCentre,
+        double alpha = DefaultAlpha);
+    public (Chord? Treble, Chord? Bass) SplitNext(Chord chord);   // advances the two hand centres
+
+    public static IReadOnlyList<(Chord? Treble, Chord? Bass)> Split(
+        IReadOnlyList<Chord> chords,
+        double leftCentre = DefaultLeftCentre, double rightCentre = DefaultRightCentre, double alpha = DefaultAlpha);
+}
+```
+
+Replaces the fixed middle-C cut (`StaffSplitter`, §12.5 — still present but now unused by
+`PolyphonicQuantizer`, kept as the documented baseline) with **temporal hand-tracking**: two running hand
+centres (EMAs of each hand's recent pitches, seeded at a middle-C-straddling fifth) follow the two lines
+over time, and each chord is split at the contiguous low/high boundary minimizing total distance to the two
+centres, ties breaking toward the most balanced split. Because the centres move with the music, a hand's
+line that crosses middle C keeps its notes — the case the fixed cut gets wrong; it cannot recover an
+*isolated* leap (no continuity = no hand signal). Reproduces the fixed cut on non-crossing input, so
+existing `PolyphonicQuantizer`/grand-staff goldens are unchanged. Deterministic; `SplitNext` is the
+stateful per-chord API, `Split` wraps a fresh instance over a whole onset-ordered sequence.
+**`PolyphonicQuantizer.Quantize` (§12.5) now calls `HandSplitter.Split(chords)` unconditionally — its
+signature dropped the `splitMidi` parameter** (`Quantize(IReadOnlyList<NoteEvent> events, QuantizationGrid
+grid, SampleDuration chordWindow)`, no fourth argument); §12.5's code block predates this and should be read
+with that correction. Measured 89.1% (fixed cut) → 100.0% (tracker) on `HandCrossingGen` (gate ≥ 97%).
+
+### 12.12 Triplets — **definer: v2 Stage 3d** (`AudioClaudio.Domain` + `AudioClaudio.Infrastructure.MusicXml`)
+
+```csharp
+// AudioClaudio.Domain (Subdivision.cs)
+public enum Subdivision { Quarter, Eighth, Sixteenth, Twelfth }   // Twelfth added: 12 ticks/quarter
+// SubdivisionExtensions.TicksPerQuarter(Subdivision.Twelfth) == 12
+```
+
+`Subdivision.Twelfth` is the LCM of the sixteenth grid (4/quarter) and the eighth-triplet grid (3/quarter),
+so both land on integer ticks. `QuantizationGrid.StandardValueTicks` (§6) gained six triplet values
+(half/quarter/eighth/sixteenth-note triplets, in `valuesInQuarters` as `(4,3)/(2,3)/(1,3)/(1,6)` — see the
+`QuantizationGrid.cs` source) alongside the existing straight+dotted values; each is included **only** when
+`ticksPerQuarter * num % den == 0`, which is true on `Twelfth` and false on `Quarter`/`Eighth`/`Sixteenth` —
+so the straight-only grids (and the monophonic bit-exact closed loop) are provably untouched.
+`GrandStaffMusicXmlWriter` (§12.6) engraves triplets when a chord/rest's tick length decomposes to a clean
+triplet value (or, for odd lengths, a mixed straight+sixteenth-triplet fallback that never leaves an
+unrepresentable remainder): each triplet note gets a `<time-modification><actual-notes>3</actual-notes>
+<normal-notes>2</normal-notes></time-modification>`, and complete runs of three consecutive eighth-note
+triplets get a `<tuplet type="start"/>`/`type="stop"/` bracket (a broken/partial run gets none, but still
+carries the time-modification). Straight decomposition is byte-identical to before (straight values are
+still whole sixteenths), so the non-triplet golden is undisturbed. Wired **opt-in** via `--triplets`
+(`Program.cs` selects `Subdivision.Twelfth` over the `Subdivision.Sixteenth` default on `transcribe`/
+`notate`) — off by default because auto-quantizing to triplets manufactures spurious triplets on straight
+music (the same discipline as `--legato`). Note-value recovery 76.5% → 100.0% at the Twelfth grid on the
+notation corpus (gate ≥ 98%).
+
+### 12.13 `--key` validation — **definer: v2 Stage 3b review** (`AudioClaudio.Cli.Commands`, `KeyOption.cs`)
+
+```csharp
+public static class KeyOption
+{
+    public const int MinFifths = -7;   // C-flat major
+    public const int MaxFifths = 7;    // C-sharp major
+
+    public static bool TryParse(string? raw, out int fifths, out string? error);
+}
+```
+
+Extracted from an unvalidated `int.Parse` that could crash `PitchSpeller` (`Math.Abs(int.MinValue)`) or emit
+a garbage `<fifths>` on an out-of-range value. `TryParse` accepts only the twelve standard key signatures,
+`[-7, +7]`; outside that (or non-integer) it returns `false` with a descriptive `error` and `fifths = 0`.
+`Program.cs`'s `TryReadKeyOverride` helper wraps this for the `transcribe`/`notate` `--key` option.
+
+---
+
+## 13. Transkun engine — self-contained via ONNX — **definer: v2 Stage 4** — a third `ITranscriber`
+
+> Ranked below the Basic Pitch path in guarantee tier (see `CLAUDE.md` "Where the project is right now" and
+> `DECISIONS.md` "v2 Stage 4"): **statistical accuracy + a ≥ 99% PyTorch-parity gate**, not (yet) a
+> closed-loop F1 gate of its own. A faithful C#/ONNX port of Yujia Yan's Transkun (Neural Semi-CRF,
+> NeurIPS 2021, MIT), selectable via `transcribe --model transkun` alongside the default Basic Pitch path
+> (§12.4) and the monophonic `--mono` path (§9). The committed artifact — both ONNX graphs, the frozen
+> front-end buffers, license, decode spec, `MODEL_CARD.md` — lives under `fixtures/models/transkun/`
+> (repo-only for now; a public HuggingFace push is deferred to Cornelius's later go-ahead, per
+> `DECISIONS.md` "4f").
+
+**Boundary split (what is ONNX vs. C#):** `torch.fft.rfft` (the mel front end) and the semi-CRF
+backtracking (`viterbiBackward`) are not ONNX-exportable, so both are reimplemented in C# — the mel front
+end (§13.2) and the Viterbi decode (§13.3), each validated against committed PyTorch fixtures. The
+transformer + semi-CRF scorer (+ backbone `ctx` + the two velocity/sub-frame attribute heads) stay in ONNX
+(§13.4), run in-process via `Microsoft.ML.OnnxRuntime` (the same runtime Basic Pitch uses) — no Python at
+runtime.
+
+### 13.1 Frozen constants — (`AudioClaudio.Infrastructure.Transcription`, `TranskunBuffers.cs`)
+
+```csharp
+public sealed class TranskunBuffers
+{
+    public float[] Freq2Mels { get; }     // mel filterbank, row-major [rfftBins, nMels] (index k*nMels + m)
+    public float[][] Windows { get; }     // [nWindows][windowSize]; row 0 Hann, 1..5 learned Gaussian
+    public int[] Symbols { get; }         // the 90 track symbols: [-64, -67, 21..108] (sustain, soft, MIDI 21-108)
+    public TranskunParams Params { get; }
+
+    public static TranskunBuffers Load(string directory);   // reads params.json + the raw f32/i32 buffer files
+}
+
+public sealed record TranskunParams
+{
+    public int Fs { get; init; }
+    public int WindowSize { get; init; }
+    public int HopSize { get; init; }
+    public int NMels { get; init; }
+    public int NWindows { get; init; }
+    public double Eps { get; init; }
+    public double FMin { get; init; }
+    public double FMax { get; init; }
+    public int RfftBins { get; init; }
+    public double SegmentSizeSeconds { get; init; }
+    public double SegmentHopSeconds { get; init; }
+    public int NSymbols { get; init; }
+}
+```
+
+Loads the committed `fixtures/models/transkun/` buffers — raw little-endian float32/int32 matching the
+export's `.tofile`, so the load is a byte copy on the little-endian platforms this project targets.
+
+### 13.2 Mel front end — (`AudioClaudio.Infrastructure.Transcription`, `TranskunMelFrontEnd.cs`)
+
+```csharp
+public sealed class TranskunMelFrontEnd
+{
+    public TranskunMelFrontEnd(TranskunBuffers buffers, IFourierTransform fft);   // FFT injected, per §3
+    public float[,,] Compute(ReadOnlySpan<float> audio);   // -> featuresBatch [nFrame, nMels, nWindows]
+}
+```
+
+Mono audio → `featuresBatch`, the exact input the exported ONNX (§13.4) expects: `makeFrame` (half-window
+left pad, right pad to the last full frame) → per-segment gain normalization (unbiased mean/std over every
+framed sample) → six analysis windows → `rfft(norm="ortho")` → power → mel filterbank (each triangular
+filter's nonzero rfft-bin range precomputed so the matmul skips zeros, ~100× faster than the dense product)
+→ log-normalize. Pure given its buffers and injected `IFourierTransform` (`torch.fft.rfft` is not
+ONNX-exportable, which is why this lives outside the model graph). Verified against the committed `ref3b`
+PyTorch fixture to ~7e-6 drift.
+
+### 13.3 Semi-CRF Viterbi decode — **BCL-only** (`AudioClaudio.Domain`, `SemiCrfViterbi.cs`)
+
+```csharp
+public static class SemiCrfViterbi
+{
+    public readonly record struct Interval(int Begin, int End);   // closed frame interval [Begin, End]
+
+    public static IReadOnlyList<IReadOnlyList<Interval>> Decode(
+        float[] score, int t, int nBatch, IReadOnlyList<int>? forcedStartPos = null);
+}
+```
+
+A faithful port of transkun's `viterbiBackward` (the data-dependent backtracking that is not
+ONNX-exportable). `score` is the flat `[T,T,nBatch]` row-major score matrix `S` (`score[e,b,k] =
+score[(e*T+b)*nBatch+k]`, `S[e,b,k]` scoring a note on track `k` spanning closed interval `[b,e]`; the skip
+score is provably zero for this model and is baked in). `forcedStartPos` (per track) resumes decoding at a
+frame — used by the Stage 4d segment-stitching carry; `null` starts every track at frame 0. Pure,
+deterministic, BCL-only (Domain) — verified EXACT against the committed `ref3c` fixture on synthetic and
+real `S`.
+
+### 13.4 ONNX runners — (`AudioClaudio.Infrastructure.Transcription`)
+
+```csharp
+public sealed class TranskunModel : IDisposable
+{
+    public TranskunModel(string onnxPath);
+    public float[] Run(float[,,] featuresBatch, out int t);                      // -> S flat [T*T*90]
+    public (float[] S, float[] Ctx) RunWithCtx(float[,,] featuresBatch, out int t);  // + ctx flat [90*T*256]
+    public void Dispose();
+}
+
+public sealed class TranskunHeads : IDisposable
+{
+    public const int AttrDim = 768;         // [ctx_a, ctx_b, ctx_a·ctx_b], each 256-D
+    public const int VelocityClasses = 128;
+
+    public TranskunHeads(string onnxPath);
+    public (float[] VelocityLogits, float[] OfRaw) Run(float[] attr, int n);   // attr flat [n*768]
+    public void Dispose();
+}
+```
+
+`TranskunModel` runs the main graph (input `featuresBatch`, output `S`; `RunWithCtx` also returns the
+backbone features `ctx[track,frame,d]`, needed for the attribute heads). `TranskunHeads` runs the small
+velocity/sub-frame-timing MLPs (`velocityPredictor`, `refinedOFPredictor`) over gathered per-interval
+features (`attr` = the endpoint `ctx` vectors and their elementwise product); `OfRaw`'s four columns per row
+are two sub-frame value logits (decoded as a ContinuousBernoulli mean, recentred to `[-0.5, 0.5]`) and two
+presence logits. Neither type is Domain — `Microsoft.ML.OnnxRuntime` stays out of
+`AudioClaudio.Domain.csproj` (the same dependency-rule note as §12.4).
+
+### 13.5 The transcriber — (`AudioClaudio.Infrastructure.Transcription`, `TranskunTranscriber.cs`)
+
+```csharp
+public sealed class TranskunTranscriber : ITranscriber, IDisposable
+{
+    public TranskunTranscriber(string modelDir, IFourierTransform fft);
+
+    public (IReadOnlyList<NoteEvent> Notes, IReadOnlyList<SustainPedal.Change> Pedal) TranscribeDetailed(IAudioSource source);
+    public TranscriptionResult Transcribe(IAudioSource source);   // ITranscriber; Score is a lossy mono quantization
+    public void Dispose();
+}
+```
+
+Composes §13.1–13.4 over the model's 16 s segments at 8 s hop (padded, overlapping), stitched exactly as
+transkun's `transcribe`/`transcribeFrames`: the `forcedStartPos` carry, merge-across-segments
+(replace/extend/append/drop by onset/overlap), EOF force-close of the last open note per track, and a
+final `resolveOverlapping` truncation pass. `TranscribeDetailed` is the honest output — real per-note
+**velocity** and **sub-frame** onset/offset timing (Stage 4e's two heads), plus `SustainPedal.Change`
+events decoded from the dedicated CC64 track (track symbol `-64`; the soft-pedal track `-67` is decoded but
+not emitted — a documented core-first limitation). `Transcribe` (the `ITranscriber` member) quantizes those
+notes through the monophonic `Quantizer` at a fixed 120 BPM/sixteenth grid — same honest-raw-vs-lossy-score
+split as `BasicPitchTranscriber` (§12.4); the CLI's real grand-staff output comes from feeding
+`TranscribeDetailed`'s notes through `PolyphonicQuantizer` + `GrandStaffMusicXmlWriter` itself (§12.9).
+Resamples input audio to the model's rate (`Fs`, from `TranskunParams`) via `AudioResampler` (§12.3) when
+the source differs. CPU inference is deterministic per build, not bit-identical across CPU architectures
+(SIMD) — same caveat as §8/§12.4.
+
+### 13.6 CLI wiring — (`AudioClaudio.Cli.Composition`, `TranskunModelLocator.cs`)
+
+```csharp
+public static class TranskunModelLocator
+{
+    public static string Resolve(string? explicitDir = null);   // walks up from AppContext.BaseDirectory
+}
+```
+
+Mirrors `ModelLocator` (§12.9): resolves the committed `fixtures/models/transkun/` directory (the one
+holding `transkun.onnx`) by walking up from the executable, or returns an explicit path. `Program.cs`
+selects the Transkun branch when `transcribe --model transkun` is passed AND the resolved mode (§12.9's
+`TranscribeModeResolver`) is `Polyphonic` (i.e. `--mono` was not also given); it writes `raw.mid` from
+`TranscribeDetailed`'s notes, quantizes them via `PolyphonicQuantizer` onto `Subdivision.Twelfth` or
+`Sixteenth` per `--triplets` (§12.12), and writes `score.musicxml`/`score.mid` including the sustain-pedal
+marks (`GrandStaffMusicXmlWriter`'s pedal-marks `Write` overload). `--key` behaves as in §12.9/§12.10.
+
+### 13.7 The parity gate — `TranskunParityTests` (`tests/AudioClaudio.Tests/Transcription/`)
+
+The engine's earned guarantee, ranked below closed-loop proof (see `DECISIONS.md` "v2 Stage 4"): the C#
+`TranskunTranscriber` output is compared, per committed fixture clip, against a **native `transkun` CLI
+(PyTorch) reference MIDI** committed under `fixtures/models/transkun/parity/` (so the gate runs in CI with
+no Python venv). Asserts `NoteSetEvaluation.F1 >= 0.99` at ±25 ms onset tolerance (`TranscriptionEvaluator`,
+§12.1) and mean absolute velocity delta ≤ 2 across matched notes. Measured **100.0% F1 with exact velocity**
+on every note across both fixture clips (a 3-segment monophonic scale and a 21.8 s cross-boundary-stitching
+clip) — the decisive test isolating a C#-port bug from model accuracy, per the constitution's ranked
+guarantee hierarchy (mono bit-exact / poly statistical F1 / Transkun statistical + ≥99% PyTorch parity).
 
 ---
 

@@ -53,6 +53,12 @@ public sealed class TranscriptionPipeline : ITranscriber
         var yinOptions = new YinOptions(threshold: _settings.YinThreshold); // Step 4
 
         // Per-frame: YIN estimate, magnitude spectrum, and a FrameObservation for the segmenter.
+        // Per-frame: YIN estimate, magnitude spectrum, and a FrameObservation for the segmenter. Plain
+        // YIN (no continuity): the pYIN-lite octave-correction seam (YinPitchDetector.Detect's previous
+        // param + ApplyContinuity) exists and is unit-tested, but it is NOT wired here — a causal
+        // continuity correction cannot be fed safely by this pipeline (it fights real octave leaps next to
+        // a ringing note and homogenizes the pitch track the segmenter relies on), so the proven plain-YIN
+        // path stays the default. See DECISIONS.md, "pYIN-lite".
         var magnitudeSpectra = new List<IReadOnlyList<double>>(frames.Count);
         var observations = new List<FrameObservation>(frames.Count);
         foreach (var frame in frames)
@@ -79,6 +85,7 @@ public sealed class TranscriptionPipeline : ITranscriber
         {
             MinNoteDuration = new SampleDuration(minSamples, rate), // R5.3 flicker floor
             StabilityFrames = _settings.StabilityFrames,
+            RecoverLegato = _settings.RecoverLegato, // v2 Stage 2: opt-in legato recovery (default off)
             // R5.2's decay-below-floor is the composition root's call (Step 5's R5.2 coverage
             // row); disabled here (TranscriptionSettings.DecayFloorRatio defaults to 0) in favor
             // of the RefineOffsets post-process below — see its remarks for why.
@@ -90,6 +97,11 @@ public sealed class TranscriptionPipeline : ITranscriber
             events, observations, _settings.OffsetSettleFrames, _settings.OffsetReleaseRatio,
             _settings.OffsetPersistFrames, rate);
 
+        // Stage 2 (v2): stamp a real per-note velocity from the attack energy, so the score carries
+        // dynamics (pp..ff) instead of a flat constant. A pure 1:1 relabel — same count/pitch/onset/
+        // duration — so the closed loop's R9.2 checks are untouched.
+        events = RefineVelocities(events, observations, _settings.VelocityAttackFrames);
+
         // Step 6: build the grid and quantize (static, no `new Quantizer()`). Tempo is estimated
         // from the just-detected events when requested — valid because detection is tempo-independent
         // (CLAUDE.md background) and tempo is only ever consumed here, at quantization.
@@ -97,7 +109,10 @@ public sealed class TranscriptionPipeline : ITranscriber
             ? TempoEstimator.Estimate(events, new Tempo(_settings.TempoBpm))
             : new Tempo(_settings.TempoBpm);
         var grid = new QuantizationGrid(rate, tempo, _settings.TimeSignature, _settings.Subdivision);
-        Score score = Quantizer.Quantize(events, grid);
+        // Coarse-grid note-off (opt-in): snap note values to an eighth-note grid (half a quarter beat). Off
+        // by default (coarseGrid = 0 → the proven full standard-value set the closed loop runs on).
+        int coarseGrid = _settings.CoarseRhythm ? grid.TicksPerBeat / 2 : 0;
+        Score score = Quantizer.Quantize(events, grid, coarseGrid);
 
         return new TranscriptionResult(score, events);
     }
@@ -269,6 +284,8 @@ public sealed class TranscriptionPipeline : ITranscriber
 
             previousMagnitudes = magnitudes;
 
+            // Live uses plain YIN (no continuity): pYIN-lite's octave correction needs onset-aware reset,
+            // which the batch Transcribe pass owns — and the live session's SAVED files come from that pass.
             PitchEstimate estimate = YinPitchDetector.Detect(frame, yinOptions);
             observations.Add(new FrameObservation(frame.Start, GuardedPitchFromEstimate(estimate), Rms(frame.Samples)));
 
@@ -487,6 +504,57 @@ public sealed class TranscriptionPipeline : ITranscriber
             long refinedEndSample = baseSample + ((long)endFrame * hop);
             long refinedDuration = Math.Max(1, refinedEndSample - e.Onset.Samples);
             refined.Add(new NoteEvent(e.Pitch, e.Onset, new SampleDuration(refinedDuration, rate), e.Velocity));
+        }
+
+        return refined;
+    }
+
+    /// <summary>
+    /// Stamps each note with a velocity estimated from its attack energy — the peak per-frame RMS in the
+    /// first <paramref name="attackFrames"/> frames from its onset — via <see cref="VelocityEstimator"/>.
+    /// A pure 1:1 relabel: pitch, onset, and duration are copied unchanged and the note count is preserved,
+    /// so it cannot touch the closed loop's count/pitch/onset/duration checks (velocity is not one of them).
+    /// Runs in Application after offset refinement; the Domain segmenter's constant velocity is overridden
+    /// here rather than in Domain, keeping the energy→velocity model a composition-root concern.
+    /// </summary>
+    private static IReadOnlyList<NoteEvent> RefineVelocities(
+        IReadOnlyList<NoteEvent> events,
+        IReadOnlyList<FrameObservation> observations,
+        int attackFrames)
+    {
+        if (events.Count == 0 || observations.Count < 2)
+        {
+            return events;
+        }
+
+        long baseSample = observations[0].Start.Samples;
+        long hop = observations[1].Start.Samples - baseSample;
+        int frameCount = observations.Count;
+        int window = Math.Max(1, attackFrames);
+
+        int FrameIndexOf(long samplePos) =>
+            (int)Math.Clamp((samplePos - baseSample) / hop, 0, frameCount - 1);
+
+        var refined = new List<NoteEvent>(events.Count);
+        for (int idx = 0; idx < events.Count; idx++)
+        {
+            NoteEvent e = events[idx];
+            int onsetFrame = FrameIndexOf(e.Onset.Samples);
+            // Bound the attack search by the NEXT note's onset (as RefineOffsets does), so a longer
+            // attack window can never pick up the next note's onset energy — explicit, not coincidental.
+            int nextOnset = idx + 1 < events.Count ? FrameIndexOf(events[idx + 1].Onset.Samples) : frameCount;
+            int last = Math.Min(Math.Min(onsetFrame + window, frameCount), nextOnset);
+            double attackPeak = 0.0;
+            for (int j = onsetFrame; j < last; j++)
+            {
+                if (observations[j].Energy > attackPeak)
+                {
+                    attackPeak = observations[j].Energy;
+                }
+            }
+
+            int velocity = VelocityEstimator.FromAttackEnergy(attackPeak);
+            refined.Add(new NoteEvent(e.Pitch, e.Onset, e.Duration, velocity));
         }
 
         return refined;

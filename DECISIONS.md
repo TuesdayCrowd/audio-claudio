@@ -1141,7 +1141,9 @@ Pitch → score note-level F1 against the score — isolates the *engine's* fide
 depress the real-world "Death" number (an OMR-derived reference with its own errors, and a *performance's*
 rubato vs an engraved *score*). On 8 clean synthetic cases (114 reference notes, mid-range MIDI 40–72 so
 this SoundFont actually sustains them): **note-level F1 ≈ 80% (recall ~90%, precision ~73%) at ±50–150 ms**,
-versus ~15–22% on real Death audio.
+versus ~15–22% on real Death audio. *(This was the pre-ghost-filter measurement; the harmonic-ghost filter
+in the next entry raised it to F1 82.9% / precision 75.9%, and the v2 re-baseline below restates the current
+81.3 / 82.1 / 82.9% at ±50 / 100 / 150 ms — see `docs/CORPUS.md`.)*
 
 **What it decides.** The engine is **not** the bottleneck — Basic Pitch recovers ~90% of notes with tight
 onsets on clean audio. The ~60-point real-world gap is (a) performance-vs-score timing (rubato) and (b) OMR
@@ -1252,3 +1254,274 @@ own pedal-less MIDIs (Basic Pitch stays 78.6%). Any pedalled MIDI now renders co
 **Meta-lesson: measure-first paid off again.** ~30 min running Transkun's CLI saved a multi-day
 ONNX/semi-CRF integration that would not have moved the number — and yielded a genuine pedal-rendering fix
 as a byproduct.
+
+## v2 re-baseline — general-corpus numbers, ranked guarantees, and the polyphony "preview" label (2026-07-10)
+
+**The pivot.** v0.2.0's later work drifted into optimizing ONE recording (the copyrighted *Death* piano
+piece) judged by ONE metric (chroma similarity to that recording). Both are dead ends by construction:
+chroma is timbre-limited — a SoundFont render vs a real piano caps around ~78% *regardless of note accuracy*
+(the clearest proof: a clean chiptune source scored the *same* ~78% as the messy piano) — and optimizing a
+single out-of-distribution clip is not a quality signal for the tool. Worse, polyphony shipped with **no
+correctness guarantee**, a regression from the one thing that defined v1: a correctness claim *earned* by
+the closed loop, not asserted.
+
+**The reset (v2 Stage 0).** Reported *numbers* now come only from the **generated** corpus, whose
+distribution is committed and documented in [`docs/CORPUS.md`](docs/CORPUS.md). Every figure names its
+tolerance and its seed. The single-recording chroma number is retired as a headline/goal — `evaluate-audio`
+stays as a general tool, but nothing is optimized toward one clip's number (see "Explicitly out of scope"
+in the v2 workplan).
+
+**Per-engine baselines, measured — the new headline** (the Death figure is retired *as the headline*, not
+erased; it still stands below as labelled, non-headline context):
+- **Monophonic (YIN):** bit-exact closed-loop recovery — strict R9.2 (count exact / pitch exact / onset ±1
+  subdivision / duration ±1 subdivision) over 40 cases from the pinned PCG seed `000000000010` (each
+  sub-corpus); count/pitch/onset additionally exact over 40 full-range cases. Green (`ClosedLoopPropertyTests`,
+  2/2).
+- **Polyphonic (Basic Pitch):** note-level F1 **81.3 / 82.1 / 82.9 %** at ±50 / 100 / 150 ms on the
+  seed-4242 synthetic corpus (8 cases, 114 reference notes; recall ~90 %, precision ~76 %). Still asserted
+  only as a diagnostic *floor* (≥ 55 %), not a gate — Stage 1 promotes it to a committed-threshold property
+  suite. *(Superseded by the "v2 Stage 1" entry below: the committed gate uses a larger 32-case /
+  451-note corpus where the converged F1 @±50 ms is **79.6 %** — that is the current headline; this 8-case
+  figure was the Stage-0 snapshot.)*
+
+**Default stays polyphonic** (Cornelius, 2026-07-10 — "piano is two hands"): no revert to mono and no
+poly→mono→poly churn. The honesty is carried by transparency instead — a **"preview — not yet
+closed-loop-proven"** label on the polyphonic engine in `--help` and README, lifted in Stage 1 once the
+polyphonic closed-loop gate passes at a committed F1 threshold.
+
+**The guarantee hierarchy is ranked, never flattened:** monophonic = **bit-exact** closed-loop recovery
+(strongest); Basic Pitch polyphony = **statistical** F1 bar over the seeded corpus (Stage 1);
+Transkun-via-ONNX = **statistical + a ≥ 99 % PyTorch-parity** gate (Stage 4). Each states its own number and
+its own limits.
+
+**Supersedes** the "Transkun evaluated, not integrated" conclusion above, but only for *raw pitch accuracy*:
+that tie on Death (77.5 % vs 78.6 % chroma) still stands and is exactly why Transkun is **not** an accuracy
+silver bullet. It re-enters in Stage 4 as a **notation-fidelity** engine (real key-press durations, native
+velocity, native pedal), measured on this same general corpus and *not* defaulted until earned — the same
+discipline every engine here is held to.
+
+## v2 Stage 1 — polyphony earned: the closed-loop gate (2026-07-10)
+
+**What landed.** The polyphonic closed loop is promoted from a *diagnostic* (regression floor F1 ≥ 0.55,
+"not a pass/fail property") to a **committed-F1 property gate** (`PolyphonicClosedLoopTests`): generate a
+fixed-seed (4242) corpus of 32 random chord scores, synthesize each with the MeltySynth oracle, transcribe
+with Basic Pitch, micro-average note-level F1, and **require F1 ≥ 0.75 at ±50 ms**. This restores v1's
+defining property — polyphonic correctness that is *measured*, not asserted — and lifts the "preview" label.
+
+**The gate spec (Cornelius, 2026-07-10):** threshold **0.75**, onset tolerance **±50 ms** (the strictest of
+the three the diagnostic reports — the most honest note-level timing claim). Measured **F1 79.6 %** @±50 ms
+(81.4 / 82.0 % @±100 / 150 ms; recall ~90 %, precision ~72 %) over 451 reference notes → 4.6 pt of headroom.
+
+**Corpus size = 32, chosen by convergence, not convenience.** The old 8-case diagnostic reported 81.3 %
+@±50 ms; 24 and 32 cases both land at 79.6–79.8 % — the honest converged mean. Committing the gate at the
+8-case number would have set a subtly inflated baseline a future *correct* engine could "regress" below by
+sampling luck alone. 451 notes makes "≈80 %" a claim, not an artifact. Cost is trivial (~4–5 s for the whole
+corpus; ONNX inference is ~0.15 s/case), so the corpus is sized for credibility, not speed.
+
+**Why not exact recovery (like the mono loop).** Basic Pitch is a neural model; it never returns a score
+bit-for-bit (~80 % F1 on clean synth chords is its ceiling — see the diagnostic entry above). So the earned
+guarantee is **ordinal**: a stated statistical F1 bar over a stated seed at a stated tolerance (v2 workplan
+Principle 1). The three engines' guarantees are **ranked, never flattened**: mono = bit-exact recovery;
+poly = this F1 gate; Transkun-via-ONNX (Stage 4) will add a ≥ 99 % PyTorch-parity gate on top.
+
+**Runs in CI, can't flake.** `ci.yml` runs the full suite (no `--filter`), so the Slow gate runs on every
+push. The corpus is deterministic (plain seeded `Random`, not CsCheck's threaded `Sample`), so the only
+cross-run variance is the recorded ONNX SIMD drift across CPU architectures — which the 4.6 pt headroom
+is expected to absorb (the 79.6 % is an ARM64 dev measurement; the first x64 CI run confirms it). On failure
+the worst ≤ 8 cases are quarantined (WAV = the exact transcriber input; reference MIDI = the score) for
+diagnosis and promotion to **`fixtures/regressions/polyphonic/`** — a subdirectory the mono regression scan
+(top-level `*.mid` only) never picks up, replayed by `PolyphonicRegressionCorpusTests` at the gate's per-case
+F1 bar so the suite only gets harder.
+
+**This same harness proves Stage 4.** Transkun (the third engine) will be measured against this exact
+general corpus — one oracle, every engine held to the same bar.
+
+## v2 Stage 2 — velocity from onset energy (mono path) (2026-07-10)
+
+**What landed.** The monophonic pipeline stamped every note with a constant `NoteEvent.DefaultVelocity`
+(64); it now derives a real per-note velocity from the attack energy. `VelocityEstimator.FromAttackEnergy`
+(Domain, pure) maps the peak RMS just after onset to a MIDI velocity (1..127) on a perceptual **dBFS**
+scale; `TranscriptionPipeline.RefineVelocities` (Application, after `RefineOffsets`) applies it as a pure
+**1:1 relabel** — pitch/onset/duration/count untouched, so the closed loop's R9.2 checks are invisible to
+it (its comparator is velocity-blind, verified). The velocity flows through the `Quantizer` into the
+`Score` (`ScoreElement.Velocity`), so `raw.mid` and `score.mid` now carry dynamics.
+
+**Validated (`VelocityRecoveryTests`).** Synthesize ONE pitch struck at ascending velocities, transcribe,
+require the recovered velocities to be non-constant and to track the played ordering (fixing the pitch
+isolates dynamics from the register confound). Played [24, 48, 72, 96, 120] → recovered [50, 79, 101, 116]
+(4 of 5) — a near-exact dynamics track (mp→mf→ff). The softest strike (velocity 24) is missed by the
+*onset* detector, not the velocity map (onset sensitivity is a separate Stage 2 item).
+
+**Calibration + its honest limits.** The dBFS window (−29..−53 dBFS → velocity 8..127, ~5 vel/dB) is tuned
+to the committed GeneralUser GS SoundFont at a mid register. Two documented limits: (1) absolute microphone
+gain shifts where a real performance lands — the *relative* ordering (a crescendo, a soft passage) is
+recovered regardless; (2) it conflates dynamics with register (a bass and a treble note at the same MIDI
+velocity render at different RMS). A per-pitch energy normalization would fix (2) but is beyond this first
+cut. Non-constant, ordering-correct velocity feeding pp..ff is a real improvement over a flat constant —
+what the workplan asked for. Wiring this velocity to **dynamic marks** in the mono `MusicXmlScoreWriter`
+(as the grand-staff writer already does) is Stage 3 (notation).
+
+## v2 Stage 2 — legato recovery + coarse-grid note-off (both opt-in) (2026-07-10)
+
+**Legato recovery (`--legato`; `NoteSegmenterOptions.RecoverLegato`, default OFF).** The segmenter emitted
+one note per onset, so a legato pitch change WITHIN an onset span — connected notes with no re-attack — was
+lost. It now walks each span emitting a note per stable-pitch run, so a legato transition opens a new note
+(timestamped at the pitch-change boundary; the first run keeps the attack onset). **Made opt-in after the
+closed loop caught it as a default:** a monophonic pitch track cannot reliably tell a real legato
+transition from a YIN pitch *wobble* (a low note's partials beat and wobble the track — a known effect on
+this corpus, see the `RefineOffsets` note), so legato-as-default added a spurious wobble-note and broke
+bit-exact recovery (count 8 ≠ 7 on one case). Off, the segmenter is exactly the proven one-note-per-onset;
+on, it recovers legato at the cost of the occasional wobble-note — a real trade-off, so the user opts in.
+Even when on, two guards limit spurious splits: a run whose pitch equals the note just emitted (a wobble
+returning to the pitch) is skipped, and the flicker floor is measured on each run's OWN length so a
+dropped short first run cannot lend its span-start onset to a later (e.g. wobble) run.
+
+**Coarse-grid note-off (`--coarse-rhythm`; `TranscriptionSettings.CoarseRhythm`, default OFF).**
+`QuantizationGrid.NearestStandardValueTicks` gained a `coarseGridTicks` unit: note VALUES snap to standard
+values aligned to that grid (whole multiples of it), so uneven playing rounds to cleaner rhythm — an
+eighth-note grid drops the sixteenth and dotted-eighth while keeping eighth/quarter/dotted-quarter/half/…
+Onsets are never coarsened, only the note value. Default 0 = the full standard-value set (the closed
+loop's proven behavior). A first, composable lever for Stage 3's holistic rhythm-quantization work.
+
+Both hold the same discipline as velocity: the mono closed loop stays bit-exact green (both off by
+default), and each is a documented, tested opt-in. Legato is batch-only (`Transcribe`); the live
+`StreamNotes` preview is unchanged (its saved files come from the batch pass).
+
+## v2 Stage 2 — pYIN-lite: octave correction built + tested; a SAFE pipeline integration is unsolved (2026-07-11)
+
+**What was built (kept).** The YIN detector gained an octave-correction SEAM:
+`YinPitchDetector.Detect(frame, options, previous)` collects the runner-up candidate periods
+(`PitchCandidate`) and delegates to the pure, unit-tested `YinPitchDetector.ApplyContinuity`. Given the
+previous voiced estimate, if this frame's YIN pick jumped ~a full octave AND a candidate sits at the
+previous pitch and is a DEEPER dip than YIN's pick, that continuity candidate wins — the right call for an
+isolated within-note octave glitch (the true pitch is the deeper dip). Fully unit-tested: octave up/down
+corrections, the four cases where it must NOT act (non-octave jump, no near candidate, too-aperiodic
+candidate, unvoiced previous), and the boundary-leap case. `YinOptions` carries its tuning constants.
+
+**Why it is NOT wired into the pipeline (the finding, after three attempts — each broke the same
+full-range closed-loop case, an A5→A6 octave leap after a ringing A5):**
+1. **Naive continuity** (bias to the previous voiced pitch): a within-note YIN wobble becomes a spurious
+   note; and the previous note rings through a short rest, so the real octave LEAP is pulled back an octave.
+2. **Require the continuity candidate to be a deeper dip than YIN's pick:** fails for a FRESH HIGH note next
+   to a RINGING LOW note — the low note's dip is inherently deeper (more periods in the window), so it
+   wrongly wins.
+3. **Reset continuity at each detected onset** (two-pass — onsets before pitch): still fails — at the onset
+   frame the ringing previous note dominates the audio, so plain YIN there already reads the OLD pitch, and
+   continuity then propagates it into the new note's frames, HOMOGENIZING the pitch track and erasing the
+   stable-new-pitch run the segmenter relies on. Plain YIN already recovers these correctly (the segmenter
+   ignores the one-frame ring and finds the stable new pitch).
+
+**Root cause + decision.** A *causal* continuity correction cannot tell a within-note octave ERROR from a
+real octave LEAP next to a ringing note without a musical model of note identity, and it destroys the
+per-frame pitch-track information segmentation needs. The residual octave errors it targets are SUSTAINED
+(they look like real notes), which only a probabilistic track model (full pYIN's HMM) resolves — and that is
+a BACKWARD pass, breaking the causal ~41 ms live path (R10.4; the pYIN tension recorded at the start of
+Stage 2). So the **proven plain-YIN default stays**; the tested `ApplyContinuity`/`PitchCandidate` seam
+remains as the foundation for a future offline/HMM-based integration. Confidence stays YIN's (1 −
+aperiodicity). The rare ~0.4% octave/onset residual is therefore **still open, and honestly so** — a causal
+pYIN-lite cannot close it without regressing real octave leaps.
+
+## v2 Stage 3 — Notation quality: key detection, temporal hand-split, triplets (2026-07-11)
+
+Measured on a **notation-quality harness** (`tests/…/Notation/`), not eyeballed: a ground-truth corpus
+(`NotationCorpusGen`, seed 5137, 40 cases) whose rhythm, key, per-note hand and dynamics are all known is
+fed straight into the notation layer, so each number reflects the quantizer/splitter/key-detector, **not**
+the transcription engine's ~80 % noise (the workplan's "judged against generated ground truth"). Each lever
+states baseline → target. The corpus is tonal (tonic/mediant/leading-tone weighting + each hand opening on
+the tonic) — an rng-neutral choice (`Random.Next(n)` advances state regardless of `n`), so it gave key
+detection real signal while leaving every other baseline bit-identical.
+
+**Key detection — auto-detected by default, `--key` overrides (Cornelius, 2026-07-11).** `KeyDetector`
+(Domain, BCL-only, pure) is the Krumhansl-Schmuckler algorithm: a 12-bin pitch-class profile correlated
+against the Krumhansl-Kessler major/minor hierarchies rotated to all 24 keys; the best key's signature
+(fifths) wins. It returns **fifths**, so relative major/minor confusion (identical pitch content) costs
+nothing — only a fifth-related confusion moves the answer. Wired as the default in `transcribe`/`notate`
+(like auto-tempo); `--key` overrides. Baseline 10.0 % → **92.5 %** (gate ≥ 85 %).
+
+**Treble/bass split — temporal hand-tracking, replacing the fixed middle-C cut.** `HandSplitter` (Domain)
+tracks two hand centres (an EMA of each hand's recent pitches) and splits each chord at the contiguous
+boundary best matching low pitches to the left centre and high to the right; ties break toward the balanced
+split. Because the centres move with the music, a continuous crossing keeps its notes. Seeded from a
+middle-C prior, it **reproduces the fixed cut on non-crossing input**, so every existing
+`PolyphonicQuantizer`/`GrandStaff` test and byte-golden is unchanged. It cannot recover an *isolated* leap
+(no continuity = no hand signal) — only continuous crossings, which is what real two-hand playing produces
+(measured on `HandCrossingGen`: 89.1 % fixed-cut → **100.0 %** tracker; gate ≥ 97 %). `StaffSplitter`
+(middle-C) is retained as the documented baseline.
+
+**Triplets — opt-in `--triplets` (Cornelius, 2026-07-11: "add basic triplets").** A sixteenth grid
+(4 ticks/quarter) can't place an eighth-triplet on an integer tick, so `Subdivision.Twelfth` (12/quarter =
+LCM of the sixteenth and eighth-triplet grids) is added, and `QuantizationGrid.StandardValueTicks` gains
+triplet values. They resolve to whole ticks **only** when divisions is divisible by 3/6, so the
+sixteenth/eighth/quarter grids exclude them — the mono path and its bit-exact closed loop are provably
+untouched. `GrandStaffMusicXmlWriter` engraves triplets (3:2 `<time-modification>` per note + a `<tuplet>`
+start/stop bracket over complete groups of three); straight decomposition is byte-identical (straight
+values are whole sixteenths), and an exact fallback spells odd clipped lengths from messy engine input
+without throwing or breaking the bar. Made **opt-in** (default = the clean sixteenth grid) because
+auto-quantizing to triplets manufactures spurious triplets on straight music — the same discipline as
+`--legato`. Note-value recovery 76.5 % → **100.0 %** at the Twelfth grid (gate ≥ 98 %).
+
+**Adversarial review (Workflow, 4 agents + verify) found and fixed:** (1) `--key` was parsed with a bare
+`int.Parse` and passed to the speller unvalidated — `--key 2147483647` crashed `PitchSpeller`
+(`Math.Abs(int.MinValue)`), `--key 40` emitted a garbage `<fifths>`; now validated to −7..+7 (`KeyOption`,
+unit-tested). (2) `NoteValueAccuracy` matched recovered↔truth by list index, which a tick collision could
+scramble; a count guard was shown insufficient (a merged chord unpacks to the same count), so it now matches
+by **(onset tick, pitch)** — a collision scores a miss, never a silent mis-pair. (3) corpus events are now
+emitted in onset order; (4) tonic-framing is clamped to each hand's register band.
+
+**Dynamics / sustain-pedal / auto-tempo (already shipped in the grand-staff writer) were generalized and
+corpus-tested here**, not re-implemented.
+
+### R11.2 — the human MuseScore-load check (ACTION: Cornelius) — still open, now scheduled
+
+No MuseScore in CI, so R11.2 (the grand-staff MusicXML "loads cleanly in MuseScore") stays a **human gate**
+that can block the v2.0.0 ship. The writer is validated in CI by the byte-golden + `xmllint` well-formedness
++ the MusicXML-4.0 structural checks (incl. the new triplet markup), and OSMD renders the same output in
+`listen --view`. **Action for Cornelius before Stage 6 ships v2.0.0:** run
+`claudio notate <midi> --triplets --note-names` (and a plain `transcribe`) and open the resulting
+`score.musicxml` in MuseScore; confirm the two staves, clefs, the auto-detected key signature, dynamics,
+sustain-pedal lines, and the triplet brackets all render cleanly. Record the pass here.
+
+## v2 Stage 4 — Transkun engine, self-contained via ONNX (2026-07-11)
+
+A third `ITranscriber` — Yujia Yan's **Transkun** (Neural Semi-CRF, 0.984 MAESTRO, MIT) — running
+**in-process via ONNX, no Python/torch at runtime**. Its role is **notation fidelity** (real key-press
+durations, native velocity, sustain/soft pedal); it is **selectable (`transcribe --model transkun`), not the
+default**. Held to this project's discipline: measured against the reference implementation, artifacts
+committed so it is reproducible from the repo.
+
+**4a re-baseline (a reality correction).** The workplan marked 4a "done", but its artifacts had lived in an
+ephemeral job dir and were gone. Re-derived from the surviving transkun venv and **committed to the repo**
+(Cornelius: commit the ~55 MB ONNX directly to git — the repo has no LFS) under `fixtures/models/transkun/`,
+so Stage 4 is reproducible from committed code + fixtures like everything else. **Three corrections to the
+original export notes, verified empirically:** (1) the model config MUST come from `2.0.conf` (`baseSize=64`,
+`nHead=8`) — the class defaults silently mismatch every weight; (2) the export blocker was the backbone's
+**5-D `scaled_dot_product_attention`** (ONNX supports only 4-D — fixed by a batch-collapsing reshape, a
+mathematical identity), **not** `diag_embed`, which exported cleanly on this stack (torch 2.13 / onnx 1.22 /
+onnxruntime 1.27, opset 17); (3) the boundary is `featuresBatch → S` for the frame decode, extended in 4e to
+also output `ctx`. Validated `corr = 1.000000` vs PyTorch.
+
+**Boundary split (what is ONNX vs C#).** `torch.fft.rfft` (mel front end) and the semi-CRF backtracking
+(`viterbiBackward`) are not ONNX-exportable, so they are reimplemented in C# (4b `TranskunMelFrontEnd`, 4c
+`SemiCrfViterbi`, Domain BCL-only) and validated against committed PyTorch fixtures (`ref3b` mel to ~7e-6;
+`ref3c` Viterbi EXACT on synthetic + real `S`). The transformer + scorer (+ backbone `ctx` + the two
+attribute heads) stay in ONNX.
+
+**Core-first, then full fidelity (Cornelius).** 4d landed the core engine (frame-resolution timing, no
+velocity) with the full 16 s/8 s **segment stitching** ported exactly (lastEnd clamp, `forcedStartPos` carry,
+merge replace/extend/append/drop, EOF force-close, `resolveOverlapping`). 4e added the two MLP heads
+(velocity = argmax of `velocityPredictor`; sub-frame `ofValue` = ContinuousBernoulli mean; `ofPresence`) via a
+re-export that also outputs `ctx` (S byte-identical) + a small `transkun-heads.onnx`.
+
+**The 4d/4e parity gate — the earned guarantee.** The decisive test (isolates a port bug from model accuracy):
+the C# engine vs the native `transkun` CLI (PyTorch) on the same clips. **PASSES note-identical: F1 = 100.0 %
+at ±25 ms AND velocity EXACT on every note** (two-bar 9≡9, a 21.8 s cross-boundary clip 35≡35, mean |Δvel| =
+0.00). The native reference MIDIs are committed, so the gate runs in CI (no venv there). This makes the third
+tier of the ranked guarantee hierarchy — **Transkun-via-ONNX = statistical + ≥99 % PyTorch parity** — genuinely
+earned. Runtime ~1.3× realtime (a sparse-`freq2mels` mel optimization, bit-exact, cut it ~4×; the
+172 MB/segment `S` now dominates).
+
+**4f — publish (DEFERRED by Cornelius, 2026-07-11).** The artifact (both ONNX, buffers, license, decode spec,
+`MODEL_CARD.md`) is committed and publish-ready, crediting Yujia Yan and linking upstream. Cornelius chose to
+**defer the HuggingFace publish** and keep the artifact **repo-only for now** (it is already fully
+self-contained in-repo); the public push happens later, on his explicit go + target (it is outward-facing, and
+a release under his account is his call). Stage 4 is otherwise complete (4a–4e).

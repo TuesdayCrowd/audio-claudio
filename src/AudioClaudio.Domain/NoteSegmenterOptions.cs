@@ -29,4 +29,14 @@ public sealed record NoteSegmenterOptions
 
     /// <summary>Constant MVP velocity for emitted NoteEvents (R1.4).</summary>
     public int Velocity { get; init; } = 64;
+
+    /// <summary>
+    /// When true, a legato pitch change WITHIN an onset span opens a further note (v2 Stage 2), recovering
+    /// connected notes that have no re-attack onset. <b>Default false</b> — this is a deliberate trade-off:
+    /// a monophonic pitch track cannot reliably tell a real legato transition from a YIN pitch <i>wobble</i>
+    /// (partials beating on a sustained note), so enabling it recovers legato notes at the cost of the
+    /// occasional wobble-note. Off, the segmenter emits exactly one note per onset (the proven closed-loop
+    /// behavior); the CLI's <c>--legato</c> opts in.
+    /// </summary>
+    public bool RecoverLegato { get; init; }
 }

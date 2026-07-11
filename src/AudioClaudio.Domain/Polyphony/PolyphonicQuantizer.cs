@@ -5,8 +5,9 @@ namespace AudioClaudio.Domain.Polyphony;
 
 /// <summary>
 /// Quantizes overlapping <see cref="NoteEvent"/>s into a <see cref="GrandStaffScore"/>: group notes
-/// into chords (<see cref="ChordGrouper"/>), split each across the treble/bass staves
-/// (<see cref="StaffSplitter"/>), then lay out each staff independently as a homophonic sequence of
+/// into chords (<see cref="ChordGrouper"/>), split each across the treble/bass staves by temporal
+/// hand-tracking (<see cref="HandSplitter"/>, v2 Stage 3c — so a hand's line that crosses middle C keeps
+/// its notes, unlike the fixed cut), then lay out each staff independently as a homophonic sequence of
 /// chords — snapping onsets and durations to the grid, clipping each chord to the next onset,
 /// filling gaps with rests, and barring. Both staves are padded to the SAME measure count so they
 /// stay aligned. Pure and deterministic; the input list is never mutated (R6.2). The monophonic
@@ -17,22 +18,24 @@ public static class PolyphonicQuantizer
     public static GrandStaffScore Quantize(
         IReadOnlyList<NoteEvent> events,
         QuantizationGrid grid,
-        SampleDuration chordWindow,
-        int splitMidi = StaffSplitter.DefaultSplitMidi)
+        SampleDuration chordWindow)
     {
         ArgumentNullException.ThrowIfNull(events);
 
-        var trebleChords = new List<Chord>();
-        var bassChords = new List<Chord>();
-        foreach (Chord chord in ChordGrouper.Group(events, chordWindow))
+        IReadOnlyList<Chord> chords = ChordGrouper.Group(events, chordWindow);
+        foreach (Chord chord in chords)
         {
             if (!chord.Onset.Rate.Equals(grid.SampleRate))
             {
                 throw new ArgumentException(
                     $"Event sample rate does not match grid sample rate {grid.SampleRate.Hz} Hz.", nameof(events));
             }
+        }
 
-            (Chord? trebleFragment, Chord? bassFragment) = StaffSplitter.Split(chord, splitMidi);
+        var trebleChords = new List<Chord>();
+        var bassChords = new List<Chord>();
+        foreach ((Chord? trebleFragment, Chord? bassFragment) in HandSplitter.Split(chords))
+        {
             if (trebleFragment is not null)
             {
                 trebleChords.Add(trebleFragment);

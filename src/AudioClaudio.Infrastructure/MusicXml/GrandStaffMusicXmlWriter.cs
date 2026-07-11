@@ -174,10 +174,13 @@ public sealed class GrandStaffMusicXmlWriter
             sb.Append("      </direction>").Append(Nl);
         }
 
+        (bool[] trebleTupStart, bool[] trebleTupStop) = TupletBrackets(measure.Treble, divisions);
         int trebleDuration = 0;
-        foreach (ChordElement element in measure.Treble)
+        for (int e = 0; e < measure.Treble.Count; e++)
         {
-            trebleDuration += AppendChordElement(sb, element, voice: 1, staff: 1, divisions, tiedTreble);
+            ChordElement element = measure.Treble[e];
+            trebleDuration += AppendChordElement(sb, element, voice: 1, staff: 1, divisions, tiedTreble,
+                                                 trebleTupStart[e], trebleTupStop[e]);
             tiedTreble = element.TiedToNext;
         }
 
@@ -187,9 +190,12 @@ public sealed class GrandStaffMusicXmlWriter
         sb.Append($"        <duration>{trebleDuration}</duration>").Append(Nl);
         sb.Append("      </backup>").Append(Nl);
 
-        foreach (ChordElement element in measure.Bass)
+        (bool[] bassTupStart, bool[] bassTupStop) = TupletBrackets(measure.Bass, divisions);
+        for (int e = 0; e < measure.Bass.Count; e++)
         {
-            AppendChordElement(sb, element, voice: 2, staff: 2, divisions, tiedBass);
+            ChordElement element = measure.Bass[e];
+            AppendChordElement(sb, element, voice: 2, staff: 2, divisions, tiedBass,
+                               bassTupStart[e], bassTupStop[e]);
             tiedBass = element.TiedToNext;
         }
 
@@ -200,30 +206,33 @@ public sealed class GrandStaffMusicXmlWriter
     // pitches are emitted as sibling <note>s, the 2nd onward carrying <chord/>; a non-standard length
     // is spelled as a tied run of standard values (chords tie note-for-note).
     private int AppendChordElement(StringBuilder sb, ChordElement element, int voice, int staff,
-                                   int divisions, bool tiedFromPrevious)
+                                   int divisions, bool tiedFromPrevious, bool tupletStart, bool tupletStop)
     {
-        List<(string Type, bool Dotted, int Ticks)> parts = Decompose(element.LengthTicks, divisions);
+        List<(string Type, bool Dotted, int Ticks, bool Triplet)> parts = Decompose(element.LengthTicks, divisions);
         bool isNote = element.Kind == ElementKind.Note;
         int duration = 0;
 
         for (int p = 0; p < parts.Count; p++)
         {
-            (string type, bool dotted, int partTicks) = parts[p];
+            (string type, bool dotted, int partTicks, bool triplet) = parts[p];
             bool tieIn = isNote && (p > 0 || tiedFromPrevious);
             bool tieOut = isNote && (p < parts.Count - 1 || element.TiedToNext);
+            bool bracketStart = triplet && tupletStart && p == 0;
+            bool bracketStop = triplet && tupletStop && p == parts.Count - 1;
 
             if (isNote)
             {
                 for (int j = 0; j < element.Pitches.Count; j++)
                 {
                     AppendNote(sb, element.Pitches[j], isChordMember: j > 0, partTicks, tieIn, tieOut,
-                               voice, type, dotted, staff,
+                               voice, type, dotted, staff, triplet,
+                               tupletStart: bracketStart && j == 0, tupletStop: bracketStop && j == 0,
                                includeName: _includeNoteNames && j == 0 && p == 0 && !tiedFromPrevious);
                 }
             }
             else
             {
-                AppendRest(sb, partTicks, voice, type, dotted, staff);
+                AppendRest(sb, partTicks, voice, type, dotted, staff, triplet);
             }
 
             duration += partTicks;
@@ -232,9 +241,11 @@ public sealed class GrandStaffMusicXmlWriter
         return duration;
     }
 
-    // <note> content order (MusicXML DTD): chord?, (pitch|rest), duration, tie*, voice, type, dot*, staff, notations*, lyric*.
+    // <note> content order (MusicXML DTD): chord?, (pitch|rest), duration, tie*, voice, type, dot*,
+    // time-modification?, staff, notations*, lyric*.
     private void AppendNote(StringBuilder sb, Pitch pitch, bool isChordMember, int durationTicks,
-                            bool tieIn, bool tieOut, int voice, string type, bool dotted, int staff, bool includeName)
+                            bool tieIn, bool tieOut, int voice, string type, bool dotted, int staff,
+                            bool triplet, bool tupletStart, bool tupletStop, bool includeName)
     {
         sb.Append("      <note>").Append(Nl);
         if (isChordMember)
@@ -270,10 +281,28 @@ public sealed class GrandStaffMusicXmlWriter
             sb.Append("        <dot/>").Append(Nl);
         }
 
+        if (triplet)
+        {
+            sb.Append("        <time-modification>").Append(Nl);
+            sb.Append("          <actual-notes>3</actual-notes>").Append(Nl);
+            sb.Append("          <normal-notes>2</normal-notes>").Append(Nl);
+            sb.Append("        </time-modification>").Append(Nl);
+        }
+
         sb.Append($"        <staff>{staff}</staff>").Append(Nl);
-        if (tieIn || tieOut)
+        if (tieIn || tieOut || tupletStart || tupletStop)
         {
             sb.Append("        <notations>").Append(Nl);
+            if (tupletStart)
+            {
+                sb.Append("          <tuplet type=\"start\" bracket=\"yes\"/>").Append(Nl);
+            }
+
+            if (tupletStop)
+            {
+                sb.Append("          <tuplet type=\"stop\"/>").Append(Nl);
+            }
+
             if (tieIn)
             {
                 sb.Append("          <tied type=\"stop\"/>").Append(Nl);
@@ -299,7 +328,7 @@ public sealed class GrandStaffMusicXmlWriter
         sb.Append("      </note>").Append(Nl);
     }
 
-    private void AppendRest(StringBuilder sb, int durationTicks, int voice, string type, bool dotted, int staff)
+    private void AppendRest(StringBuilder sb, int durationTicks, int voice, string type, bool dotted, int staff, bool triplet)
     {
         sb.Append("      <note>").Append(Nl);
         sb.Append("        <rest/>").Append(Nl);
@@ -309,6 +338,14 @@ public sealed class GrandStaffMusicXmlWriter
         if (dotted)
         {
             sb.Append("        <dot/>").Append(Nl);
+        }
+
+        if (triplet)
+        {
+            sb.Append("        <time-modification>").Append(Nl);
+            sb.Append("          <actual-notes>3</actual-notes>").Append(Nl);
+            sb.Append("          <normal-notes>2</normal-notes>").Append(Nl);
+            sb.Append("        </time-modification>").Append(Nl);
         }
 
         sb.Append($"        <staff>{staff}</staff>").Append(Nl);
@@ -345,34 +382,188 @@ public sealed class GrandStaffMusicXmlWriter
         (1, "16th", false),
     };
 
-    private static List<(string Type, bool Dotted, int Ticks)> Decompose(int lengthTicks, int divisions)
+    // Spell a tick length as a run of notated parts (tied when more than one), each straight or a triplet
+    // (v2 Stage 3d). The parts always sum to lengthTicks (bar conservation). Straight values are whole
+    // sixteenths, so on the sixteenth grid this is exactly the original behaviour; triplet values only
+    // arise on a triplet-capable grid (12/quarter).
+    private static List<(string Type, bool Dotted, int Ticks, bool Triplet)> Decompose(int lengthTicks, int divisions)
     {
         if (lengthTicks <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(lengthTicks), lengthTicks, "Element length must be positive.");
         }
 
-        int remainingSixteenths = lengthTicks * 4 / divisions;
-        if (remainingSixteenths * divisions / 4 != lengthTicks)
+        // Straight: a whole number of sixteenths (quarter/eighth/sixteenth and dotted). Greedy, largest-first.
+        if (lengthTicks * 4 % divisions == 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(lengthTicks), lengthTicks,
-                $"Length {lengthTicks} at {divisions} divisions/quarter is not a whole number of sixteenths.");
+            return StraightParts(lengthTicks * 4 / divisions, divisions);
         }
 
-        var parts = new List<(string Type, bool Dotted, int Ticks)>();
-        while (remainingSixteenths > 0)
+        // A single clean triplet value (eighth / quarter / sixteenth / half-note triplet).
+        if (TryTripletPart(lengthTicks, divisions, out (string, bool, int, bool) triplet))
         {
-            foreach ((int sixteenths, string type, bool dotted) in StandardValues)
+            return new List<(string, bool, int, bool)> { triplet };
+        }
+
+        // Fallback: an odd length (messy real-engine input) that is neither a clean straight nor a clean
+        // triplet value. Decompose exactly over the straight values plus the sixteenth-triplet atom, never
+        // leaving an unrepresentable one-tick remainder — so the sum is exact and the writer never throws.
+        return MixedParts(lengthTicks, divisions);
+    }
+
+    private static List<(string Type, bool Dotted, int Ticks, bool Triplet)> StraightParts(int sixteenths, int divisions)
+    {
+        var parts = new List<(string, bool, int, bool)>();
+        int remaining = sixteenths;
+        while (remaining > 0)
+        {
+            foreach ((int sx, string type, bool dotted) in StandardValues)
             {
-                if (sixteenths <= remainingSixteenths)
+                if (sx <= remaining)
                 {
-                    parts.Add((type, dotted, sixteenths * divisions / 4));
-                    remainingSixteenths -= sixteenths;
+                    parts.Add((type, dotted, sx * divisions / 4, false));
+                    remaining -= sx;
                     break;
                 }
             }
         }
 
         return parts;
+    }
+
+    // A triplet of length <paramref name="ticks"/> displays as the straight note of ticks·3/2 (its "normal"
+    // duration) with a 3:2 time-modification. True only when that normal duration is an exact standard value.
+    private static bool TryTripletPart(int ticks, int divisions, out (string Type, bool Dotted, int Ticks, bool Triplet) part)
+    {
+        part = default;
+        if (ticks * 3 % 2 != 0)
+        {
+            return false;
+        }
+
+        int normal = ticks * 3 / 2;
+        if (normal * 4 % divisions != 0)
+        {
+            return false;
+        }
+
+        int sixteenths = normal * 4 / divisions;
+        foreach ((int sx, string type, bool dotted) in StandardValues)
+        {
+            if (sx == sixteenths)
+            {
+                part = (type, dotted, ticks, true);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<(string Type, bool Dotted, int Ticks, bool Triplet)> MixedParts(int lengthTicks, int divisions)
+    {
+        // Atoms (ticks, descending): the straight values plus the sixteenth-triplet (divisions/6). A 3-tick
+        // (sixteenth) and a 2-tick (sixteenth-triplet) atom both exist on the 12/quarter grid, so every
+        // length ≥ 2 is representable; picking so the remainder is never exactly 1 keeps it exact.
+        var atoms = new List<int>();
+        foreach ((int sx, _, _) in StandardValues)
+        {
+            atoms.Add(sx * divisions / 4);
+        }
+
+        if (divisions % 6 == 0)
+        {
+            atoms.Add(divisions / 6); // sixteenth-triplet
+        }
+
+        atoms.Sort((a, b) => b.CompareTo(a));
+
+        var parts = new List<(string, bool, int, bool)>();
+        int remaining = lengthTicks;
+        while (remaining > 0)
+        {
+            int chosen = 0;
+            foreach (int v in atoms)
+            {
+                if (v <= remaining && (remaining - v == 0 || remaining - v >= 2))
+                {
+                    chosen = v;
+                    break;
+                }
+            }
+
+            if (chosen == 0)
+            {
+                chosen = remaining; // only reachable when remaining < smallest atom; keeps the sum exact
+            }
+
+            if (chosen * 4 % divisions == 0)
+            {
+                (string type, bool dotted) = TypeOfSixteenths(chosen * 4 / divisions);
+                parts.Add((type, dotted, chosen, false));
+            }
+            else if (TryTripletPart(chosen, divisions, out (string, bool, int, bool) trip))
+            {
+                parts.Add(trip);
+            }
+            else
+            {
+                parts.Add(("16th", false, chosen, false)); // last-resort spelling; still exact in ticks
+            }
+
+            remaining -= chosen;
+        }
+
+        return parts;
+    }
+
+    private static (string Type, bool Dotted) TypeOfSixteenths(int sixteenths)
+    {
+        foreach ((int sx, string type, bool dotted) in StandardValues)
+        {
+            if (sx == sixteenths)
+            {
+                return (type, dotted);
+            }
+        }
+
+        return ("16th", false);
+    }
+
+    // Complete groups of three consecutive eighth-note-triplet notes get a start/stop bracket; a broken or
+    // partial run gets none (its notes still carry the 3:2 time-modification). Rests/other values break a run.
+    private static (bool[] Start, bool[] Stop) TupletBrackets(IReadOnlyList<ChordElement> elements, int divisions)
+    {
+        var start = new bool[elements.Count];
+        var stop = new bool[elements.Count];
+        int runStart = -1;
+        int count = 0;
+        for (int i = 0; i < elements.Count; i++)
+        {
+            bool isEighthTriplet = elements[i].Kind == ElementKind.Note && elements[i].LengthTicks * 3 == divisions;
+            if (isEighthTriplet)
+            {
+                if (count == 0)
+                {
+                    runStart = i;
+                }
+
+                count++;
+                if (count == 3)
+                {
+                    start[runStart] = true;
+                    stop[i] = true;
+                    count = 0;
+                    runStart = -1;
+                }
+            }
+            else
+            {
+                count = 0;
+                runStart = -1;
+            }
+        }
+
+        return (start, stop);
     }
 }
