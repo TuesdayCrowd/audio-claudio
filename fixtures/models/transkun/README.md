@@ -1,5 +1,8 @@
 # Transkun — self-contained ONNX export (v2 Stage 4)
 
+> **Published:** <https://huggingface.co/TuesdayCrowd/transkun-onnx> (public, MIT). This directory is the
+> source of that release; `MODEL_CARD.md` is its HuggingFace model card.
+
 A transformer-only ONNX export of **Transkun** (Yujia Yan's Neural Semi-CRF piano transcriber, 0.984
 MAESTRO F1), plus the frozen front-end buffers and the decode spec needed to run it **in-process with no
 Python/torch at runtime** behind `audio-claudio`'s `ITranscriber` port.
