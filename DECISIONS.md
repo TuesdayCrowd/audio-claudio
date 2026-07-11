@@ -1480,3 +1480,47 @@ that can block the v2.0.0 ship. The writer is validated in CI by the byte-golden
 `claudio notate <midi> --triplets --note-names` (and a plain `transcribe`) and open the resulting
 `score.musicxml` in MuseScore; confirm the two staves, clefs, the auto-detected key signature, dynamics,
 sustain-pedal lines, and the triplet brackets all render cleanly. Record the pass here.
+
+## v2 Stage 4 — Transkun engine, self-contained via ONNX (2026-07-11)
+
+A third `ITranscriber` — Yujia Yan's **Transkun** (Neural Semi-CRF, 0.984 MAESTRO, MIT) — running
+**in-process via ONNX, no Python/torch at runtime**. Its role is **notation fidelity** (real key-press
+durations, native velocity, sustain/soft pedal); it is **selectable (`transcribe --model transkun`), not the
+default**. Held to this project's discipline: measured against the reference implementation, artifacts
+committed so it is reproducible from the repo.
+
+**4a re-baseline (a reality correction).** The workplan marked 4a "done", but its artifacts had lived in an
+ephemeral job dir and were gone. Re-derived from the surviving transkun venv and **committed to the repo**
+(Cornelius: commit the ~55 MB ONNX directly to git — the repo has no LFS) under `fixtures/models/transkun/`,
+so Stage 4 is reproducible from committed code + fixtures like everything else. **Three corrections to the
+original export notes, verified empirically:** (1) the model config MUST come from `2.0.conf` (`baseSize=64`,
+`nHead=8`) — the class defaults silently mismatch every weight; (2) the export blocker was the backbone's
+**5-D `scaled_dot_product_attention`** (ONNX supports only 4-D — fixed by a batch-collapsing reshape, a
+mathematical identity), **not** `diag_embed`, which exported cleanly on this stack (torch 2.13 / onnx 1.22 /
+onnxruntime 1.27, opset 17); (3) the boundary is `featuresBatch → S` for the frame decode, extended in 4e to
+also output `ctx`. Validated `corr = 1.000000` vs PyTorch.
+
+**Boundary split (what is ONNX vs C#).** `torch.fft.rfft` (mel front end) and the semi-CRF backtracking
+(`viterbiBackward`) are not ONNX-exportable, so they are reimplemented in C# (4b `TranskunMelFrontEnd`, 4c
+`SemiCrfViterbi`, Domain BCL-only) and validated against committed PyTorch fixtures (`ref3b` mel to ~7e-6;
+`ref3c` Viterbi EXACT on synthetic + real `S`). The transformer + scorer (+ backbone `ctx` + the two
+attribute heads) stay in ONNX.
+
+**Core-first, then full fidelity (Cornelius).** 4d landed the core engine (frame-resolution timing, no
+velocity) with the full 16 s/8 s **segment stitching** ported exactly (lastEnd clamp, `forcedStartPos` carry,
+merge replace/extend/append/drop, EOF force-close, `resolveOverlapping`). 4e added the two MLP heads
+(velocity = argmax of `velocityPredictor`; sub-frame `ofValue` = ContinuousBernoulli mean; `ofPresence`) via a
+re-export that also outputs `ctx` (S byte-identical) + a small `transkun-heads.onnx`.
+
+**The 4d/4e parity gate — the earned guarantee.** The decisive test (isolates a port bug from model accuracy):
+the C# engine vs the native `transkun` CLI (PyTorch) on the same clips. **PASSES note-identical: F1 = 100.0 %
+at ±25 ms AND velocity EXACT on every note** (two-bar 9≡9, a 21.8 s cross-boundary clip 35≡35, mean |Δvel| =
+0.00). The native reference MIDIs are committed, so the gate runs in CI (no venv there). This makes the third
+tier of the ranked guarantee hierarchy — **Transkun-via-ONNX = statistical + ≥99 % PyTorch parity** — genuinely
+earned. Runtime ~1.3× realtime (a sparse-`freq2mels` mel optimization, bit-exact, cut it ~4×; the
+172 MB/segment `S` now dominates).
+
+**4f — publish (outward, pending Cornelius).** The artifact (both ONNX, buffers, license, decode spec,
+`MODEL_CARD.md`) is committed and publish-ready, crediting Yujia Yan and linking upstream. The actual
+HuggingFace push is **outward-facing and awaits Cornelius's explicit go + target** (the available HF tooling is
+read-only; a public model release under his account is his call).
