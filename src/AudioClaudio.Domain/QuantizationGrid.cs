@@ -57,17 +57,24 @@ public readonly record struct QuantizationGrid
         get
         {
             // Each standard value expressed as (numerator, denominator) quarter notes.
-            // Dotted values are 1.5x their base. quarter == 1.
+            // Dotted values are 1.5x their base. quarter == 1. Triplet values (n/3, n/6 of a quarter) are
+            // included only when the grid resolves them to whole ticks — true on a Twelfth grid (12/quarter)
+            // and false on the sixteenth/eighth/quarter grids, so the straight-only paths (and the mono
+            // closed loop) are bit-for-bit unaffected. (v2 Stage 3d.)
             (int Num, int Den)[] valuesInQuarters =
             {
                 (4, 1), // whole
                 (3, 1), // dotted half
                 (2, 1), // half
+                (4, 3), // half-note triplet
                 (3, 2), // dotted quarter
                 (1, 1), // quarter
+                (2, 3), // quarter-note triplet
                 (3, 4), // dotted eighth
                 (1, 2), // eighth
+                (1, 3), // eighth-note triplet
                 (1, 4), // sixteenth
+                (1, 6), // sixteenth-note triplet
             };
 
             int ticksPerQuarter = Subdivision.TicksPerQuarter();

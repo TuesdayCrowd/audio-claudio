@@ -17,10 +17,13 @@ public static class NotationMetrics
     /// <summary>
     /// Fraction of notes whose quantized note <b>value</b> matches the intended value (in fine ticks =
     /// twelfths of a quarter). Each hand's monophonic line is quantized independently at
-    /// <paramref name="subdivision"/> and flattened; because a hand's onsets strictly increase, the
-    /// flattened order equals the truth order, so values compare position-for-position — no fuzzy
-    /// matching. The straight sixteenth grid cannot represent a triplet-eighth (4 fine), so triplets miss
-    /// at the baseline and a triplet-capable grid recovers them (the Stage-3d target).
+    /// <paramref name="subdivision"/> and flattened; each truth note is matched to its recovered note by
+    /// <b>(grid onset tick, pitch)</b> — not by list position — so that if two onsets ever round onto one
+    /// grid tick (possible on a coarse subdivision, where the quantizer merges them), the affected notes
+    /// are scored as misses rather than silently mis-paired (v2 Stage 3b review, finding 1: a count guard
+    /// is insufficient because a merged chord unpacks back into the same number of events). The straight
+    /// sixteenth grid cannot represent a triplet-eighth (4 fine), so triplets miss at the baseline and a
+    /// triplet-capable grid recovers them (the Stage-3d target).
     /// </summary>
     public static double NoteValueAccuracy(NotationCase c, Subdivision subdivision)
     {
@@ -41,27 +44,27 @@ public static class NotationMetrics
 
             List<NoteEvent> handEvents = EventsForHand(c, hand);
             GrandStaffScore gs = PolyphonicQuantizer.Quantize(handEvents, grid, window);
-            List<NoteEvent> flat = GrandStaffFlattener.ToNoteEvents(gs, grid)
-                .OrderBy(e => e.Onset.Samples).ToList();
 
-            total += handTruth.Count;
-
-            // Position-for-position scoring is only valid when the line flattens to exactly its notes. That
-            // holds here because the smallest onset gap (a sixteenth) equals one grid tick, so distinct
-            // onsets never collide onto one tick. Guard it anyway: a count mismatch means the alignment
-            // assumption broke, so score the whole hand as missed rather than silently pairing the wrong
-            // notes (conservative — never a false match). (v2 Stage 3b review, finding 1.)
-            if (flat.Count != handTruth.Count)
+            // Index the recovered notes by (onset tick, pitch). A monophonic line has one pitch per onset,
+            // so the key is unique — unless a collision merged two onsets, in which case one of the two
+            // truth notes finds no key and is correctly scored a miss.
+            var recovered = new Dictionary<(long Tick, int Midi), long>();
+            foreach (NoteEvent e in GrandStaffFlattener.ToNoteEvents(gs, grid))
             {
-                continue;
+                recovered[(grid.SamplesToTick(e.Onset.Samples), e.Pitch.MidiNumber)] = e.Duration.Samples;
             }
 
-            for (int i = 0; i < handTruth.Count; i++)
+            total += handTruth.Count;
+            foreach (NotationNote t in handTruth)
             {
-                long recoveredFine = (long)Math.Round(flat[i].Duration.Samples / samplesPerFine, MidpointRounding.AwayFromZero);
-                if (recoveredFine == handTruth[i].ValueFine)
+                var key = (grid.SamplesToTick(t.OnsetSamples), t.Pitch.MidiNumber);
+                if (recovered.TryGetValue(key, out long durationSamples))
                 {
-                    correct++;
+                    long recoveredFine = (long)Math.Round(durationSamples / samplesPerFine, MidpointRounding.AwayFromZero);
+                    if (recoveredFine == t.ValueFine)
+                    {
+                        correct++;
+                    }
                 }
             }
         }

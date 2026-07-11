@@ -20,7 +20,7 @@ hand, dynamic band} + metric helpers, capturing today's baseline for every lever
 **Success Criteria**: baseline numbers recorded as tests (note-value exact-match %, key-detect %,
 hand-split %, dynamic-band %); dynamics/pedal/auto-tempo generalized + tested on the corpus.
 **Tests**: `NotationCorpusGen` determinism; metric-helper unit tests; baseline gates (assert-current).
-**Status**: Not Started
+**Status**: Complete — baselines (seed 5137, 40 cases): note-value 76.5%, key 10.0%, hand 89.0%.
 
 ## Stage 3b: Key detection (Krumhansl-Schmuckler)
 
@@ -29,7 +29,7 @@ hand-split %, dynamic-band %); dynamics/pedal/auto-tempo generalized + tested on
 **Success Criteria**: key accuracy on the tonal corpus ≥ target (baseline → target); `--key` still forces;
 default byte-goldens unaffected (writer takes explicit fifths).
 **Tests**: K-S profile correlation on known keys; tie determinism; CLI override precedence.
-**Status**: Not Started
+**Status**: Complete — key detection 10.0% → 92.5% (gate ≥85%); `--key` validated (review fix). CI-green push.
 
 ## Stage 3c: Temporal hand-split
 
@@ -39,7 +39,7 @@ no-cross constraint) replacing the fixed middle-C cut in `PolyphonicQuantizer`. 
 **Success Criteria**: hand-assignment accuracy on the hand-tagged corpus ≥ target (esp. crossing cases) >
 the middle-C baseline; smoke-tested on **both** mono and poly engine output (no crash, sane staff balance).
 **Tests**: crossing cases recovered; determinism; per-staff bar conservation preserved.
-**Status**: Not Started
+**Status**: Complete — hand assignment 89.1% → 100.0% on continuous crossings (gate ≥97%, +5pt). Goldens untouched.
 
 ## Stage 3d: Basic triplets
 
@@ -49,7 +49,9 @@ round-trips. Mono path untouched (separate types).
 **Success Criteria**: triplet note-value recovery on the corpus ≥ target; a new byte-golden for a
 triplet score; `xmllint` + MusicXML-4.0 structural check pass; per-staff bar conservation holds.
 **Tests**: triplet grouping/bracketing golden; flatten round-trip; straight-time output unchanged.
-**Status**: Not Started
+**Status**: Complete — note-value 76.5% → 100.0% at the Twelfth grid; opt-in `--triplets` (default clean
+sixteenth, no spurious triplets); writer emits `<time-modification>`+`<tuplet>` (xmllint OK); mono grid
+values bit-exact; closed loop 28/28 green.
 
 ## Stage 3e: Close R11.2 + reconcile docs
 

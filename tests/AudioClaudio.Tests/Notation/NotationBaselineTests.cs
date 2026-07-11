@@ -75,6 +75,37 @@ public class NotationBaselineTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public void Target_NoteValueAccuracy_TripletGrid_RecoversTriplets()
+    {
+        double straight = NotationMetrics.NoteValueAccuracy(Corpus, Subdivision.Sixteenth);
+        double triplet = NotationMetrics.NoteValueAccuracy(Corpus, Subdivision.Twelfth);
+        _out.WriteLine($"note-value — sixteenth: {straight:P1}, twelfth (triplet-capable): {triplet:P1}");
+
+        // The triplet-capable grid recovers the eighth-triplets the sixteenth grid cannot spell.
+        Assert.True(triplet >= 0.98, $"triplet-grid note-value {triplet:P1} below the 98% target");
+        Assert.True(triplet - straight >= 0.15, $"triplet grid beat the straight grid by only {(triplet - straight):P1}");
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void TripletValues_AreExcludedFromTheStraightGrids_KeepingThemBitExact()
+    {
+        // The triplet standard values must NOT appear on the sixteenth/eighth/quarter grids, so the mono
+        // path (and its bit-exact closed loop) is untouched; they DO appear on the Twelfth grid.
+        var rate = new SampleRate(44100);
+        Tempo t = new(120);
+        int[] Values(Subdivision s) =>
+            new QuantizationGrid(rate, t, TimeSignature.FourFour, s).StandardValueTicks.ToArray();
+
+        Assert.Equal(new[] { 1, 2, 3, 4, 6, 8, 12, 16 }, Values(Subdivision.Sixteenth)); // straight only
+        Assert.Equal(new[] { 1, 2, 3, 4, 6, 8 }, Values(Subdivision.Eighth));
+        Assert.Contains(4, Values(Subdivision.Twelfth));   // eighth-triplet
+        Assert.Contains(2, Values(Subdivision.Twelfth));   // sixteenth-triplet
+        Assert.Contains(8, Values(Subdivision.Twelfth));   // quarter-triplet
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public void Baseline_KeyAccuracy_NoDetector_IsChanceLevel()
     {
         // No detector yet: default key 0 (C major / no accidentals). Only the C-major cases "match".

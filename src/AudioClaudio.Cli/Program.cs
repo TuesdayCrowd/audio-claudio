@@ -67,7 +67,10 @@ switch (args[0])
                 // Stage 3: quantize into a polyphonic grand-staff score (chords + two staves), then
                 // emit both score.musicxml (grand staff) and a flattened polyphonic score.mid.
                 var polyRate = new SampleRate(BasicPitchModel.SampleRateHz);
-                var polyGrid = new QuantizationGrid(polyRate, polyResult.Score.Tempo, TimeSignature.FourFour, Subdivision.Sixteenth);
+                // --triplets opts into the triplet-capable grid (12/quarter). It is off by default because
+                // auto-quantizing to triplets risks spurious triplets on straight music (v2 Stage 3d).
+                var polySubdivision = Array.IndexOf(args, "--triplets") >= 0 ? Subdivision.Twelfth : Subdivision.Sixteenth;
+                var polyGrid = new QuantizationGrid(polyRate, polyResult.Score.Tempo, TimeSignature.FourFour, polySubdivision);
                 var chordWindow = new SampleDuration(polyRate.Hz / 20, polyRate); // ~50 ms: notes this close are one chord
                 var grandStaff = PolyphonicQuantizer.Quantize(polyResult.RawEvents, polyGrid, chordWindow);
                 using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
@@ -108,7 +111,8 @@ switch (args[0])
             Tempo scoreTempo = tempoArg is null
                 ? TempoEstimator.Estimate(read.Events, read.Tempo)
                 : new Tempo(double.Parse(tempoArg, System.Globalization.CultureInfo.InvariantCulture));
-            var grid = new QuantizationGrid(rate, scoreTempo, TimeSignature.FourFour, Subdivision.Sixteenth);
+            var notateSubdivision = Array.IndexOf(args, "--triplets") >= 0 ? Subdivision.Twelfth : Subdivision.Sixteenth;
+            var grid = new QuantizationGrid(rate, scoreTempo, TimeSignature.FourFour, notateSubdivision);
             var chordWindow = new SampleDuration(rate.Hz / 20, rate); // ~50 ms merge window
             var grandStaff = PolyphonicQuantizer.Quantize(read.Events, grid, chordWindow);
             var writer = new DryWetMidiWriter();
@@ -369,10 +373,10 @@ switch (args[0])
 static int Usage()
 {
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
-    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven: note-level F1 >= 0.75 at 50ms onset tolerance, seed-4242 corpus); --mono uses the monophonic YIN pipeline (exact-recovery closed loop; auto-estimates tempo when --tempo is omitted); --key overrides the auto-detected key signature (sharps +, flats -, e.g. -4 = A-flat major) that drives enharmonic spelling; the three thresholds tune note density; --legato (with --mono) opts into legato note recovery (a wobble-vs-legato trade-off, off by default); --coarse-rhythm (with --mono) floors note values at an eighth for cleaner rhythm from uneven playing");
+    Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven: note-level F1 >= 0.75 at 50ms onset tolerance, seed-4242 corpus); --mono uses the monophonic YIN pipeline (exact-recovery closed loop; auto-estimates tempo when --tempo is omitted); --key overrides the auto-detected key signature (sharps +, flats -, e.g. -4 = A-flat major) that drives enharmonic spelling; the three thresholds tune note density; --legato (with --mono) opts into legato note recovery (a wobble-vs-legato trade-off, off by default); --coarse-rhythm (with --mono) floors note values at an eighth for cleaner rhythm from uneven playing; --triplets (polyphonic) engraves eighth-note triplets (off by default — auto-triplet quantization risks spurious triplets on straight music)");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
     Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]   (both honor the CC64 sustain pedal)");
-    Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (tempo auto-estimated from the onsets unless --tempo; key auto-detected unless --key)");
+    Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names] [--triplets]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (tempo auto-estimated from the onsets unless --tempo; key auto-detected unless --key; --triplets engraves eighth-note triplets)");
     Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>] [--align|--warp]  -> note-level precision/recall/F1 vs a reference; --align cancels the global tempo difference, --warp (DTW) also removes local rubato");
     Console.Error.WriteLine("  evaluate-audio <original.wav> <reproduction.wav>  -> timbre-robust pitch-content (chroma) similarity: does the re-synthesis sound like the original? 1.0 = identical notes over time");
     return 1;
