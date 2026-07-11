@@ -1141,7 +1141,9 @@ Pitch → score note-level F1 against the score — isolates the *engine's* fide
 depress the real-world "Death" number (an OMR-derived reference with its own errors, and a *performance's*
 rubato vs an engraved *score*). On 8 clean synthetic cases (114 reference notes, mid-range MIDI 40–72 so
 this SoundFont actually sustains them): **note-level F1 ≈ 80% (recall ~90%, precision ~73%) at ±50–150 ms**,
-versus ~15–22% on real Death audio.
+versus ~15–22% on real Death audio. *(This was the pre-ghost-filter measurement; the harmonic-ghost filter
+in the next entry raised it to F1 82.9% / precision 75.9%, and the v2 re-baseline below restates the current
+81.3 / 82.1 / 82.9% at ±50 / 100 / 150 ms — see `docs/CORPUS.md`.)*
 
 **What it decides.** The engine is **not** the bottleneck — Basic Pitch recovers ~90% of notes with tight
 onsets on clean audio. The ~60-point real-world gap is (a) performance-vs-score timing (rubato) and (b) OMR
@@ -1252,3 +1254,46 @@ own pedal-less MIDIs (Basic Pitch stays 78.6%). Any pedalled MIDI now renders co
 **Meta-lesson: measure-first paid off again.** ~30 min running Transkun's CLI saved a multi-day
 ONNX/semi-CRF integration that would not have moved the number — and yielded a genuine pedal-rendering fix
 as a byproduct.
+
+## v2 re-baseline — general-corpus numbers, ranked guarantees, and the polyphony "preview" label (2026-07-10)
+
+**The pivot.** v0.2.0's later work drifted into optimizing ONE recording (the copyrighted *Death* piano
+piece) judged by ONE metric (chroma similarity to that recording). Both are dead ends by construction:
+chroma is timbre-limited — a SoundFont render vs a real piano caps around ~78% *regardless of note accuracy*
+(the clearest proof: a clean chiptune source scored the *same* ~78% as the messy piano) — and optimizing a
+single out-of-distribution clip is not a quality signal for the tool. Worse, polyphony shipped with **no
+correctness guarantee**, a regression from the one thing that defined v1: a correctness claim *earned* by
+the closed loop, not asserted.
+
+**The reset (v2 Stage 0).** Reported *numbers* now come only from the **generated** corpus, whose
+distribution is committed and documented in [`docs/CORPUS.md`](docs/CORPUS.md). Every figure names its
+tolerance and its seed. The single-recording chroma number is retired as a headline/goal — `evaluate-audio`
+stays as a general tool, but nothing is optimized toward one clip's number (see "Explicitly out of scope"
+in the v2 workplan).
+
+**Per-engine baselines, measured — the new headline** (the Death figure is retired *as the headline*, not
+erased; it still stands below as labelled, non-headline context):
+- **Monophonic (YIN):** bit-exact closed-loop recovery — strict R9.2 (count exact / pitch exact / onset ±1
+  subdivision / duration ±1 subdivision) over 40 cases from the pinned PCG seed `000000000010` (each
+  sub-corpus); count/pitch/onset additionally exact over 40 full-range cases. Green (`ClosedLoopPropertyTests`,
+  2/2).
+- **Polyphonic (Basic Pitch):** note-level F1 **81.3 / 82.1 / 82.9 %** at ±50 / 100 / 150 ms on the
+  seed-4242 synthetic corpus (8 cases, 114 reference notes; recall ~90 %, precision ~76 %). Still asserted
+  only as a diagnostic *floor* (≥ 55 %), not a gate — Stage 1 promotes it to a committed-threshold property
+  suite.
+
+**Default stays polyphonic** (Cornelius, 2026-07-10 — "piano is two hands"): no revert to mono and no
+poly→mono→poly churn. The honesty is carried by transparency instead — a **"preview — not yet
+closed-loop-proven"** label on the polyphonic engine in `--help` and README, lifted in Stage 1 once the
+polyphonic closed-loop gate passes at a committed F1 threshold.
+
+**The guarantee hierarchy is ranked, never flattened:** monophonic = **bit-exact** closed-loop recovery
+(strongest); Basic Pitch polyphony = **statistical** F1 bar over the seeded corpus (Stage 1);
+Transkun-via-ONNX = **statistical + a ≥ 99 % PyTorch-parity** gate (Stage 4). Each states its own number and
+its own limits.
+
+**Supersedes** the "Transkun evaluated, not integrated" conclusion above, but only for *raw pitch accuracy*:
+that tie on Death (77.5 % vs 78.6 % chroma) still stands and is exactly why Transkun is **not** an accuracy
+silver bullet. It re-enters in Stage 4 as a **notation-fidelity** engine (real key-press durations, native
+velocity, native pedal), measured on this same general corpus and *not* defaulted until earned — the same
+discipline every engine here is held to.

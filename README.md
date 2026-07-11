@@ -4,19 +4,21 @@
 in C# / .NET 10 (LTS), built in open collaboration with Claude Code. Audio
 comes in from a microphone or a WAV file; note events come out; notation is
 emitted as MusicXML; and the transcribed piece can be played back through a
-synthesized piano. Two engines share one pipeline: a **monophonic** core (YIN)
-that carries the closed-loop correctness proof below, and an opt-in
-**polyphonic** engine (Basic Pitch) for chords and two hands. Public domain
-(`UNLICENSE`).
+synthesized piano. Two engines share one pipeline: a **polyphonic** engine
+(Basic Pitch) for chords and two hands — the default, and a *preview* until its
+own closed-loop suite lands (v2, in progress) — and a **monophonic** core
+(YIN), reached with `--mono`, that carries the closed-loop correctness proof
+below. Public domain (`UNLICENSE`).
 
 ## What it is
 
 Play a melody line — into a microphone, or as a WAV file — and Audio Claudio
 tells you which notes were played, when they started, and how long they
 lasted, then writes the result out as MIDI and as sheet music (MusicXML). Its
-monophonic core listens to one note at a time; an opt-in polyphonic engine
-(`--poly`, the default for `transcribe` as of v0.2.0) recovers chords and two
-hands at once (see [Limitations](#limitations) below). It detects each note's
+polyphonic engine (the default for `transcribe` since v0.2.0) recovers chords
+and two hands at once; its monophonic core (`--mono`) listens to one note at a
+time and is the path the closed-loop proof covers (see
+[Limitations](#limitations) below). It detects each note's
 pitch and attack from the raw audio, snaps the timing to a tempo — declared by
 you, or auto-estimated from your playing if you don't pass one — and can sing
 the transcription back to you through a synthesized piano.
@@ -117,6 +119,13 @@ pitch, and onset, and with exact duration wherever the audio can actually
 support a duration claim — at a known, tracked failure rate of roughly four
 in a thousand cases, not zero, and not hidden.
 
+The corpus this is measured on — its committed distribution, seeds, and the
+per-engine baseline numbers (monophonic *and* polyphonic) — is documented in
+[`docs/CORPUS.md`](docs/CORPUS.md), and it is the source of every **headline**
+number: each engine's baseline comes from generated scores, never from a single
+recording. (The one real-recording figure reported under Limitations below is
+labelled as such, and never used to state a ceiling.)
+
 ## Usage
 
 Prerequisite: the **.NET 10 SDK (LTS)**.
@@ -131,7 +140,7 @@ Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has six
 commands:
 
 ```bash
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]  # -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default, --mono for the monophonic YIN pipeline (which auto-estimates tempo when --tempo is omitted); --key spells accidentals, the thresholds tune note density
+claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]  # -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default — preview, not yet closed-loop-proven; --mono for the monophonic YIN pipeline (the closed-loop-proven path; auto-estimates tempo when --tempo is omitted); --key spells accidentals, the thresholds tune note density
 claudio listen [--tempo 100] [--out-dir .] [--view] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted
 claudio play <file.mid> [--soundfont <path>]                                           # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>]                               # deterministically render a MIDI file to WAV
@@ -160,11 +169,17 @@ a bare `--flag` is a boolean switch.
 | `--frame-threshold <v>` | `0.3` | Polyphonic decoder: minimum sustained activation to *keep* a note. The dominant density lever — raising it most reduces the note count. |
 | `--min-note-len <frames>` | `11` | Polyphonic decoder: the flicker floor — notes shorter than this many frames (~128 ms at 11) are discarded. Raise it to shed short spurious notes. |
 
-**Polyphonic transcription (the default).** As of v0.2.0 `transcribe` runs the
-neural **Basic Pitch** model (Spotify, Apache-2.0) through ONNX Runtime by
-default, recovering many simultaneous notes — chords, two hands. (Pass `--mono`
-for the monophonic YIN pipeline instead — the closed-loop-proven path.) What the
-polyphonic engine produces and how to steer it:
+**Polyphonic transcription (the default — a preview).** As of v0.2.0
+`transcribe` runs the neural **Basic Pitch** model (Spotify, Apache-2.0) through
+ONNX Runtime by default, recovering many simultaneous notes — chords, two hands.
+Its intrinsic fidelity on the general synthetic closed-loop corpus (clean audio,
+no reference error, no rubato) is **note-level F1 ≈ 82 %** (81–83 % across
+±50–150 ms onset tolerance; seed-4242 corpus). It is labelled a **preview**
+because, unlike the monophonic engine, it does not yet pass a *closed-loop gate*
+at a committed F1 threshold — that gate is v2's headline deliverable, and the
+label lifts once it lands. (Pass `--mono` for the monophonic YIN pipeline
+instead — the closed-loop-*proven* path.) What the polyphonic engine produces
+and how to steer it:
 
 - **All three outputs are polyphonic.** `raw.mid` is the honest, un-quantized
   many-note output (exact performance timing). `score.mid` and `score.musicxml`
@@ -346,17 +361,22 @@ audio, not the live preview.
 This is a deliberately scoped MVP. It declines the following rather than
 faking them:
 
-- **Polyphonic by default; the *proven* engine is monophonic (`--mono`).** As of
-  v0.2.0 `transcribe` defaults to the polyphonic Basic Pitch engine (chords, two
-  hands, a real grand-staff `score.mid`/`score.musicxml`). But everything the
-  closed-loop suite proves — exact count, pitch, and onset recovery — is about the
-  **monophonic** engine, which you select with `--mono`. The polyphonic default
-  carries no such guarantee: measured against an engraved reference, its note-level
-  F1 is modest (~15–22 % depending on onset tolerance), bounded by onset timing and
-  exact-pitch matching, not by the notation; and it has no independent inner voices
-  (each staff is a chord stack, not separately-moving lines). Treat the polyphonic
-  default as a capable preview, and reach for `--mono` when you need the
-  guaranteed-correct path.
+- **Polyphonic by default (a *preview*); the *proven* engine is monophonic
+  (`--mono`).** As of v0.2.0 `transcribe` defaults to the polyphonic Basic Pitch
+  engine (chords, two hands, a real grand-staff `score.mid`/`score.musicxml`). Its
+  intrinsic fidelity, measured on the general synthetic closed-loop corpus (clean
+  audio, no reference error, no rubato), is **note-level F1 ≈ 82 %** (81–83 % across
+  ±50–150 ms onset tolerance; seed-4242 corpus). On one real, engraved-reference
+  recording that figure falls to ~15–22 %, but that gap is performance-vs-score
+  rubato and the reference's own OMR error — *not* the engine's pitch/onset fidelity
+  (see `DECISIONS.md`). What remains true is that this default is not yet **closed-
+  loop-proven** the way the monophonic engine is: everything the closed-loop suite
+  *guarantees* — exact count, pitch, and onset recovery — is about the **monophonic**
+  engine (`--mono`). A polyphonic closed-loop gate at a committed F1 threshold is
+  v2's headline deliverable; until it lands the polyphonic default is labelled a
+  **preview**. It also has no independent inner voices (each staff is a chord stack,
+  not separately-moving lines). Reach for `--mono` when you need the guaranteed-
+  correct path.
 - **Tempo: a declared value by default, optional to override.** Pass
   `--tempo` for a declared tempo used exactly; omit it and the pipeline
   instead estimates tempo from the detected notes' onset spacing (the
