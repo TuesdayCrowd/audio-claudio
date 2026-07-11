@@ -30,7 +30,11 @@ public readonly record struct MidiReadResult
 /// </summary>
 public static class MidiFileReader
 {
-    public static MidiReadResult Read(Stream source, SampleRate rate)
+    /// <param name="flattenPedal">When true (default), fold sustain-pedal (CC64) spans into note
+    /// durations so a pedalled MIDI synthesizes correctly through the pedal-less note→synth path. Pass
+    /// false for notation, which wants the raw key-press durations (the pedal belongs as a mark, not a
+    /// longer note).</param>
+    public static MidiReadResult Read(Stream source, SampleRate rate, bool flattenPedal = true)
     {
         var midi = MidiFile.Read(source);
         double bpm = ReadTempoBpm(midi);
@@ -48,6 +52,11 @@ public static class MidiFileReader
                 (int)note.Velocity));
         }
 
+        if (!flattenPedal)
+        {
+            return new MidiReadResult(events, new Tempo(bpm));
+        }
+
         // Fold the sustain pedal (CC64) into note durations, so a pedalled transcription doesn't play
         // dry through the pedal-less note→synth path (our own writer emits no CC64, so this is a no-op
         // for our MIDIs). Value ≥ 64 = pedal down.
@@ -62,10 +71,10 @@ public static class MidiFileReader
         return new MidiReadResult(SustainPedal.Flatten(events, pedalChanges), new Tempo(bpm));
     }
 
-    public static MidiReadResult ReadFile(string path, SampleRate rate)
+    public static MidiReadResult ReadFile(string path, SampleRate rate, bool flattenPedal = true)
     {
         using var fs = File.OpenRead(path);
-        return Read(fs, rate);
+        return Read(fs, rate, flattenPedal);
     }
 
     // samples = ticks · 60 · rate.Hz / (PPQN · BPM) — inverse of the writer's map.

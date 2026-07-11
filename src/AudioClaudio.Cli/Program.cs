@@ -77,6 +77,34 @@ switch (args[0])
             File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
             return 0;
         }
+    case "notate" when args.Length >= 2:
+        {
+            // claudio notate <in.mid> [--out-dir .] [--tempo N] [--key F] [--note-names]
+            // Engrave an existing MIDI as a grand-staff score (reads honor the sustain pedal). Lets a
+            // richer source (e.g. a piano-specific transcriber's MIDI, with real durations + pedal) flow
+            // through the same score-building the polyphonic transcribe path uses.
+            string outDir = TryReadOption(args, "--out-dir") ?? ".";
+            Directory.CreateDirectory(outDir);
+            bool noteNames = Array.IndexOf(args, "--note-names") >= 0;
+            int key = TryReadOption(args, "--key") is { } k
+                ? int.Parse(k, System.Globalization.CultureInfo.InvariantCulture)
+                : 0;
+            var read = MidiFileReader.ReadFile(args[1], rate, flattenPedal: false); // notation wants raw key-press durations
+            double bpm = TryReadOption(args, "--tempo") is { } t
+                ? double.Parse(t, System.Globalization.CultureInfo.InvariantCulture)
+                : read.Tempo.BeatsPerMinute;
+            var grid = new QuantizationGrid(rate, new Tempo(bpm), TimeSignature.FourFour, Subdivision.Sixteenth);
+            var chordWindow = new SampleDuration(rate.Hz / 20, rate); // ~50 ms merge window
+            var grandStaff = PolyphonicQuantizer.Quantize(read.Events, grid, chordWindow);
+            var writer = new DryWetMidiWriter();
+            using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
+                new GrandStaffMusicXmlWriter(noteNames, fifths: key).Write(grandStaff, mx);
+            var quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, grid);
+            using (var score = File.Create(Path.Combine(outDir, "score.mid")))
+                writer.Write(quantized, new Tempo(bpm), score);
+            Console.WriteLine($"Notated {read.Events.Count} notes ({bpm:F0} BPM) -> score.musicxml + score.mid (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0})");
+            return 0;
+        }
     case "render" when args.Length >= 3:
         {
             // Step 7 reader: load the committed/source MIDI into domain NoteEvents.
@@ -324,7 +352,8 @@ static int Usage()
     Console.Error.WriteLine("usage: claudio <transcribe|listen|render|play> ...");
     Console.Error.WriteLine("  transcribe <in.wav> [--tempo <bpm>] [--out-dir <dir>] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default; --mono uses the monophonic YIN pipeline (and auto-estimates tempo when --tempo is omitted); --key sets the key signature (sharps +, flats -, e.g. -4 = A-flat major) for enharmonic spelling; the three thresholds tune note density");
     Console.Error.WriteLine("  listen [--tempo <bpm>] [--out-dir <dir>] [--view] [--record] [--skip-silence] [--note-names]  -> live; raw.mid, score.mid, score.musicxml on Ctrl+C; omit --tempo to auto-estimate it from your playing; --view opens a browser sheet-music view with Start/Stop recording buttons (multiple takes, each saved under its own timestamp); --record also writes input.wav + recreation.wav; --skip-silence: continuous playback — drop pauses >500ms from input.wav + recreation.wav (implies --record); --note-names prints each note's name (e.g. C4) beneath it");
-    Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]");
+    Console.Error.WriteLine("  render|play <in.mid> [<out.wav>] [--soundfont <path>]   (both honor the CC64 sustain pedal)");
+    Console.Error.WriteLine("  notate <in.mid> [--out-dir <dir>] [--tempo <bpm>] [--key <fifths>] [--note-names]   -> engrave a MIDI as a grand-staff score.musicxml + score.mid (uses the MIDI's own tempo unless --tempo)");
     Console.Error.WriteLine("  evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms <ms>] [--align|--warp]  -> note-level precision/recall/F1 vs a reference; --align cancels the global tempo difference, --warp (DTW) also removes local rubato");
     Console.Error.WriteLine("  evaluate-audio <original.wav> <reproduction.wav>  -> timbre-robust pitch-content (chroma) similarity: does the re-synthesis sound like the original? 1.0 = identical notes over time");
     return 1;
