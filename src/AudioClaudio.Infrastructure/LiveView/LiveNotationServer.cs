@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -41,14 +42,20 @@ public sealed class LiveNotationServer : IDisposable
     /// <summary>Invoked when a browser POSTs /record/stop (the "stop recording" button).</summary>
     public Action? StopRequested { get; set; }
 
-    public LiveNotationServer(string webRootPath, int port = 0, Func<Score, string>? scoreToMusicXml = null)
+    public LiveNotationServer(string webRootPath, int port = 0, Func<Score, string>? scoreToMusicXml = null,
+                               string? outDirPath = null)
     {
         _webRootPath = Path.GetFullPath(webRootPath);
         Port = port == 0 ? FreeTcpPort.Find() : port;
         BaseUrl = $"http://localhost:{Port}/";
         _listener.Prefixes.Add(BaseUrl);
         ScoreToMusicXml = scoreToMusicXml ?? new MusicXmlScoreWriter().WriteToString;
+        OutDirPath = outDirPath is null ? null : Path.GetFullPath(outDirPath);
     }
+
+    /// <summary>The out-dir a running `listen --view` session writes its take files to -- null
+    /// when no take output is being served. Backs GET /files/&lt;name&gt; (S5.11).</summary>
+    public string? OutDirPath { get; }
 
     public void Start()
     {
@@ -73,6 +80,17 @@ public sealed class LiveNotationServer : IDisposable
     /// score, so a client that joins while idle sees a blank staff rather than the previous take.
     /// </summary>
     public void PublishClear() => Broadcast(("clear", string.Empty), remembered: null);
+
+    /// <summary>
+    /// Broadcasts the current input level (RMS) and the capture device's name as a small "level"
+    /// SSE event -- the VU-meter feed for the live-view page (S5.10). Never remembered for late
+    /// joiners (remembered: null): a level reading is momentary, unlike a score.
+    /// </summary>
+    public void PublishLevel(double rms, string device)
+    {
+        string payload = $"{rms.ToString("F4", CultureInfo.InvariantCulture)}|{device}";
+        Broadcast(("level", payload), remembered: null);
+    }
 
     private void Broadcast((string Name, string Data) message, (string Name, string Data)? remembered)
     {
@@ -138,6 +156,12 @@ public sealed class LiveNotationServer : IDisposable
             if (path == "/events")
             {
                 await HandleSseAsync(ctx).ConfigureAwait(false);
+                return;
+            }
+
+            if (path.StartsWith("/files/", StringComparison.Ordinal))
+            {
+                await ServeTakeFileAsync(ctx, path["/files/".Length..]).ConfigureAwait(false);
                 return;
             }
 
@@ -215,15 +239,42 @@ public sealed class LiveNotationServer : IDisposable
         await ctx.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
     }
 
-    // Containment check for the resolved static path: it must sit strictly INSIDE the web root.
-    // Comparing against the root WITH a trailing directory separator stops a sibling directory like
-    // "<root>-evil/secret" from sneaking past a bare StartsWith("<root>") prefix test.
-    private bool IsInsideWebRoot(string fullPath)
+    // Containment check for a resolved path: it must sit strictly INSIDE the given root.
+    // Comparing against the root WITH a trailing directory separator stops a sibling directory
+    // like "<root>-evil/secret" from sneaking past a bare StartsWith("<root>") prefix test.
+    private static bool IsInside(string fullPath, string root)
     {
-        string root = _webRootPath.EndsWith(Path.DirectorySeparatorChar)
-            ? _webRootPath
-            : _webRootPath + Path.DirectorySeparatorChar;
-        return fullPath.StartsWith(root, StringComparison.Ordinal);
+        string normalizedRoot = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        return fullPath.StartsWith(normalizedRoot, StringComparison.Ordinal);
+    }
+
+    private bool IsInsideWebRoot(string fullPath) => IsInside(fullPath, _webRootPath);
+
+    // The only take files a browser may ever fetch (S5.11).
+    private static readonly HashSet<string> TakeFileNames = new(StringComparer.Ordinal)
+    {
+        "raw.mid", "score.mid", "score.musicxml", "recreation.wav", "input.wav",
+    };
+
+    private async Task ServeTakeFileAsync(HttpListenerContext ctx, string fileName)
+    {
+        if (OutDirPath is null || !TakeFileNames.Contains(fileName))
+        {
+            ctx.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            return;
+        }
+
+        string filePath = Path.GetFullPath(Path.Combine(OutDirPath, fileName));
+        if (!IsInside(filePath, OutDirPath) || !File.Exists(filePath))
+        {
+            ctx.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            return;
+        }
+
+        ctx.Response.ContentType = ContentTypeFor(filePath);
+        byte[] bytes = await File.ReadAllBytesAsync(filePath).ConfigureAwait(false);
+        ctx.Response.ContentLength64 = bytes.Length;
+        await ctx.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
     }
 
     private static string ContentTypeFor(string path) => Path.GetExtension(path).ToLowerInvariant() switch
@@ -231,6 +282,9 @@ public sealed class LiveNotationServer : IDisposable
         ".html" => "text/html; charset=utf-8",
         ".js" => "application/javascript; charset=utf-8",
         ".css" => "text/css; charset=utf-8",
+        ".wav" => "audio/wav",
+        ".mid" => "audio/midi",
+        ".musicxml" => "application/vnd.recordare.musicxml+xml",
         _ => "application/octet-stream",
     };
 

@@ -285,4 +285,36 @@ public class LiveNotationServerTests
         // arrive here within a short timeout.
         await Assert.ThrowsAsync<TimeoutException>(() => ReadSseDataLineAsync(reader, TimeSpan.FromMilliseconds(500)));
     }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishLevelDeliversARmsAndDeviceNamePayloadOverSse()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        server.PublishLevel(0.4321, "Test Microphone");
+
+        (string eventName, string data) = await ReadSseFrameAsync(reader, TimeSpan.FromSeconds(5));
+        Assert.Equal("level", eventName);
+        Assert.Equal("0.4321|Test Microphone", data);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishLevelIsNotReplayedToALateJoiningClient()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        server.PublishLevel(0.9, "Test Microphone"); // published BEFORE any client connects
+
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        await Assert.ThrowsAsync<TimeoutException>(() => ReadSseDataLineAsync(reader, TimeSpan.FromMilliseconds(500)));
+    }
 }

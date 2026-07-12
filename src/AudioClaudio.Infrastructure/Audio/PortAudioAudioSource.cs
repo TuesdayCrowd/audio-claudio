@@ -31,6 +31,11 @@ public sealed class PortAudioAudioSource : IAudioSource, IDisposable
 
     public SampleRate SampleRate { get; }
 
+    /// <summary>The opened input device's name, populated in <see cref="Start"/> from
+    /// <c>PortAudio.GetDeviceInfo</c> -- null until then. The live-view page (S5.10) shows this
+    /// next to the VU meter so the player knows what's actually being heard.</summary>
+    public string? DeviceName { get; private set; }
+
     public PortAudioAudioSource(int sampleRateHz, int frameSize, int hop,
                                 int channels = 1, int channelCapacity = 256)
     {
@@ -60,6 +65,7 @@ public sealed class PortAudioAudioSource : IAudioSource, IDisposable
             throw new InvalidOperationException("No default audio input device is available.");
         }
         var info = PortAudio.GetDeviceInfo(device);
+        DeviceName = info.name;
         var inParams = new StreamParameters
         {
             device = device,
