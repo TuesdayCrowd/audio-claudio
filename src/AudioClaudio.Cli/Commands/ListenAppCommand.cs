@@ -114,7 +114,7 @@ internal static class ListenAppCommand
         if (view)
         {
             server = new LiveNotationServer(Path.Combine(AppContext.BaseDirectory, "wwwroot"),
-                                            scoreToMusicXml: musicXml.WriteToString);
+                                            scoreToMusicXml: musicXml.WriteToString, outDirPath: outDir);
             try
             {
                 server.Start();
@@ -178,10 +178,12 @@ internal static class ListenAppCommand
 
                     var mic = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
                     lock (gate) { currentMic = mic; }
+                    var levelSource = new LevelTeeingAudioSource(mic,
+                        rms => liveServer.PublishLevel(rms, mic.DeviceName ?? "Unknown microphone"));
                     stdout.WriteLine($"Recording {timestamp}...");
                     mic.Start();
                     // Runs until mic.Stop() ends the frames — triggered by the Stop button or Ctrl+C.
-                    var result = listenCmd.Run(mic, (int)Math.Round(tempoBpm), outDir, CancellationToken.None);
+                    var result = listenCmd.Run(levelSource, (int)Math.Round(tempoBpm), outDir, CancellationToken.None);
                     lock (gate) { currentMic = null; }
                     mic.Dispose();
 
