@@ -280,7 +280,7 @@ public static class AppBuilder
             var chromaA = Chromagram.FromFrames(audioA.Frames, FrameSize);
             var chromaB = Chromagram.FromFrames(audioB.Frames, FrameSize);
             double similarity = ChromaSimilarity.Compare(chromaA, chromaB);
-            stdout.WriteLine($"Chroma (pitch-content) similarity: {similarity:P1}  ({chromaA.Count} vs {chromaB.Count} frames)");
+            stdout.WriteLine($"Chroma (pitch-content) similarity: {CliFormat.Percent(similarity)}  ({chromaA.Count} vs {chromaB.Count} frames)");
             return 0;
         });
 
