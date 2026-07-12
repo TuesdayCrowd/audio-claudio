@@ -2,18 +2,49 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Audio Claudio — Live</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div id="controls">
-    <label>Title <input id="score-title" type="text" placeholder="Untitled Score" /></label>
-    <label><input id="opt-record" type="checkbox" checked /> Record audio</label>
-    <label><input id="opt-skip-silence" type="checkbox" /> Skip silence</label>
-    <label><input id="opt-note-names" type="checkbox" /> Note names</label>
-    <button id="start-recording" type="button">● Start recording</button>
-    <button id="stop-recording" type="button" disabled>■ Stop recording</button>
-  </div>
-  <div id="osmd-container"></div>
+  <header id="app-header">
+    <h1>Audio Claudio <span class="tagline">— live notation</span></h1>
+    <div id="status-badge" class="status status-idle">Idle</div>
+  </header>
+
+  <main>
+    <section id="controls" aria-label="Recording controls">
+      <label>Title <input id="score-title" type="text" placeholder="Untitled Score" /></label>
+      <label><input id="opt-record" type="checkbox" checked /> Record audio</label>
+      <label><input id="opt-skip-silence" type="checkbox" /> Skip silence</label>
+      <label><input id="opt-note-names" type="checkbox" /> Note names</label>
+      <button id="start-recording" type="button">● Start recording</button>
+      <button id="stop-recording" type="button" disabled>■ Stop recording</button>
+    </section>
+
+    <section id="input-meter" aria-label="Live input level">
+      <div id="device-name">No microphone yet</div>
+      <div id="vu-meter" role="meter" aria-label="Input level" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0">
+        <div id="vu-meter-fill"></div>
+      </div>
+    </section>
+
+    <section aria-label="Live sheet music">
+      <div id="osmd-container"></div>
+    </section>
+
+    <section id="take-output" hidden aria-label="Finished take">
+      <h2>Latest take</h2>
+      <audio id="recreation-player" controls></audio>
+      <div id="download-links">
+        <a id="download-raw" href="#" download>raw.mid</a>
+        <a id="download-score-mid" href="#" download>score.mid</a>
+        <a id="download-score-musicxml" href="#" download>score.musicxml</a>
+        <a id="download-recreation" href="#" download>recreation.wav</a>
+      </div>
+    </section>
+  </main>
+
   <script src="osmd/opensheetmusicdisplay.min.js"></script>
   <script src="app.js"></script>
 </body>

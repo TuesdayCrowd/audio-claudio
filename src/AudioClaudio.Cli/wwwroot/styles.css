@@ -1,0 +1,161 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f9;
+  --fg: #1b1b1f;
+  --panel-bg: #ffffff;
+  --border: #d8d8de;
+  --accent: #2f6fed;
+  --recording: #d64545;
+  --idle: #6b7280;
+  --meter-track: #e5e5ea;
+  --meter-fill: #34c759;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14151a;
+    --fg: #e7e7ea;
+    --panel-bg: #1d1e24;
+    --border: #33343c;
+    --accent: #6ea1ff;
+    --recording: #ff6b6b;
+    --idle: #9aa0ab;
+    --meter-track: #2a2b32;
+    --meter-fill: #34c759;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  min-height: 100vh;
+}
+
+header#app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+  flex-wrap: wrap;
+}
+
+header#app-header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+header#app-header .tagline { font-weight: 400; color: var(--idle); }
+
+.status {
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-idle { background: color-mix(in srgb, var(--idle) 20%, transparent); color: var(--idle); }
+.status-recording { background: color-mix(in srgb, var(--recording) 20%, transparent); color: var(--recording); }
+.status-finishing { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem 2rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+#controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding: 0.85rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+}
+
+#controls label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; }
+
+#controls input[type="text"] {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+button {
+  padding: 0.4rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled { background: var(--meter-track); color: var(--idle); cursor: not-allowed; }
+
+#input-meter {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+}
+
+#device-name { font-size: 0.85rem; color: var(--idle); min-width: 8rem; }
+
+#vu-meter { flex: 1; height: 0.7rem; border-radius: 999px; background: var(--meter-track); overflow: hidden; }
+
+#vu-meter-fill { height: 100%; width: 0%; background: var(--meter-fill); transition: width 80ms linear; }
+
+section[aria-label="Live sheet music"] {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 1rem;
+  min-height: 200px;
+  overflow-x: auto;
+}
+
+#take-output {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+}
+
+#take-output[hidden] { display: none; }
+#take-output h2 { margin: 0; font-size: 0.95rem; }
+#recreation-player { width: 100%; }
+#download-links { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+
+#download-links a {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+#download-links a:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+@media (max-width: 560px) {
+  header#app-header { flex-direction: column; align-items: flex-start; }
+  #controls { flex-direction: column; align-items: stretch; }
+  #input-meter { flex-wrap: wrap; }
+}
