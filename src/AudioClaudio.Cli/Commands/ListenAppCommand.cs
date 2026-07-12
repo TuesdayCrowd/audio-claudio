@@ -204,6 +204,7 @@ internal static class ListenAppCommand
                     mic.Dispose();
 
                     FinalizeRecording(result, timestamp, opts.Record, opts.SkipSilence);
+                    server.PublishTakeReady(); // every take file is now written; safe for the browser to fetch
                     Thread.Sleep(TimeSpan.FromSeconds(1)); // let the final SSE push reach the browser
 
                     lock (gate) { if (exiting) break; }
@@ -308,6 +309,9 @@ internal static class ListenAppCommand
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
             logBuffer.Clear();
             server.PublishClear(); // blank the staff for the new take
+            var cleared = SessionOutputArchive.CleanLatest(outDir);
+            if (cleared.Count > 0)
+                stdout.WriteLine($"Cleared {cleared.Count} previous output file(s) from {outDir}.");
 
             var mic = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
             lock (gate) { currentMic = mic; }
@@ -321,6 +325,7 @@ internal static class ListenAppCommand
             mic.Dispose();
 
             FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, opts.Record, opts.SkipSilence);
+            server.PublishTakeReady(); // every take file is now written; safe for the browser to fetch
             Thread.Sleep(TimeSpan.FromSeconds(1)); // let the final SSE push reach the browser
             lock (gate) { if (exiting) break; }
         }

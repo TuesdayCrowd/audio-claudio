@@ -343,6 +343,41 @@ public class LiveNotationServerTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public async Task PublishTakeReadySendsATakeReadyEventToAConnectedClient()
+    {
+        // The fix for the stale-recording-player bug: the browser must not reveal a take's
+        // output (recreation.wav in particular) until the server signals every file is written,
+        // rather than racily polling for score.musicxml (see LiveNotationServer.PublishTakeReady).
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        server.PublishTakeReady();
+
+        (string eventName, string data) = await ReadSseFrameAsync(reader, TimeSpan.FromSeconds(5));
+        Assert.Equal("take-ready", eventName);
+        Assert.Equal(string.Empty, data);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishTakeReadyIsNotReplayedToALateJoiningClient()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        server.PublishTakeReady(); // published BEFORE any client connects
+
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        await Assert.ThrowsAsync<TimeoutException>(() => ReadSseDataLineAsync(reader, TimeSpan.FromMilliseconds(500)));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public async Task PublishLevelIsNotReplayedToALateJoiningClient()
     {
         using var server = new LiveNotationServer(WebRoot);

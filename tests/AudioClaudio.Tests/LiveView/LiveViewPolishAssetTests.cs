@@ -84,11 +84,34 @@ public class LiveViewPolishAssetTests
 
     [Fact]
     [Trait("Category", "Fast")]
-    public void AppJsRevealsTakeOutputByPollingTheFilesRoute()
+    public void AppJsRevealsTakeOutputViaTheFilesRoute()
     {
         string js = File.ReadAllText(Path.Combine(WwwRoot, "app.js"));
 
         Assert.Contains("/files/", js);
         Assert.Contains("take-output", js);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void AppJsRevealsTakeOutputOnTheTakeReadyServerEventRatherThanPolling()
+    {
+        // Regression coverage for the stale-recording-player bug: the reveal must be driven by
+        // the server's "take-ready" SSE event (see LiveNotationServer.PublishTakeReady), fired
+        // only once every take file is actually written -- not by polling score.musicxml, which
+        // raced ahead of recreation.wav and could reveal the PREVIOUS take's audio.
+        string js = File.ReadAllText(Path.Combine(WwwRoot, "app.js"));
+
+        Assert.Contains("addEventListener(\"take-ready\"", js);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void AppJsCacheBustsTheRecreationPlayerSourceSoAPriorTakeIsNeverServedFromCache()
+    {
+        string js = File.ReadAllText(Path.Combine(WwwRoot, "app.js"));
+
+        Assert.Contains("recreationPlayer.src = \"/files/recreation.wav\" + cacheBust", js);
+        Assert.Contains("?t=", js);
     }
 }

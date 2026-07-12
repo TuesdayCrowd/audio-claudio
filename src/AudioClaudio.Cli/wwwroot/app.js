@@ -43,6 +43,11 @@ source.addEventListener("clear", () => {
   hideTakeOutput();
 });
 
+// Fired once the server has finished writing EVERY one of the take's output files (see
+// LiveNotationServer.PublishTakeReady) -- the reveal no longer polls for score.musicxml, since
+// this event already means everything is on disk.
+source.addEventListener("take-ready", () => revealTakeOutputWhenReady());
+
 // The "level" SSE event (published per mic frame): payload is "<rms F4>|<device name>",
 // e.g. "0.1234|Built-in Microphone". Drives the VU meter fill and the device-name display.
 source.addEventListener("level", (event) => {
@@ -65,30 +70,33 @@ function hideTakeOutput() {
   recreationPlayer.removeAttribute("src");
 }
 
-async function fileExists(name) {
+async function fileExists(url) {
   try {
-    const response = await fetch("/files/" + name);
+    const response = await fetch(url);
     return response.ok;
   } catch {
     return false;
   }
 }
 
-// After Stop, the take's files land on disk asynchronously (rendering/writing takes a moment).
-// Poll /files/score.musicxml until it appears (or we give up), then wire the player + downloads
-// and reveal #take-output.
-async function revealTakeOutputWhenReady(attempts = 20, delayMs = 300) {
-  for (let i = 0; i < attempts; i++) {
-    if (await fileExists("score.musicxml")) break;
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-  }
+// Driven by the server's "take-ready" SSE event (see LiveNotationServer.PublishTakeReady), fired
+// only after every one of the take's output files has finished being written -- so, unlike the old
+// polling-for-score.musicxml approach, there is no window where an earlier take's stale
+// recreation.wav could be revealed. Every URL is cache-busted with a "?t=" query string so the
+// browser (and the /files/ route's defense-in-depth Cache-Control: no-cache) never serves a
+// previous take's cached bytes under the same path.
+async function revealTakeOutputWhenReady() {
+  const cacheBust = "?t=" + Date.now();
 
   for (const [id, fileName] of Object.entries(TAKE_FILES)) {
-    document.getElementById(id).href = "/files/" + fileName;
+    document.getElementById(id).href = "/files/" + fileName + cacheBust;
   }
-  if (await fileExists("recreation.wav")) {
-    recreationPlayer.src = "/files/recreation.wav";
+
+  recreationPlayer.removeAttribute("src");
+  if (await fileExists("/files/recreation.wav" + cacheBust)) {
+    recreationPlayer.src = "/files/recreation.wav" + cacheBust;
   }
+
   takeOutput.hidden = false;
   setStatus("idle", "Idle");
 }
@@ -115,5 +123,6 @@ stopButton.addEventListener("click", async () => {
   setStatus("finishing", "Saving take…");
   await fetch("/record/stop", { method: "POST" });
   startButton.disabled = false;
-  await revealTakeOutputWhenReady();
+  // The reveal itself is driven by the server's "take-ready" SSE event (fired once every take
+  // file has actually finished being written), not by this click handler.
 });

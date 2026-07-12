@@ -82,6 +82,18 @@ public sealed class LiveNotationServer : IDisposable
     public void PublishClear() => Broadcast(("clear", string.Empty), remembered: null);
 
     /// <summary>
+    /// Signal that the take's output files (raw.mid/score.mid/score.musicxml, and -- when
+    /// --record is on -- recreation.wav/input.wav) have ALL finished being written to
+    /// <see cref="OutDirPath"/> and are now safe for the browser to fetch. Fired once, after
+    /// the take's finalize step completes (see `ListenAppCommand`'s Finalize*Recording calls),
+    /// so app.js's Stop-button handler no longer has to poll for score.musicxml and risk
+    /// revealing the PREVIOUS take's recreation.wav in the race window before the new one lands.
+    /// Never remembered for late joiners (remembered: null) -- like "clear", it's a momentary
+    /// signal, not state a fresh connection should be replayed.
+    /// </summary>
+    public void PublishTakeReady() => Broadcast(("take-ready", string.Empty), remembered: null);
+
+    /// <summary>
     /// Shape-agnostic counterpart to <see cref="PublishScore"/>: broadcasts an already-serialized
     /// MusicXML string directly as the "score" SSE event (same base64 wire format, same late-joiner
     /// remembering), skipping the mono <see cref="ScoreToMusicXml"/> serializer entirely. Exists for
@@ -288,6 +300,12 @@ public sealed class LiveNotationServer : IDisposable
         }
 
         ctx.Response.ContentType = ContentTypeFor(filePath);
+        // Defense-in-depth against stale-take caching: every take writes to the SAME path
+        // (recreation.wav etc.), so without this a browser may serve a cached earlier take's
+        // bytes even when app.js requests a fresh, cache-busted URL. The primary fix is the
+        // cache-busting query string in app.js; this header means a client that ignores it (or
+        // an intermediary cache) still revalidates instead of serving stale audio.
+        ctx.Response.Headers["Cache-Control"] = "no-cache";
         byte[] bytes = await File.ReadAllBytesAsync(filePath).ConfigureAwait(false);
         ctx.Response.ContentLength64 = bytes.Length;
         await ctx.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
