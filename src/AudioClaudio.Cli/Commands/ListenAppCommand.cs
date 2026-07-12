@@ -240,7 +240,8 @@ internal static class ListenAppCommand
 
     // The --poly prototype fork (see LivePolyphonicView's doc for the full design/threading writeup
     // and its non-scaling caveat). SINGLE-TAKE only: the mic starts recording the moment this runs,
-    // Ctrl+C stops and saves -- no browser Start/Stop button integration (see LivePolyphonicView).
+    // Waits for the browser Start button per take (mirroring the mono --view loop), captures until Stop
+    // (or Ctrl+C), saves score.mid/score.musicxml, then idles for the next Start. Ctrl+C exits.
     private static int RunPolyphonicPrototype(string outDir, double tempoBpm, TextWriter stdout, TextWriter stderr, StringBuilder logBuffer)
     {
         using var server = new LiveNotationServer(Path.Combine(AppContext.BaseDirectory, "wwwroot"), outDirPath: outDir);
@@ -255,22 +256,54 @@ internal static class ListenAppCommand
         }
 
         stdout.WriteLine($"Live notation view (POLYPHONIC PROTOTYPE): {server.BaseUrl}");
-        stdout.WriteLine("Recording starts immediately. Ctrl+C stops and writes score.mid/score.musicxml.");
+        stdout.WriteLine("Press Start in the browser to record, Stop to save. Ctrl+C exits (saving a take in progress).");
         TryOpenBrowser(server.BaseUrl);
 
-        using var mic = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
-        var levelSource = new LevelTeeingAudioSource(mic,
-            rms => server.PublishLevel(rms, mic.DeviceName ?? "Unknown microphone"));
+        // Same browser Start/Stop loop shape as the mono --view path: stay idle until the Start button
+        // fires, capture until the Stop button (or Ctrl+C) stops the mic, save, then wait for the next
+        // Start. (The prototype ignores the per-take Record/Skip-silence/Note-names options.)
+        var startSignal = new SemaphoreSlim(0);
+        var gate = new object();
+        PortAudioAudioSource? currentMic = null;
+        bool exiting = false;
 
-        using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; mic.Stop(); cts.Cancel(); };
+        server.StartRequested = _ => startSignal.Release();
+        server.StopRequested = () => { lock (gate) { currentMic?.Stop(); } };
+        using var exitCts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            lock (gate) { exiting = true; currentMic?.Stop(); }
+            exitCts.Cancel();
+            startSignal.Release(); // wake the loop if it is idle-waiting for Start
+        };
 
-        logBuffer.Clear();
-        mic.Start();
+        // One view (the ONNX model loads once) reused across takes; Run() clears its accumulator each take.
         using var view = new LivePolyphonicView(server, outDir, tempoBpm, stdout.WriteLine);
-        view.Run(levelSource, cts.Token);
 
-        File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
+        while (true)
+        {
+            startSignal.Wait();
+            lock (gate) { if (exiting) break; }
+
+            logBuffer.Clear();
+            server.PublishClear(); // blank the staff for the new take
+
+            var mic = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
+            lock (gate) { currentMic = mic; }
+            var levelSource = new LevelTeeingAudioSource(mic,
+                rms => server.PublishLevel(rms, mic.DeviceName ?? "Unknown microphone"));
+            mic.Start();
+            // Drains until the Stop button or Ctrl+C ends the mic frames, then writes score.mid/musicxml.
+            view.Run(levelSource, exitCts.Token);
+            lock (gate) { currentMic = null; }
+            mic.Dispose();
+
+            File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
+            Thread.Sleep(TimeSpan.FromSeconds(1)); // let the final SSE push reach the browser
+            lock (gate) { if (exiting) break; }
+        }
+
         return 0;
     }
 

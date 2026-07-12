@@ -36,12 +36,12 @@ namespace AudioClaudio.Cli.Commands;
 /// whichever the caller wires up -- the drain's <c>foreach</c> ends, the background loop is cancelled,
 /// and one FINAL transcribe writes <c>score.mid</c>/<c>score.musicxml</c> to the out-dir.
 ///
-/// This prototype uses a SINGLE-TAKE flow (construct, run once end-to-end, dispose) rather than
-/// integrating with the existing browser Start/Stop multi-take loop in <c>ListenAppCommand</c> --
-/// that loop's semaphore/gate/per-take archiving machinery is built around the monophonic
-/// <c>ListenCommand</c>/<c>LiveScoreProjector</c> path, and re-plumbing it for a second, differently
-/// shaped output (grand staff, not <see cref="Score"/>) was judged more risk than a prototype needs.
-/// The mic starts recording immediately on launch; Ctrl+C stops and saves.
+/// <see cref="Run"/> performs ONE take (drain → periodic transcribe → final save) and clears its
+/// accumulator at the start, so the caller can reuse a single instance (the ONNX model loads once)
+/// across successive takes. <c>ListenAppCommand</c>'s <c>--poly</c> loop drives the browser Start/Stop
+/// buttons around it -- idle until Start, capture until Stop (or Ctrl+C), save, repeat -- mirroring the
+/// mono <c>--view</c> loop. Per-take WAV recording/archiving (the mono path's --record/skip-silence/
+/// archive machinery) is intentionally out of scope for this prototype.
 /// </summary>
 public sealed class LivePolyphonicView : IDisposable
 {
@@ -81,7 +81,9 @@ public sealed class LivePolyphonicView : IDisposable
     {
         ArgumentNullException.ThrowIfNull(source);
 
-        _print("Listening (polyphonic prototype, re-transcribing ~every 1.6s). Press Ctrl+C to stop and save.");
+        // Reset so one LivePolyphonicView (model loaded once) can serve successive Start/Stop takes.
+        _accumulator.Clear();
+        _print("Recording (polyphonic prototype, re-transcribing ~every 1.6s). Press Stop in the browser (or Ctrl+C) to save.");
 
         using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Task backgroundLoop = Task.Run(() => TranscribeLoopAsync(loopCts.Token));

@@ -28,6 +28,16 @@ public sealed class FrameAccumulator
         }
     }
 
+    /// <summary>Drops every accumulated frame, so one <see cref="FrameAccumulator"/> can be reused
+    /// across successive browser Start/Stop takes without carrying a prior take's audio into the next.</summary>
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _frames.Clear();
+        }
+    }
+
     /// <summary>The number of frames accumulated so far.</summary>
     public int Count
     {
