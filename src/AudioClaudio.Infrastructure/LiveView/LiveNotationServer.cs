@@ -82,6 +82,22 @@ public sealed class LiveNotationServer : IDisposable
     public void PublishClear() => Broadcast(("clear", string.Empty), remembered: null);
 
     /// <summary>
+    /// Shape-agnostic counterpart to <see cref="PublishScore"/>: broadcasts an already-serialized
+    /// MusicXML string directly as the "score" SSE event (same base64 wire format, same late-joiner
+    /// remembering), skipping the mono <see cref="ScoreToMusicXml"/> serializer entirely. Exists for
+    /// the polyphonic live-view prototype (`listen --view --poly`), whose <c>GrandStaffScore</c> is a
+    /// different type than the monophonic <see cref="Score"/> that <see cref="ScoreToMusicXml"/>
+    /// expects -- the browser's app.js already renders whatever "score" MusicXML arrives, grand-staff
+    /// or single-staff alike, so no client change is needed.
+    /// </summary>
+    public void PublishScoreXml(string musicXml)
+    {
+        ArgumentNullException.ThrowIfNull(musicXml);
+        string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(musicXml));
+        Broadcast(("score", base64), remembered: ("score", base64));
+    }
+
+    /// <summary>
     /// Broadcasts the current input level (RMS) and the capture device's name as a small "level"
     /// SSE event -- the VU-meter feed for the live-view page (S5.10). Never remembered for late
     /// joiners (remembered: null): a level reading is momentary, unlike a score.

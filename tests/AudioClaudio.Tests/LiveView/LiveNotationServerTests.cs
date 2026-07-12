@@ -305,6 +305,44 @@ public class LiveNotationServerTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public async Task PublishScoreXmlDeliversTheGivenMusicXmlVerbatimToAConnectedClient()
+    {
+        // Shape-agnostic path used by the polyphonic live-view prototype (listen --view --poly):
+        // the caller pre-serializes a GrandStaffScore itself, so PublishScoreXml must broadcast the
+        // string as-is (base64-wrapped), never touching ScoreToMusicXml/the mono Score serializer.
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        const string xml = "<score-partwise>fake grand staff</score-partwise>";
+        server.PublishScoreXml(xml);
+
+        (string eventName, string data) = await ReadSseFrameAsync(reader, TimeSpan.FromSeconds(5));
+        Assert.Equal("score", eventName);
+        Assert.Equal(xml, Encoding.UTF8.GetString(Convert.FromBase64String(data)));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishScoreXmlIsReplayedToALateJoiningClient()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        const string xml = "<score-partwise>late join</score-partwise>";
+        server.PublishScoreXml(xml); // published BEFORE any client connects
+
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        string received = await ReadSseDataLineAsync(reader, TimeSpan.FromSeconds(5));
+        Assert.Equal(xml, received);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public async Task PublishLevelIsNotReplayedToALateJoiningClient()
     {
         using var server = new LiveNotationServer(WebRoot);
