@@ -293,7 +293,7 @@ public static class AppBuilder
             .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont for the --record recreation (auto-discovered otherwise)"))
             .WithExample("claudio listen --view --record");
-        app.Register(listen, (p, stdout, stderr) => throw new NotImplementedException("wired in Task 21"));
+        app.Register(listen, (p, stdout, stderr) => ListenAppCommand.Run(p, stdout, stderr, logBuffer));
 
         return app;
     }
