@@ -16,6 +16,17 @@ using AudioClaudio.Infrastructure.Transcription;
 namespace AudioClaudio.Cli.Commands;
 
 /// <summary>
+/// One take's outcome from <see cref="LivePolyphonicView.Run"/>: <paramref name="RawEvents"/> is the
+/// honest, un-quantized polyphonic note list from the take's FINAL transcribe -- at the poly engine's
+/// OWN sample rate (<see cref="AudioClaudio.Infrastructure.Transcription.BasicPitchModel.SampleRateHz"/>,
+/// not the mic's, since <c>BasicPitchTranscriber</c> resamples internally) -- and
+/// <paramref name="CapturedFrames"/> is the raw mic audio (at the mic's declared rate). Together they
+/// are everything <c>ListenAppCommand</c> needs to mirror the monophonic path's
+/// --record/--skip-silence/archive machinery for the polyphonic engine.
+/// </summary>
+public sealed record LivePolyphonicResult(IReadOnlyList<NoteEvent> RawEvents, IReadOnlyList<Frame> CapturedFrames);
+
+/// <summary>
 /// The polyphonic live-capture engine behind `listen` (the DEFAULT engine; `--mono` opts into the
 /// separate monophonic path instead): while the mic runs, a background loop re-transcribes the WHOLE
 /// captured buffer every ~1.64 s with the existing batch <see cref="BasicPitchTranscriber"/> and
@@ -46,8 +57,10 @@ namespace AudioClaudio.Cli.Commands;
 /// across successive takes. <c>ListenAppCommand</c>'s <c>--view</c> loop drives the browser Start/Stop
 /// buttons around it -- idle until Start, capture until Stop (or Ctrl+C), save, repeat -- mirroring the
 /// mono <c>--view</c> loop; the headless (no <c>--view</c>) path just runs one take from launch to
-/// Ctrl+C with a null server. Per-take WAV recording/archiving (the mono path's --record/skip-silence/
-/// archive machinery) is intentionally out of scope here.
+/// Ctrl+C with a null server. <see cref="Run"/> RETURNS the take's raw poly events and captured frames
+/// (see <see cref="LivePolyphonicResult"/>) precisely so the caller can layer the mono path's
+/// --record/--skip-silence/archive machinery on top -- this class itself stays scoped to
+/// capture + transcribe + raw.mid/score.mid/score.musicxml.
 /// </summary>
 public sealed class LivePolyphonicView : IDisposable
 {
@@ -86,9 +99,9 @@ public sealed class LivePolyphonicView : IDisposable
     /// everything is written. <paramref name="ct"/> is observed by the background loop only (for
     /// prompt shutdown on Ctrl+C) -- the loop is ALSO unconditionally cancelled once draining ends,
     /// regardless of <paramref name="ct"/>'s state, so it can never keep running after this method
-    /// returns.
+    /// returns. Returns the take's raw poly events and captured frames (<see cref="LivePolyphonicResult"/>).
     /// </summary>
-    public void Run(IAudioSource source, CancellationToken ct)
+    public LivePolyphonicResult Run(IAudioSource source, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(source);
 
@@ -136,7 +149,7 @@ public sealed class LivePolyphonicView : IDisposable
             }
         }
 
-        FinalTranscribeAndWrite();
+        return FinalTranscribeAndWrite();
     }
 
     private async Task TranscribeLoopAsync(CancellationToken ct)
@@ -179,40 +192,49 @@ public sealed class LivePolyphonicView : IDisposable
         }
     }
 
-    private void FinalTranscribeAndWrite()
+    private LivePolyphonicResult FinalTranscribeAndWrite()
     {
         IReadOnlyList<Frame> snapshot = _accumulator.Snapshot();
         GrandStaffScore? grandStaff;
+        IReadOnlyList<NoteEvent> rawEvents;
         try
         {
-            grandStaff = BuildGrandStaff(snapshot, out _);
+            grandStaff = BuildGrandStaff(snapshot, out rawEvents);
         }
         catch (Exception ex)
         {
             _print($"live poly: final transcribe failed ({ex.Message}); nothing written.");
-            return;
+            return new LivePolyphonicResult(Array.Empty<NoteEvent>(), snapshot);
         }
 
         if (grandStaff is null)
         {
             _print("live poly: no audio captured; nothing written.");
-            return;
+            return new LivePolyphonicResult(rawEvents, snapshot);
         }
 
         string xml = new GrandStaffMusicXmlWriter().WriteToString(grandStaff);
         _server?.PublishScoreXml(xml);
 
         IReadOnlyList<NoteEvent> quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, MakeGrid());
+        string rawPath = Path.Combine(_outDir, "raw.mid");
         string scorePath = Path.Combine(_outDir, "score.mid");
         string xmlPath = Path.Combine(_outDir, "score.musicxml");
         var writer = new DryWetMidiWriter();
+        using (var rawFile = File.Create(rawPath))
+        {
+            writer.Write(rawEvents, _tempo, rawFile);
+        }
+
         using (var scoreFile = File.Create(scorePath))
         {
             writer.Write(quantized, _tempo, scoreFile);
         }
 
         File.WriteAllText(xmlPath, xml);
-        _print($"Wrote {scorePath} and {xmlPath} ({quantized.Count} quantized notes, {grandStaff.Measures.Count} bars).");
+        _print($"Wrote {rawPath}, {scorePath}, and {xmlPath} ({quantized.Count} quantized notes, {grandStaff.Measures.Count} bars).");
+
+        return new LivePolyphonicResult(rawEvents, snapshot);
     }
 
     // Reconstructs mono from the snapshotted frames, wraps it in a throwaway in-memory IAudioSource
@@ -239,6 +261,37 @@ public sealed class LivePolyphonicView : IDisposable
 
     private QuantizationGrid MakeGrid() =>
         new(new SampleRate(BasicPitchModel.SampleRateHz), _tempo, TimeSignature.FourFour, Subdivision.Sixteenth);
+
+    /// <summary>
+    /// Converts a note list from its own declared <see cref="SampleRate"/> into <paramref name="targetRate"/>
+    /// by scaling onset/duration sample counts by the exact rate ratio -- e.g. 2x between the mic's 44100 Hz
+    /// and this engine's internal <see cref="BasicPitchModel.SampleRateHz"/> (22050 Hz). Pure; never coerces
+    /// across rates silently (the Domain's mixed-sample-rate non-negotiable, CLAUDE.md §4) -- this performs
+    /// the explicit, exact conversion that <see cref="BasicPitchTranscriber"/>'s internal resampling makes
+    /// necessary before <see cref="LivePolyphonicResult.RawEvents"/> can be handed to rate-sensitive helpers
+    /// (e.g. <c>SilenceCollapser</c>, <c>ISynthesizer.Render</c>) that require notes and audio to share ONE
+    /// declared rate. A no-op (returns <paramref name="notes"/> unchanged) when the list is empty.
+    /// </summary>
+    public static IReadOnlyList<NoteEvent> RescaleNotes(IReadOnlyList<NoteEvent> notes, SampleRate targetRate)
+    {
+        ArgumentNullException.ThrowIfNull(notes);
+        if (notes.Count == 0)
+        {
+            return notes;
+        }
+
+        var rescaled = new List<NoteEvent>(notes.Count);
+        foreach (NoteEvent n in notes)
+        {
+            double ratio = (double)targetRate.Hz / n.Onset.Rate.Hz;
+            long onset = (long)Math.Round(n.Onset.Samples * ratio);
+            long duration = Math.Max(1, (long)Math.Round(n.Duration.Samples * ratio));
+            rescaled.Add(new NoteEvent(
+                n.Pitch, new SamplePosition(onset, targetRate), new SampleDuration(duration, targetRate), n.Velocity));
+        }
+
+        return rescaled;
+    }
 
     public void Dispose() => _transcriber.Dispose();
 
