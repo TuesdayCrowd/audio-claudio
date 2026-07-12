@@ -1,7 +1,9 @@
 using System.Linq;
 using System.Text;
+using AudioClaudio.Application;
 using AudioClaudio.Cli.Cli;
 using AudioClaudio.Cli.Commands;
+using AudioClaudio.Cli.Composition;
 using AudioClaudio.Domain;
 using AudioClaudio.Domain.Evaluation;
 using AudioClaudio.Domain.Polyphony;
@@ -10,6 +12,7 @@ using AudioClaudio.Infrastructure.Audio;
 using AudioClaudio.Infrastructure.Midi;
 using AudioClaudio.Infrastructure.MusicXml;
 using AudioClaudio.Infrastructure.Synthesis;
+using AudioClaudio.Infrastructure.Transcription;
 
 namespace AudioClaudio.Cli;
 
@@ -71,7 +74,90 @@ public static class AppBuilder
             .WithOption(new CliOption("--coarse-rhythm", OptionKind.Flag, "(--mono) floor note values at an eighth"))
             .WithOption(new CliOption("--triplets", OptionKind.Flag, "engrave eighth-note triplets"))
             .WithExample("claudio transcribe song.wav --out-dir out");
-        app.Register(transcribe, (p, stdout, stderr) => throw new NotImplementedException("wired in Task 20"));
+        app.Register(transcribe, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("input.wav"), stderr, styler)) return 1;
+
+            double? tempo = p.Double("tempo");
+            string outDir = p.Path("out-dir") ?? ".";
+            bool noteNames = p.Flag("note-names");
+            bool legato = p.Flag("legato");
+            bool coarseRhythm = p.Flag("coarse-rhythm");
+            bool poly = TranscribeModeResolver.Resolve(p) == TranscribeMode.Polyphonic;
+
+            if (!KeyOption.Validate(p.Int("key"), out string? keyError))
+            {
+                stderr.Write($"{styler.Error("error:")} {keyError}\n");
+                return 1;
+            }
+
+            if (poly && p.String("model") == "transkun")
+            {
+                // Transkun engine (v2 Stage 4): notation-fidelity piano transcription (real durations +
+                // sustain pedal), self-contained via ONNX. Core-first — frame-resolution timing, no velocity.
+                Directory.CreateDirectory(outDir);
+                using var tkSource = WavAudioSource.FromFile(p.Argument("input.wav"), new FrameParameters(1024, 256));
+                using var tk = new TranskunTranscriber(TranskunModelLocator.Resolve(), new Radix2Fft());
+                (var tkNotes, var tkPedal) = tk.TranscribeDetailed(tkSource);
+                Tempo tkTempo = tempo is { } tb ? new Tempo(tb) : TempoEstimator.Estimate(tkNotes, new Tempo(120));
+                int tkKey = p.Int("key") ?? KeyDetector.Detect(tkNotes.Select(e => e.Pitch).ToList());
+
+                var tkWriter = new DryWetMidiWriter();
+                using (var raw = File.Create(Path.Combine(outDir, "raw.mid")))
+                    tkWriter.Write(tkNotes, tkTempo, raw);
+
+                var tkSubdivision = p.Flag("triplets") ? Subdivision.Twelfth : Subdivision.Sixteenth;
+                var tkGrid = new QuantizationGrid(Rate, tkTempo, TimeSignature.FourFour, tkSubdivision);
+                var tkChordWindow = new SampleDuration(Rate.Hz / 20, Rate);
+                var tkGrandStaff = PolyphonicQuantizer.Quantize(tkNotes, tkGrid, tkChordWindow);
+                var tkPedalMarks = tkPedal.Select(c => ((int)tkGrid.SamplesToTick(c.Sample), c.Down)).ToList();
+                using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
+                    new GrandStaffMusicXmlWriter(noteNames, fifths: tkKey).Write(tkGrandStaff, mx, tkPedalMarks);
+                var tkQuantized = GrandStaffFlattener.ToNoteEvents(tkGrandStaff, tkGrid);
+                using (var score = File.Create(Path.Combine(outDir, "score.mid")))
+                    tkWriter.Write(tkQuantized, tkTempo, score);
+                stdout.WriteLine($"Transkun transcription: {tkNotes.Count} notes -> raw.mid; {tkQuantized.Count} quantized -> score.mid + score.musicxml (grand staff, {tkGrandStaff.Measures.Count} bars, key {tkKey:+#;-#;0}, {tkPedal.Count / 2} pedal spans)");
+                File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
+                return 0;
+            }
+
+            if (poly)
+            {
+                // Polyphonic path (Basic Pitch). raw.mid is the honest many-note output; score.mid/
+                // score.musicxml are quantized with the grand-staff quantizer.
+                Directory.CreateDirectory(outDir);
+                string modelPath = ModelLocator.Resolve(p.String("model"));
+                using var polySource = WavAudioSource.FromFile(p.Argument("input.wav"), new FrameParameters(1024, 256));
+                var decoderOptions = PolyDecoderOptions.FromArgs(p); // --onset-threshold/--frame-threshold/--min-note-len
+                using var polyTx = new BasicPitchTranscriber(modelPath, decoderOptions, tempo: tempo is { } bpm ? new Tempo(bpm) : null);
+                TranscriptionResult polyResult = polyTx.Transcribe(polySource);
+                // Auto-detect the key signature from the notes (Krumhansl-Schmuckler) unless --key declares it.
+                int key = p.Int("key") ?? KeyDetector.Detect(polyResult.RawEvents.Select(e => e.Pitch).ToList());
+                var polyWriter = new DryWetMidiWriter();
+                using (var raw = File.Create(Path.Combine(outDir, "raw.mid")))
+                    polyWriter.Write(polyResult.RawEvents, polyResult.Score.Tempo, raw); // honest un-quantized polyphony
+
+                // Stage 3: quantize into a polyphonic grand-staff score (chords + two staves), then
+                // emit both score.musicxml (grand staff) and a flattened polyphonic score.mid.
+                var polyRate = new SampleRate(BasicPitchModel.SampleRateHz);
+                var polySubdivision = p.Flag("triplets") ? Subdivision.Twelfth : Subdivision.Sixteenth;
+                var polyGrid = new QuantizationGrid(polyRate, polyResult.Score.Tempo, TimeSignature.FourFour, polySubdivision);
+                var chordWindow = new SampleDuration(polyRate.Hz / 20, polyRate); // ~50 ms: notes this close are one chord
+                var grandStaff = PolyphonicQuantizer.Quantize(polyResult.RawEvents, polyGrid, chordWindow);
+                using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
+                    new GrandStaffMusicXmlWriter(noteNames, fifths: key).Write(grandStaff, mx);
+                var quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, polyGrid);
+                using (var score = File.Create(Path.Combine(outDir, "score.mid")))
+                    polyWriter.Write(quantized, polyResult.Score.Tempo, score);
+                stdout.WriteLine($"Polyphonic transcription: {polyResult.RawEvents.Count} notes -> raw.mid; {quantized.Count} quantized -> score.mid + score.musicxml (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0}{(p.Int("key") is null ? " detected" : " declared")})");
+                File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
+                return 0;
+            }
+
+            TranscribeCommand.Run(p.Argument("input.wav"), tempo, outDir, noteNames, legato, coarseRhythm);
+            File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
+            return 0;
+        });
 
         var notate = new CliCommand("notate", "Engrave an existing MIDI file as a grand-staff score.")
             .WithArgument(new CliArgument("input.mid", "the MIDI file to notate"))
