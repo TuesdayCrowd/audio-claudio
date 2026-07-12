@@ -84,6 +84,11 @@ public sealed class LivePolyphonicView : IDisposable
     // its saved score.musicxml always agree on whether note-name lyrics are on.
     private bool _noteNames;
 
+    // Set fresh at the top of each take's Run() -- the per-take Title (the browser's Title field,
+    // mirroring the mono path's RecordOptions.Title). Read by both GrandStaffMusicXmlWriter sites as
+    // the score's work-title; null for a headless take (no browser Title input).
+    private string? _title;
+
     /// <param name="server">
     /// The live-notation server to periodically republish to, or <c>null</c> for a headless take
     /// (no browser view) -- when null, <see cref="Run"/> never starts the periodic re-transcribe loop.
@@ -110,13 +115,14 @@ public sealed class LivePolyphonicView : IDisposable
     /// <param name="noteNames">This take's --note-names choice: when true, both the periodic live
     /// republish and the final score.musicxml carry a scientific-pitch-name lyric under each note
     /// (mirrors the mono path's per-take <c>RecordOptions.NoteNames</c>).</param>
-    public LivePolyphonicResult Run(IAudioSource source, CancellationToken ct, bool noteNames = false)
+    public LivePolyphonicResult Run(IAudioSource source, CancellationToken ct, bool noteNames = false, string? title = null)
     {
         ArgumentNullException.ThrowIfNull(source);
 
         // Reset so one LivePolyphonicView (model loaded once) can serve successive Start/Stop takes.
         _accumulator.Clear();
         _noteNames = noteNames;
+        _title = title;
         _print(_server is not null
             ? "Recording (polyphonic, re-transcribing ~every 1.6s). Press Stop in the browser (or Ctrl+C) to save."
             : "Recording (polyphonic). Press Ctrl+C to stop and save.");
@@ -189,7 +195,7 @@ public sealed class LivePolyphonicView : IDisposable
                 return;
             }
 
-            string xml = new GrandStaffMusicXmlWriter(_noteNames).WriteToString(grandStaff);
+            string xml = new GrandStaffMusicXmlWriter(_noteNames, _title).WriteToString(grandStaff);
             _server?.PublishScoreXml(xml);
             _print($"live poly: republished ({raw.Count} notes, {grandStaff.Measures.Count} bars, {snapshot.Count} frames buffered).");
         }
@@ -223,7 +229,7 @@ public sealed class LivePolyphonicView : IDisposable
             return new LivePolyphonicResult(rawEvents, snapshot);
         }
 
-        string xml = new GrandStaffMusicXmlWriter(_noteNames).WriteToString(grandStaff);
+        string xml = new GrandStaffMusicXmlWriter(_noteNames, _title).WriteToString(grandStaff);
         _server?.PublishScoreXml(xml);
 
         IReadOnlyList<NoteEvent> quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, MakeGrid());

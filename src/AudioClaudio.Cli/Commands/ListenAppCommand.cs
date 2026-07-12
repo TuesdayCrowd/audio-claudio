@@ -311,7 +311,7 @@ internal static class ListenAppCommand
             mic.Start();
             // Drains until the Stop button or Ctrl+C ends the mic frames, then writes
             // raw.mid/score.mid/score.musicxml and returns the take's raw events + captured frames.
-            LivePolyphonicResult result = view.Run(levelSource, exitCts.Token, opts.NoteNames);
+            LivePolyphonicResult result = view.Run(levelSource, exitCts.Token, opts.NoteNames, opts.Title);
             lock (gate) { currentMic = null; }
             mic.Dispose();
 
@@ -347,7 +347,7 @@ internal static class ListenAppCommand
         logBuffer.Clear();
         mic.Start();
         // Drains until Ctrl+C stops the mic, then writes raw.mid/score.mid/score.musicxml.
-        LivePolyphonicResult result = view.Run(mic, cts.Token, noteNames);
+        LivePolyphonicResult result = view.Run(mic, cts.Token, noteNames, title: null);
 
         FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, record);
         return 0;
