@@ -1,0 +1,12 @@
+Usage:
+  claudio render <in.mid> <out.wav> [options]
+
+Arguments:
+  <in.mid>    The MIDI file to render.
+  <out.wav>   Where to write the rendered audio.
+
+Options:
+  --soundfont <PATH>   SoundFont (.sf2) to render with.
+
+Example:
+  claudio render score.mid out.wav

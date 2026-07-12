@@ -1,0 +1,22 @@
+Usage:
+  claudio transcribe <input.wav> [options]
+
+Arguments:
+  <input.wav>   the recording to transcribe
+
+Options:
+  --tempo <DOUBLE>             declared tempo in BPM (auto-estimated if omitted)
+  --out-dir <PATH>             directory to write raw.mid/score.mid/score.musicxml (default: .)
+  --note-names                 print a scientific-pitch-name lyric under each note
+  --mono                       use the monophonic YIN pipeline instead of the polyphonic default
+  --model <STRING>             explicit model path, or 'transkun' for the Transkun engine
+  --key <INT>                  override the auto-detected key signature (sharps +, flats -)
+  --onset-threshold <DOUBLE>   polyphonic onset activation threshold
+  --frame-threshold <DOUBLE>   polyphonic sustained-frame activation threshold
+  --min-note-len <INT>         polyphonic flicker floor in frames
+  --legato                     (--mono) opt into legato note recovery
+  --coarse-rhythm              (--mono) floor note values at an eighth
+  --triplets                   engrave eighth-note triplets
+
+Example:
+  claudio transcribe song.wav --out-dir out

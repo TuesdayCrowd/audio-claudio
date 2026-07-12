@@ -1,0 +1,9 @@
+Usage:
+  claudio evaluate-audio <original.wav> <reproduction.wav>
+
+Arguments:
+  <original.wav>       the original recording
+  <reproduction.wav>   the re-synthesized recording
+
+Example:
+  claudio evaluate-audio input.wav recreation.wav

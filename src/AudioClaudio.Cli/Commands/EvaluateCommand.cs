@@ -28,9 +28,9 @@ public static class EvaluateCommand
         print($"Matched (TP):    {e.TruePositives}");
         print($"Missed  (FN):    {e.FalseNegatives}");
         print($"Extra   (FP):    {e.FalsePositives}");
-        print($"Precision:       {e.Precision:P1}");
-        print($"Recall:          {e.Recall:P1}");
-        print($"F1:              {e.F1:P1}");
+        print($"Precision:       {CliFormat.Percent(e.Precision)}");
+        print($"Recall:          {CliFormat.Percent(e.Recall)}");
+        print($"F1:              {CliFormat.Percent(e.F1)}");
         print($"(onset tolerance ±{options.OnsetToleranceSeconds * 1000.0:F0} ms, exact pitch, offsets ignored)");
         return e;
     }

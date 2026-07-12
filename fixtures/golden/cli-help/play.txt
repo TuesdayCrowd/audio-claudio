@@ -1,0 +1,11 @@
+Usage:
+  claudio play <input.mid> [options]
+
+Arguments:
+  <input.mid>   the MIDI file to play
+
+Options:
+  --soundfont <PATH>   explicit SoundFont path (auto-discovered otherwise)
+
+Example:
+  claudio play song.mid

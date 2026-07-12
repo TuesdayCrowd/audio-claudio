@@ -1,0 +1,15 @@
+Usage:
+  claudio notate <input.mid> [options]
+
+Arguments:
+  <input.mid>   the MIDI file to notate
+
+Options:
+  --out-dir <PATH>   directory to write score.mid/score.musicxml (default: .)
+  --tempo <DOUBLE>   declared tempo in BPM (auto-estimated if omitted)
+  --key <INT>        override the auto-detected key signature
+  --note-names       print a scientific-pitch-name lyric under each note
+  --triplets         engrave eighth-note triplets
+
+Example:
+  claudio notate performance.mid --out-dir out

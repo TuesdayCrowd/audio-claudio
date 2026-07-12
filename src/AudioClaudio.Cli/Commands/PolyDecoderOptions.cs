@@ -28,6 +28,21 @@ public static class PolyDecoderOptions
         };
     }
 
+    /// <summary>Reads the same thresholds from a kernel-validated <see
+    /// cref="AudioClaudio.Cli.Cli.ParsedArgs"/> (the CLI-kernel migration's replacement for the
+    /// raw <c>string[]</c> overload above).</summary>
+    public static NoteDecoderOptions FromArgs(AudioClaudio.Cli.Cli.ParsedArgs parsed)
+    {
+        ArgumentNullException.ThrowIfNull(parsed);
+        var d = NoteDecoderOptions.Default;
+        return d with
+        {
+            OnsetThreshold = parsed.Double("onset-threshold") ?? d.OnsetThreshold,
+            FrameThreshold = parsed.Double("frame-threshold") ?? d.FrameThreshold,
+            MinNoteLenFrames = parsed.Int("min-note-len") ?? d.MinNoteLenFrames,
+        };
+    }
+
     private static double ReadDouble(string[] args, string name, double fallback) =>
         ReadValue(args, name) is { } v ? double.Parse(v, CultureInfo.InvariantCulture) : fallback;
 

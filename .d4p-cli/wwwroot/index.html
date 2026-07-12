@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Audio Claudio — Live</title>
+</head>
+<body>
+  <div id="controls">
+    <label>Title <input id="score-title" type="text" placeholder="Untitled Score" /></label>
+    <label><input id="opt-record" type="checkbox" checked /> Record audio</label>
+    <label><input id="opt-skip-silence" type="checkbox" /> Skip silence</label>
+    <label><input id="opt-note-names" type="checkbox" /> Note names</label>
+    <button id="start-recording" type="button">● Start recording</button>
+    <button id="stop-recording" type="button" disabled>■ Stop recording</button>
+  </div>
+  <div id="osmd-container"></div>
+  <script src="osmd/opensheetmusicdisplay.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+claudio — a real-time piano transcriber
+
+Usage:
+  claudio <command> [options]
+
+Commands:
+  transcribe       Transcribe a WAV recording to MIDI + MusicXML.
+  notate           Engrave an existing MIDI file as a grand-staff score.
+  render           Render a MIDI file to a deterministic WAV.
+  play             Play a MIDI file through the default audio device.
+  evaluate         Score a candidate transcription against a reference note-set.
+  evaluate-audio   Compare two WAVs by pitch-content (chroma) similarity.
+  listen           Transcribe live from the microphone.
+
+Run 'claudio <command> --help' for details on a command.
