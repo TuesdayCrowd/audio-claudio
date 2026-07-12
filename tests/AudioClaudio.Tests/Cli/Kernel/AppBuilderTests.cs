@@ -29,7 +29,7 @@ public class AppBuilderTests
     [InlineData("play", new[] { "--soundfont" })]
     [InlineData("evaluate", new[] { "--onset-tolerance-ms", "--align", "--warp" })]
     [InlineData("evaluate-audio", new string[0])]
-    [InlineData("listen", new[] { "--tempo", "--out-dir", "--view", "--record", "--skip-silence", "--note-names", "--soundfont", "--mono" })]
+    [InlineData("listen", new[] { "--tempo", "--out-dir", "--view", "--record", "--note-names", "--soundfont", "--mono" })]
     public void Each_command_declares_exactly_its_option_surface(string commandName, string[] expectedOptions)
     {
         var app = AppBuilder.Build(new StringBuilder(), noColor: true);

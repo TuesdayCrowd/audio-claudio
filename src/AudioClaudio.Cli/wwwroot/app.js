@@ -111,7 +111,6 @@ startButton.addEventListener("click", async () => {
   setStatus("recording", "● Recording");
   const params = new URLSearchParams({
     record: document.getElementById("opt-record").checked,
-    skipSilence: document.getElementById("opt-skip-silence").checked,
     noteNames: document.getElementById("opt-note-names").checked,
     title: document.getElementById("score-title").value,
   });

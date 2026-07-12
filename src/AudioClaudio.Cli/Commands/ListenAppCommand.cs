@@ -50,8 +50,7 @@ internal static class ListenAppCommand
         string outDir = p.Path("out-dir") ?? "out";
         Directory.CreateDirectory(outDir);
         bool view = p.Flag("view");
-        bool skipSilence = p.Flag("skip-silence");
-        bool record = p.Flag("record") || skipSilence; // --skip-silence implies --record
+        bool record = p.Flag("record");
         bool noteNames = p.Flag("note-names");
 
         // Polyphonic is the DEFAULT `listen` engine (mirrors `transcribe`'s poly-default/--mono
@@ -60,7 +59,7 @@ internal static class ListenAppCommand
         // --mono is set, so the mono path is completely unaffected by this branch's existence.
         if (!p.Flag("mono"))
         {
-            return RunPolyphonic(outDir, tempoBpm, view, record, skipSilence, p.Path("soundfont"), stdout, stderr, logBuffer);
+            return RunPolyphonic(outDir, tempoBpm, view, record, noteNames, p.Path("soundfont"), stdout, stderr, logBuffer);
         }
 
         var rate = new SampleRate(SampleRateHz);
@@ -81,9 +80,9 @@ internal static class ListenAppCommand
         var musicXml = new MusicXmlScoreWriter(noteNames);
 
         // One recording's outputs: the out-dir root holds the LATEST files at stable paths; on stop,
-        // write --record's WAVs (optionally silence-collapsed) then archive that whole set into
-        // <out-dir>/<timestamp>/ (timestamp = when the recording started).
-        void FinalizeRecording(LiveSessionResult result, string timestamp, bool doRecord, bool doSkipSilence)
+        // write --record's WAVs then archive that whole set into <out-dir>/<timestamp>/ (timestamp =
+        // when the recording started).
+        void FinalizeRecording(LiveSessionResult result, string timestamp, bool doRecord)
         {
             if (doRecord)
             {
@@ -91,14 +90,6 @@ internal static class ListenAppCommand
                     ? Framing.ReconstructMono(result.CapturedFrames)
                     : Array.Empty<float>();
                 IReadOnlyList<NoteEvent> recreationNotes = result.Events;
-
-                if (doSkipSilence)
-                {
-                    var maxSilence = new SampleDuration(rate.Hz / 2, rate); // collapse pauses > 500 ms
-                    var collapsed = SilenceCollapser.Collapse(result.Events, inputPcm, rate, maxSilence);
-                    inputPcm = collapsed.Audio;
-                    recreationNotes = collapsed.Notes;
-                }
 
                 if (inputPcm.Length > 0)
                 {
@@ -203,7 +194,7 @@ internal static class ListenAppCommand
                     lock (gate) { currentMic = null; }
                     mic.Dispose();
 
-                    FinalizeRecording(result, timestamp, opts.Record, opts.SkipSilence);
+                    FinalizeRecording(result, timestamp, opts.Record);
                     server.PublishTakeReady(); // every take file is now written; safe for the browser to fetch
                     Thread.Sleep(TimeSpan.FromSeconds(1)); // let the final SSE push reach the browser
 
@@ -226,7 +217,7 @@ internal static class ListenAppCommand
                 logBuffer.Clear();
                 micSource.Start();
                 var result = listenCmd.Run(micSource, (int)Math.Round(tempoBpm), outDir, cts.Token);
-                FinalizeRecording(result, timestamp, record, skipSilence);
+                FinalizeRecording(result, timestamp, record);
             }
         }
         finally
@@ -241,17 +232,17 @@ internal static class ListenAppCommand
     // writeup and its non-scaling caveat): --view opens the browser Start/Stop loop; without --view
     // it's a single headless take from launch to Ctrl+C. Routes to whichever the caller asked for.
     private static int RunPolyphonic(
-        string outDir, double tempoBpm, bool view, bool record, bool skipSilence, string? soundfontPath,
+        string outDir, double tempoBpm, bool view, bool record, bool noteNames, string? soundfontPath,
         TextWriter stdout, TextWriter stderr, StringBuilder logBuffer) =>
         view
-            ? RunPolyphonicView(outDir, tempoBpm, record, skipSilence, soundfontPath, stdout, stderr, logBuffer)
-            : RunPolyphonicHeadless(outDir, tempoBpm, record, skipSilence, soundfontPath, stdout, logBuffer);
+            ? RunPolyphonicView(outDir, tempoBpm, record, soundfontPath, stdout, stderr, logBuffer)
+            : RunPolyphonicHeadless(outDir, tempoBpm, record, noteNames, soundfontPath, stdout, logBuffer);
 
     // SINGLE-TAKE browser loop: the mic starts recording the moment this runs, waits for the browser
     // Start button per take (mirroring the mono --view loop), captures until Stop (or Ctrl+C), saves
     // score.mid/score.musicxml, then idles for the next Start. Ctrl+C exits.
     private static int RunPolyphonicView(
-        string outDir, double tempoBpm, bool record, bool skipSilence, string? soundfontPath,
+        string outDir, double tempoBpm, bool record, string? soundfontPath,
         TextWriter stdout, TextWriter stderr, StringBuilder logBuffer)
     {
         using var server = new LiveNotationServer(Path.Combine(AppContext.BaseDirectory, "wwwroot"), outDirPath: outDir);
@@ -276,7 +267,7 @@ internal static class ListenAppCommand
             () => new MeltySynthSynthesizer(SoundFontLocator.Resolve(soundfontPath)));
 
         // Same browser Start/Stop loop shape as the mono --view path: stay idle until the Start button
-        // fires (capturing that take's per-recording Record/Skip-silence options), capture until the
+        // fires (capturing that take's per-recording Record/Note-names options), capture until the
         // Stop button (or Ctrl+C) stops the mic, save, then wait for the next Start.
         var startSignal = new SemaphoreSlim(0);
         var gate = new object();
@@ -320,11 +311,11 @@ internal static class ListenAppCommand
             mic.Start();
             // Drains until the Stop button or Ctrl+C ends the mic frames, then writes
             // raw.mid/score.mid/score.musicxml and returns the take's raw events + captured frames.
-            LivePolyphonicResult result = view.Run(levelSource, exitCts.Token);
+            LivePolyphonicResult result = view.Run(levelSource, exitCts.Token, opts.NoteNames);
             lock (gate) { currentMic = null; }
             mic.Dispose();
 
-            FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, opts.Record, opts.SkipSilence);
+            FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, opts.Record);
             server.PublishTakeReady(); // every take file is now written; safe for the browser to fetch
             Thread.Sleep(TimeSpan.FromSeconds(1)); // let the final SSE push reach the browser
             lock (gate) { if (exiting) break; }
@@ -335,12 +326,12 @@ internal static class ListenAppCommand
 
     // Headless single take: no server, no browser, no periodic re-transcribe loop -- just drain the
     // mic from launch to Ctrl+C, then one final transcribe + raw.mid/score.mid/score.musicxml write,
-    // finalized (--record/--skip-silence/archive) exactly like the --view loop's per-take path, driven
-    // here by the top-level flags instead of per-take browser options.
+    // finalized (--record/archive) exactly like the --view loop's per-take path, driven here by the
+    // top-level flags instead of per-take browser options.
     // LivePolyphonicView skips its whole periodic-publish machinery when constructed with a null
     // server (see its Run() doc), so this path never pays for repeated whole-buffer inference.
     private static int RunPolyphonicHeadless(
-        string outDir, double tempoBpm, bool record, bool skipSilence, string? soundfontPath,
+        string outDir, double tempoBpm, bool record, bool noteNames, string? soundfontPath,
         TextWriter stdout, StringBuilder logBuffer)
     {
         var rate = new SampleRate(SampleRateHz);
@@ -356,25 +347,25 @@ internal static class ListenAppCommand
         logBuffer.Clear();
         mic.Start();
         // Drains until Ctrl+C stops the mic, then writes raw.mid/score.mid/score.musicxml.
-        LivePolyphonicResult result = view.Run(mic, cts.Token);
+        LivePolyphonicResult result = view.Run(mic, cts.Token, noteNames);
 
-        FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, record, skipSilence);
+        FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, record);
         return 0;
     }
 
     // Mirrors the mono path's local FinalizeRecording: when --record is on, writes input.wav (the
-    // captured mic audio) + recreation.wav (the take's poly notes re-synthesized), optionally
-    // silence-collapsed; ALWAYS archives the take's output files into <outDir>/<timestamp>/ + writes
-    // log.txt. The one wrinkle versus mono: LivePolyphonicResult.RawEvents live at the poly engine's
-    // OWN sample rate (BasicPitchModel.SampleRateHz -- BasicPitchTranscriber resamples internally),
-    // not the mic's -- so they are rescaled to `rate` (the mic rate) first via
-    // LivePolyphonicView.RescaleNotes. That lets SilenceCollapser/RenderCommand/WavFileWriter -- which
-    // all require notes and audio to share ONE declared rate (the Domain's mixed-sample-rate guard,
-    // CLAUDE.md §4 non-negotiable 3) -- be reused completely unchanged, exactly as the mono path uses them.
+    // captured mic audio) + recreation.wav (the take's poly notes re-synthesized); ALWAYS archives
+    // the take's output files into <outDir>/<timestamp>/ + writes log.txt. The one wrinkle versus
+    // mono: LivePolyphonicResult.RawEvents live at the poly engine's OWN sample rate
+    // (BasicPitchModel.SampleRateHz -- BasicPitchTranscriber resamples internally), not the mic's --
+    // so they are rescaled to `rate` (the mic rate) first via LivePolyphonicView.RescaleNotes. That
+    // lets RenderCommand/WavFileWriter -- which require notes and audio to share ONE declared rate
+    // (the Domain's mixed-sample-rate guard, CLAUDE.md §4 non-negotiable 3) -- be reused completely
+    // unchanged, exactly as the mono path uses them.
     private static void FinalizePolyphonicRecording(
         string outDir, SampleRate rate, Lazy<MeltySynthSynthesizer> synthesizer,
         TextWriter stdout, StringBuilder logBuffer,
-        LivePolyphonicResult result, string timestamp, bool doRecord, bool doSkipSilence)
+        LivePolyphonicResult result, string timestamp, bool doRecord)
     {
         if (doRecord)
         {
@@ -382,14 +373,6 @@ internal static class ListenAppCommand
                 ? Framing.ReconstructMono(result.CapturedFrames)
                 : Array.Empty<float>();
             IReadOnlyList<NoteEvent> recreationNotes = LivePolyphonicView.RescaleNotes(result.RawEvents, rate);
-
-            if (doSkipSilence)
-            {
-                var maxSilence = new SampleDuration(rate.Hz / 2, rate); // collapse pauses > 500 ms
-                var collapsed = SilenceCollapser.Collapse(recreationNotes, inputPcm, rate, maxSilence);
-                inputPcm = collapsed.Audio;
-                recreationNotes = collapsed.Notes;
-            }
 
             if (inputPcm.Length > 0)
             {

@@ -6,7 +6,6 @@ Options:
   --out-dir <PATH>     directory to write raw.mid/score.mid/score.musicxml (default: out)
   --view               open a live sheet-music browser view
   --record             also write input.wav + recreation.wav
-  --skip-silence       collapse pauses > 500ms (implies --record)
   --note-names         print a scientific-pitch-name lyric under each note
   --soundfont <PATH>   explicit SoundFont for the --record recreation (auto-discovered otherwise)
   --mono               use the monophonic YIN pipeline instead of the polyphonic default

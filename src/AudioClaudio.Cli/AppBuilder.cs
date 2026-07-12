@@ -289,7 +289,6 @@ public static class AppBuilder
             .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write raw.mid/score.mid/score.musicxml", defaultValue: "out"))
             .WithOption(new CliOption("--view", OptionKind.Flag, "open a live sheet-music browser view"))
             .WithOption(new CliOption("--record", OptionKind.Flag, "also write input.wav + recreation.wav"))
-            .WithOption(new CliOption("--skip-silence", OptionKind.Flag, "collapse pauses > 500ms (implies --record)"))
             .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont for the --record recreation (auto-discovered otherwise)"))
             .WithOption(new CliOption("--mono", OptionKind.Flag, "use the monophonic YIN pipeline instead of the polyphonic default"))

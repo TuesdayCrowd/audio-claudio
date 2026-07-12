@@ -49,7 +49,6 @@ public class WebAssetContentTests
 
         Assert.Contains("id=\"score-title\"", html);
         Assert.Contains("id=\"opt-record\"", html);
-        Assert.Contains("id=\"opt-skip-silence\"", html);
         Assert.Contains("id=\"opt-note-names\"", html);
     }
 

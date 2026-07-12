@@ -166,8 +166,7 @@ public sealed class LiveNotationServer : IDisposable
                 System.Collections.Specialized.NameValueCollection q = ctx.Request.QueryString;
                 bool Flag(string key) => q[key] is "true" or "1";
                 var options = new RecordOptions(
-                    Record: Flag("record") || Flag("skipSilence"), // skip-silence needs audio to de-silence
-                    SkipSilence: Flag("skipSilence"),
+                    Record: Flag("record"),
                     NoteNames: Flag("noteNames"),
                     Title: string.IsNullOrWhiteSpace(q["title"]) ? null : q["title"]);
                 try { StartRequested?.Invoke(options); } catch { /* best-effort control signal */ }

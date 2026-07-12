@@ -6,10 +6,10 @@ using Xunit;
 namespace AudioClaudio.Tests.Cli;
 
 /// <summary>
-/// The one piece of the polyphonic `listen` engine's --record/--skip-silence restoration
+/// The one piece of the polyphonic `listen` engine's --record restoration
 /// (<see cref="LivePolyphonicView.RescaleNotes"/>) that is pure and device-free: converting a note
 /// list declared at one <see cref="SampleRate"/> (the poly engine's own, internally-resampled rate)
-/// into another (the mic's) by an exact ratio, so rate-sensitive helpers downstream (SilenceCollapser,
+/// into another (the mic's) by an exact ratio, so rate-sensitive helpers downstream (e.g.
 /// ISynthesizer.Render) that require notes and audio to share one declared rate can be reused unchanged.
 /// </summary>
 public class LivePolyphonicViewRescaleNotesTests

@@ -22,7 +22,7 @@ namespace AudioClaudio.Cli.Commands;
 /// not the mic's, since <c>BasicPitchTranscriber</c> resamples internally) -- and
 /// <paramref name="CapturedFrames"/> is the raw mic audio (at the mic's declared rate). Together they
 /// are everything <c>ListenAppCommand</c> needs to mirror the monophonic path's
-/// --record/--skip-silence/archive machinery for the polyphonic engine.
+/// --record/archive machinery for the polyphonic engine.
 /// </summary>
 public sealed record LivePolyphonicResult(IReadOnlyList<NoteEvent> RawEvents, IReadOnlyList<Frame> CapturedFrames);
 
@@ -59,7 +59,7 @@ public sealed record LivePolyphonicResult(IReadOnlyList<NoteEvent> RawEvents, IR
 /// mono <c>--view</c> loop; the headless (no <c>--view</c>) path just runs one take from launch to
 /// Ctrl+C with a null server. <see cref="Run"/> RETURNS the take's raw poly events and captured frames
 /// (see <see cref="LivePolyphonicResult"/>) precisely so the caller can layer the mono path's
-/// --record/--skip-silence/archive machinery on top -- this class itself stays scoped to
+/// --record/archive machinery on top -- this class itself stays scoped to
 /// capture + transcribe + raw.mid/score.mid/score.musicxml.
 /// </summary>
 public sealed class LivePolyphonicView : IDisposable
@@ -77,6 +77,12 @@ public sealed class LivePolyphonicView : IDisposable
     private readonly Action<string> _print;
     private readonly BasicPitchTranscriber _transcriber;
     private readonly FrameAccumulator _accumulator = new();
+
+    // Set fresh at the top of each take's Run() -- the per-take --note-names choice (mirrors the
+    // mono path's per-take RecordOptions.NoteNames) -- and read by both GrandStaffMusicXmlWriter
+    // sites below (the periodic live-publish tick and the final write), so a take's live view and
+    // its saved score.musicxml always agree on whether note-name lyrics are on.
+    private bool _noteNames;
 
     /// <param name="server">
     /// The live-notation server to periodically republish to, or <c>null</c> for a headless take
@@ -101,12 +107,16 @@ public sealed class LivePolyphonicView : IDisposable
     /// regardless of <paramref name="ct"/>'s state, so it can never keep running after this method
     /// returns. Returns the take's raw poly events and captured frames (<see cref="LivePolyphonicResult"/>).
     /// </summary>
-    public LivePolyphonicResult Run(IAudioSource source, CancellationToken ct)
+    /// <param name="noteNames">This take's --note-names choice: when true, both the periodic live
+    /// republish and the final score.musicxml carry a scientific-pitch-name lyric under each note
+    /// (mirrors the mono path's per-take <c>RecordOptions.NoteNames</c>).</param>
+    public LivePolyphonicResult Run(IAudioSource source, CancellationToken ct, bool noteNames = false)
     {
         ArgumentNullException.ThrowIfNull(source);
 
         // Reset so one LivePolyphonicView (model loaded once) can serve successive Start/Stop takes.
         _accumulator.Clear();
+        _noteNames = noteNames;
         _print(_server is not null
             ? "Recording (polyphonic, re-transcribing ~every 1.6s). Press Stop in the browser (or Ctrl+C) to save."
             : "Recording (polyphonic). Press Ctrl+C to stop and save.");
@@ -179,7 +189,7 @@ public sealed class LivePolyphonicView : IDisposable
                 return;
             }
 
-            string xml = new GrandStaffMusicXmlWriter().WriteToString(grandStaff);
+            string xml = new GrandStaffMusicXmlWriter(_noteNames).WriteToString(grandStaff);
             _server?.PublishScoreXml(xml);
             _print($"live poly: republished ({raw.Count} notes, {grandStaff.Measures.Count} bars, {snapshot.Count} frames buffered).");
         }
@@ -213,7 +223,7 @@ public sealed class LivePolyphonicView : IDisposable
             return new LivePolyphonicResult(rawEvents, snapshot);
         }
 
-        string xml = new GrandStaffMusicXmlWriter().WriteToString(grandStaff);
+        string xml = new GrandStaffMusicXmlWriter(_noteNames).WriteToString(grandStaff);
         _server?.PublishScoreXml(xml);
 
         IReadOnlyList<NoteEvent> quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, MakeGrid());
@@ -269,8 +279,8 @@ public sealed class LivePolyphonicView : IDisposable
     /// across rates silently (the Domain's mixed-sample-rate non-negotiable, CLAUDE.md §4) -- this performs
     /// the explicit, exact conversion that <see cref="BasicPitchTranscriber"/>'s internal resampling makes
     /// necessary before <see cref="LivePolyphonicResult.RawEvents"/> can be handed to rate-sensitive helpers
-    /// (e.g. <c>SilenceCollapser</c>, <c>ISynthesizer.Render</c>) that require notes and audio to share ONE
-    /// declared rate. A no-op (returns <paramref name="notes"/> unchanged) when the list is empty.
+    /// (e.g. <c>ISynthesizer.Render</c>) that require notes and audio to share ONE declared rate. A no-op
+    /// (returns <paramref name="notes"/> unchanged) when the list is empty.
     /// </summary>
     public static IReadOnlyList<NoteEvent> RescaleNotes(IReadOnlyList<NoteEvent> notes, SampleRate targetRate)
     {

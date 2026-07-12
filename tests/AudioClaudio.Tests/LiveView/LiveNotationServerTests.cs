@@ -94,30 +94,12 @@ public class LiveNotationServerTests
         using var http = new HttpClient();
 
         var response = await http.PostAsync(
-            server.BaseUrl + "record/start?noteNames=true&title=Hello%20World&skipSilence=true", content: null);
+            server.BaseUrl + "record/start?record=true&noteNames=true&title=Hello%20World", content: null);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.True(captured.NoteNames);
-        Assert.True(captured.SkipSilence);
-        Assert.True(captured.Record); // skip-silence implies record
-        Assert.Equal("Hello World", captured.Title);
-    }
-
-    [Fact]
-    [Trait("Category", "Fast")]
-    public async Task PostToRecordStartWithOnlyRecordFlagDoesNotImplySkipSilence()
-    {
-        using var server = new LiveNotationServer(WebRoot);
-        RecordOptions captured = default;
-        server.StartRequested = opts => captured = opts;
-        server.Start();
-        using var http = new HttpClient();
-
-        var response = await http.PostAsync(server.BaseUrl + "record/start?record=true", content: null);
-
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.True(captured.Record);
-        Assert.False(captured.SkipSilence);
+        Assert.Equal("Hello World", captured.Title);
     }
 
     [Fact]
