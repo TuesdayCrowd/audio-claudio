@@ -1,0 +1,12 @@
+Usage:
+  claudio render <input.mid> <output.wav> [options]
+
+Arguments:
+  <input.mid>    the MIDI file to render
+  <output.wav>   the WAV file to write
+
+Options:
+  --soundfont <PATH>   explicit SoundFont path (auto-discovered otherwise)
+
+Example:
+  claudio render song.mid song.wav

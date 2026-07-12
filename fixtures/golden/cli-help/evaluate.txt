@@ -1,0 +1,14 @@
+Usage:
+  claudio evaluate <candidate.mid> <reference.mid> [options]
+
+Arguments:
+  <candidate.mid>   the transcription to evaluate
+  <reference.mid>   the ground-truth reference
+
+Options:
+  --onset-tolerance-ms <DOUBLE>   onset matching tolerance in ms (default 50)
+  --align                         cancel a global tempo ratio before scoring
+  --warp                          DTW-warp to also remove local rubato (wins over --align)
+
+Example:
+  claudio evaluate out/score.mid reference.mid --align
