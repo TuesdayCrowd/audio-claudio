@@ -1,0 +1,26 @@
+OpenSheetMusicDisplay (OSMD) -- License
+
+This project's package.json declares "license": "BSD-3-Clause" (SPDX identifier),
+confirmed independently by GitHub's repository license detector (spdx_id:
+"BSD-3-Clause") and by the npm registry's published metadata for this exact
+version. The upstream LICENSE file's own text (reproduced verbatim below, byte
+for byte, from the source repository) does not itself contain the word "BSD" --
+this header line is added purely so that fact is visible at a glance; it does
+not alter the legal text below in any way.
+
+Source: https://raw.githubusercontent.com/opensheetmusicdisplay/opensheetmusicdisplay/2.0.0/LICENSE
+Version: 2.0.0
+
+---- verbatim LICENSE text below ----
+
+Copyright 2019 PhonicScore
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

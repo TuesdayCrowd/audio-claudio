@@ -1,0 +1,332 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "AudioClaudio.Cli/1.0.0": {
+        "dependencies": {
+          "AudioClaudio.Application": "1.0.0",
+          "AudioClaudio.Domain": "1.0.0",
+          "AudioClaudio.Infrastructure": "1.0.0"
+        },
+        "runtime": {
+          "AudioClaudio.Cli.dll": {}
+        }
+      },
+      "Melanchall.DryWetMidi/8.0.3": {
+        "runtime": {
+          "lib/netstandard2.0/Melanchall.DryWetMidi.dll": {
+            "assemblyVersion": "8.0.3.0",
+            "fileVersion": "8.0.3.0"
+          }
+        }
+      },
+      "MeltySynth/2.4.1": {
+        "runtime": {
+          "lib/netstandard2.1/MeltySynth.dll": {
+            "assemblyVersion": "2.4.1.0",
+            "fileVersion": "2.4.1.0"
+          }
+        }
+      },
+      "Microsoft.ML.OnnxRuntime/1.27.0": {
+        "dependencies": {
+          "Microsoft.ML.OnnxRuntime.Managed": "1.27.0"
+        },
+        "runtimeTargets": {
+          "runtimes/android/native/onnxruntime.aar": {
+            "rid": "android",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/ios/native/onnxruntime.xcframework.zip": {
+            "rid": "ios",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-arm64/native/libonnxruntime.so": {
+            "rid": "linux-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-arm64/native/libonnxruntime_providers_shared.so": {
+            "rid": "linux-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-x64/native/libonnxruntime.so": {
+            "rid": "linux-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-x64/native/libonnxruntime_providers_shared.so": {
+            "rid": "linux-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/osx-arm64/native/libonnxruntime.dylib": {
+            "rid": "osx-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-arm64/native/onnxruntime.dll": {
+            "rid": "win-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-arm64/native/onnxruntime.lib": {
+            "rid": "win-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-arm64/native/onnxruntime_providers_shared.dll": {
+            "rid": "win-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-arm64/native/onnxruntime_providers_shared.lib": {
+            "rid": "win-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x64/native/onnxruntime.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x64/native/onnxruntime.lib": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x64/native/onnxruntime_providers_shared.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x64/native/onnxruntime_providers_shared.lib": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "Microsoft.ML.OnnxRuntime.Managed/1.27.0": {
+        "dependencies": {
+          "System.Numerics.Tensors": "9.0.0"
+        },
+        "runtime": {
+          "lib/net8.0/Microsoft.ML.OnnxRuntime.dll": {
+            "assemblyVersion": "1.27.0.0",
+            "fileVersion": "1.27.0.0"
+          }
+        }
+      },
+      "org.k2fsa.portaudio.runtime.linux-aarch64/1.0.6": {
+        "runtimeTargets": {
+          "runtimes/linux-arm64/native/libportaudio.so": {
+            "rid": "linux-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "org.k2fsa.portaudio.runtime.linux-x64/1.0.6": {
+        "runtimeTargets": {
+          "runtimes/linux-x64/native/libportaudio.so": {
+            "rid": "linux-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "org.k2fsa.portaudio.runtime.osx-arm64/1.0.6": {
+        "runtimeTargets": {
+          "runtimes/osx-arm64/native/libportaudio.dylib": {
+            "rid": "osx-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "org.k2fsa.portaudio.runtime.osx-x64/1.0.6": {
+        "runtimeTargets": {
+          "runtimes/osx-x64/native/libportaudio.dylib": {
+            "rid": "osx-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "org.k2fsa.portaudio.runtime.win-x64/1.0.6": {
+        "runtimeTargets": {
+          "runtimes/win-x64/native/portaudio.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "PortAudioSharp2/1.0.6": {
+        "dependencies": {
+          "org.k2fsa.portaudio.runtime.linux-aarch64": "1.0.6",
+          "org.k2fsa.portaudio.runtime.linux-x64": "1.0.6",
+          "org.k2fsa.portaudio.runtime.osx-arm64": "1.0.6",
+          "org.k2fsa.portaudio.runtime.osx-x64": "1.0.6",
+          "org.k2fsa.portaudio.runtime.win-x64": "1.0.6"
+        },
+        "runtime": {
+          "lib/net8.0/PortAudioSharp.dll": {
+            "assemblyVersion": "1.0.6.0",
+            "fileVersion": "1.0.6.0"
+          }
+        }
+      },
+      "System.Numerics.Tensors/9.0.0": {
+        "runtime": {
+          "lib/net9.0/System.Numerics.Tensors.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.24.52809"
+          }
+        }
+      },
+      "AudioClaudio.Application/1.0.0": {
+        "dependencies": {
+          "AudioClaudio.Domain": "1.0.0"
+        },
+        "runtime": {
+          "AudioClaudio.Application.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "AudioClaudio.Domain/1.0.0": {
+        "runtime": {
+          "AudioClaudio.Domain.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "AudioClaudio.Infrastructure/1.0.0": {
+        "dependencies": {
+          "AudioClaudio.Application": "1.0.0",
+          "AudioClaudio.Domain": "1.0.0",
+          "Melanchall.DryWetMidi": "8.0.3",
+          "MeltySynth": "2.4.1",
+          "Microsoft.ML.OnnxRuntime": "1.27.0",
+          "PortAudioSharp2": "1.0.6"
+        },
+        "runtime": {
+          "AudioClaudio.Infrastructure.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "AudioClaudio.Cli/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Melanchall.DryWetMidi/8.0.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-U+Ubol4MhieY2xgZGqcI8H2F/4HWzWKq8/WPHd1SXS7WXaHyEWMnj56vtxKOJFM5FLbj+NOUny5+X2KAzI0YUg==",
+      "path": "melanchall.drywetmidi/8.0.3",
+      "hashPath": "melanchall.drywetmidi.8.0.3.nupkg.sha512"
+    },
+    "MeltySynth/2.4.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-5Rzqh2H8bSZ+bna5hMbsQwEdqdaCEIkBaWzCSyKa5VV5oDZ9Zfi53dkGrUqdkQGT45Ltmv1WSzFlgmI9cD1I1w==",
+      "path": "meltysynth/2.4.1",
+      "hashPath": "meltysynth.2.4.1.nupkg.sha512"
+    },
+    "Microsoft.ML.OnnxRuntime/1.27.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-QdVsm9tkp1M7lmI5F3uLn/Ruc8I4FCMtFVD0ohmWo7JvC7YsZgAu1S3CEEJhZr1YB+lCPWXa7tpBDbQLCZGPTg==",
+      "path": "microsoft.ml.onnxruntime/1.27.0",
+      "hashPath": "microsoft.ml.onnxruntime.1.27.0.nupkg.sha512"
+    },
+    "Microsoft.ML.OnnxRuntime.Managed/1.27.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-9HZjUh9j/gIe4SN/9e4sg/GeTy+JWaPDGzLgz01FQRaj3/SzwjGFc76DMW+wb3ZU7mwfT4lx8GUqwIDgAaHCpw==",
+      "path": "microsoft.ml.onnxruntime.managed/1.27.0",
+      "hashPath": "microsoft.ml.onnxruntime.managed.1.27.0.nupkg.sha512"
+    },
+    "org.k2fsa.portaudio.runtime.linux-aarch64/1.0.6": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-kha8bJ1Cqte5pe+V+IWK79OVfdgu0jeRFGlAVd1Iw0JBv04X238t7FVR3GPHK2ix7c1Vqb8yJhneEAkVfrEeeQ==",
+      "path": "org.k2fsa.portaudio.runtime.linux-aarch64/1.0.6",
+      "hashPath": "org.k2fsa.portaudio.runtime.linux-aarch64.1.0.6.nupkg.sha512"
+    },
+    "org.k2fsa.portaudio.runtime.linux-x64/1.0.6": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-0D0ECSNhKIAGWjrZuDkBS2GGuQD5l+Kqbfg/DSGQYxaVu/6Zc4fCOEf9uTwOHLyaSp3vINWH8Nw68nqctcqtRw==",
+      "path": "org.k2fsa.portaudio.runtime.linux-x64/1.0.6",
+      "hashPath": "org.k2fsa.portaudio.runtime.linux-x64.1.0.6.nupkg.sha512"
+    },
+    "org.k2fsa.portaudio.runtime.osx-arm64/1.0.6": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-BvxoZ5VtvC+R/gZSh5pzOAeoCDd6/1kfO4HKYavpuD179ZCOTwFZF3Zy6x5TDe0smX+NOwqqcHYswTf8IK5U0g==",
+      "path": "org.k2fsa.portaudio.runtime.osx-arm64/1.0.6",
+      "hashPath": "org.k2fsa.portaudio.runtime.osx-arm64.1.0.6.nupkg.sha512"
+    },
+    "org.k2fsa.portaudio.runtime.osx-x64/1.0.6": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-RuhJuQ1PXD6XEP/C3JqGkBXkYMDrG248Xkfo7TKUj9anOjhEWrf+B+TAuWImwbtPpYOv2v/MC0wDh/E80o/Chw==",
+      "path": "org.k2fsa.portaudio.runtime.osx-x64/1.0.6",
+      "hashPath": "org.k2fsa.portaudio.runtime.osx-x64.1.0.6.nupkg.sha512"
+    },
+    "org.k2fsa.portaudio.runtime.win-x64/1.0.6": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-IUmJ8Nw9G+D09OETUD39GLuFD3+uuZrXhy5iWS6Md0VZVtnKcC2gHweVUyOSIr/MZRLgSA+58PfixFLiIo8YUQ==",
+      "path": "org.k2fsa.portaudio.runtime.win-x64/1.0.6",
+      "hashPath": "org.k2fsa.portaudio.runtime.win-x64.1.0.6.nupkg.sha512"
+    },
+    "PortAudioSharp2/1.0.6": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-8wjpXYVi9G0xp04veuOOSqu5YHekf4ZfuC77vESj2Ccv1SJ6SUxk33NEGTzS1No4INNucZ7864hdDCimbKvHqQ==",
+      "path": "portaudiosharp2/1.0.6",
+      "hashPath": "portaudiosharp2.1.0.6.nupkg.sha512"
+    },
+    "System.Numerics.Tensors/9.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A==",
+      "path": "system.numerics.tensors/9.0.0",
+      "hashPath": "system.numerics.tensors.9.0.0.nupkg.sha512"
+    },
+    "AudioClaudio.Application/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "AudioClaudio.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "AudioClaudio.Infrastructure/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

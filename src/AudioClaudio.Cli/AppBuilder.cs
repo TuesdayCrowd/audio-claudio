@@ -1,5 +1,15 @@
+using System.Linq;
 using System.Text;
 using AudioClaudio.Cli.Cli;
+using AudioClaudio.Cli.Commands;
+using AudioClaudio.Domain;
+using AudioClaudio.Domain.Evaluation;
+using AudioClaudio.Domain.Polyphony;
+using AudioClaudio.Domain.Spectral;
+using AudioClaudio.Infrastructure.Audio;
+using AudioClaudio.Infrastructure.Midi;
+using AudioClaudio.Infrastructure.MusicXml;
+using AudioClaudio.Infrastructure.Synthesis;
 
 namespace AudioClaudio.Cli;
 
@@ -28,6 +38,17 @@ public static class AppBuilder
             interactiveTerminal: !Console.IsOutputRedirected,
             noColorEnvSet: !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NO_COLOR")),
             noColorFlag: noColor);
+
+    private static readonly SampleRate Rate = new(44100);
+
+    /// <summary>S5.5's handler-level counterpart: turn a missing input file into one clean
+    /// sentence via the handler's OWN stderr writer, before any reader/adapter touches the path.</summary>
+    private static bool TryRequireFile(string path, TextWriter stderr, AnsiStyler styler)
+    {
+        if (File.Exists(path)) return true;
+        stderr.Write($"{styler.Error("error:")} input file '{path}' not found\n");
+        return false;
+    }
 
     public static CommandLineApp Build(StringBuilder logBuffer, bool noColor)
     {
@@ -60,20 +81,69 @@ public static class AppBuilder
             .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
             .WithOption(new CliOption("--triplets", OptionKind.Flag, "engrave eighth-note triplets"))
             .WithExample("claudio notate performance.mid --out-dir out");
-        app.Register(notate, (p, stdout, stderr) => throw new NotImplementedException("wired in Task 19"));
+        app.Register(notate, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("input.mid"), stderr, styler)) return 1;
+
+            string outDir = p.Path("out-dir") ?? ".";
+            Directory.CreateDirectory(outDir);
+            bool noteNames = p.Flag("note-names");
+
+            if (!KeyOption.Validate(p.Int("key"), out string? keyError))
+            {
+                stderr.Write($"{styler.Error("error:")} {keyError}\n");
+                return 1;
+            }
+
+            var read = MidiFileReader.ReadFile(p.Argument("input.mid"), Rate, flattenPedal: false);
+            int key = p.Int("key") ?? KeyDetector.Detect(read.Events.Select(e => e.Pitch).ToList());
+            double? tempoArg = p.Double("tempo");
+            Tempo scoreTempo = tempoArg is null
+                ? TempoEstimator.Estimate(read.Events, read.Tempo)
+                : new Tempo(tempoArg.Value);
+            var notateSubdivision = p.Flag("triplets") ? Subdivision.Twelfth : Subdivision.Sixteenth;
+            var grid = new QuantizationGrid(Rate, scoreTempo, TimeSignature.FourFour, notateSubdivision);
+            var chordWindow = new SampleDuration(Rate.Hz / 20, Rate);
+            var grandStaff = PolyphonicQuantizer.Quantize(read.Events, grid, chordWindow);
+            var writer = new DryWetMidiWriter();
+            var pedalMarks = read.PedalChanges.Select(c => ((int)grid.SamplesToTick(c.Sample), c.Down)).ToList();
+            using (var mx = File.Create(Path.Combine(outDir, "score.musicxml")))
+                new GrandStaffMusicXmlWriter(noteNames, fifths: key).Write(grandStaff, mx, pedalMarks);
+            var quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, grid);
+            using (var score = File.Create(Path.Combine(outDir, "score.mid")))
+                writer.Write(quantized, scoreTempo, score);
+            stdout.WriteLine($"Notated {read.Events.Count} notes ({scoreTempo.BeatsPerMinute:F0} BPM{(tempoArg is null ? " estimated" : "")}) -> score.musicxml + score.mid (grand staff, {grandStaff.Measures.Count} bars, key {key:+#;-#;0}{(p.Int("key") is null ? " detected" : " declared")})");
+            return 0;
+        });
 
         var render = new CliCommand("render", "Render a MIDI file to a deterministic WAV.")
             .WithArgument(new CliArgument("input.mid", "the MIDI file to render"))
             .WithArgument(new CliArgument("output.wav", "the WAV file to write"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont path (auto-discovered otherwise)"))
             .WithExample("claudio render song.mid song.wav");
-        app.Register(render, (p, stdout, stderr) => throw new NotImplementedException("wired in Task 15"));
+        app.Register(render, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("input.mid"), stderr, styler)) return 1;
+            var notes = MidiFileReader.ReadFile(p.Argument("input.mid"), Rate).Events;
+            var synth = new MeltySynthSynthesizer(
+                AudioClaudio.Cli.Composition.SoundFontLocator.Resolve(p.Path("soundfont")));
+            RenderCommand.RenderToWav(notes, synth, Rate, p.Argument("output.wav"));
+            return 0;
+        });
 
         var play = new CliCommand("play", "Play a MIDI file through the default audio device.")
             .WithArgument(new CliArgument("input.mid", "the MIDI file to play"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont path (auto-discovered otherwise)"))
             .WithExample("claudio play song.mid");
-        app.Register(play, (p, stdout, stderr) => throw new NotImplementedException("wired in Task 15"));
+        app.Register(play, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("input.mid"), stderr, styler)) return 1;
+            var notes = MidiFileReader.ReadFile(p.Argument("input.mid"), Rate).Events;
+            var synth = new MeltySynthSynthesizer(
+                AudioClaudio.Cli.Composition.SoundFontLocator.Resolve(p.Path("soundfont")));
+            PlayCommand.Play(notes, synth, Rate);
+            return 0;
+        });
 
         var evaluate = new CliCommand("evaluate", "Score a candidate transcription against a reference note-set.")
             .WithArgument(new CliArgument("candidate.mid", "the transcription to evaluate"))
@@ -82,13 +152,51 @@ public static class AppBuilder
             .WithOption(new CliOption("--align", OptionKind.Flag, "cancel a global tempo ratio before scoring"))
             .WithOption(new CliOption("--warp", OptionKind.Flag, "DTW-warp to also remove local rubato (wins over --align)"))
             .WithExample("claudio evaluate out/score.mid reference.mid --align");
-        app.Register(evaluate, (p, stdout, stderr) => throw new NotImplementedException("wired in Task 16"));
+        app.Register(evaluate, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("candidate.mid"), stderr, styler)) return 1;
+            if (!TryRequireFile(p.Argument("reference.mid"), stderr, styler)) return 1;
+
+            var candidate = MidiFileReader.ReadFile(p.Argument("candidate.mid"), Rate).Events;
+            var reference = MidiFileReader.ReadFile(p.Argument("reference.mid"), Rate).Events;
+            double tolMs = p.Double("onset-tolerance-ms") ?? 50.0;
+
+            bool warp = p.Flag("warp");
+            bool align = p.Flag("align");
+            IReadOnlyList<NoteEvent> evalCandidate = candidate;
+            if (warp)
+            {
+                evalCandidate = OnsetAlignment.DtwWarp(candidate, reference);
+                stdout.WriteLine("(candidate DTW-warped to the reference timeline — local rubato removed)");
+            }
+            else if (align)
+            {
+                evalCandidate = OnsetAlignment.GlobalScale(candidate, reference);
+                stdout.WriteLine("(candidate globally time-aligned to the reference span)");
+            }
+
+            EvaluateCommand.Run(evalCandidate, reference, new NoteMatchOptions(tolMs / 1000.0), stdout.WriteLine);
+            return 0;
+        });
 
         var evaluateAudio = new CliCommand("evaluate-audio", "Compare two WAVs by pitch-content (chroma) similarity.")
             .WithArgument(new CliArgument("original.wav", "the original recording"))
             .WithArgument(new CliArgument("reproduction.wav", "the re-synthesized recording"))
             .WithExample("claudio evaluate-audio input.wav recreation.wav");
-        app.Register(evaluateAudio, (p, stdout, stderr) => throw new NotImplementedException("wired in Task 17"));
+        app.Register(evaluateAudio, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("original.wav"), stderr, styler)) return 1;
+            if (!TryRequireFile(p.Argument("reproduction.wav"), stderr, styler)) return 1;
+
+            const int FrameSize = 4096, Hop = 2048;
+            using var audioA = WavAudioSource.FromFile(p.Argument("original.wav"), new FrameParameters(FrameSize, Hop));
+            using var audioB = WavAudioSource.FromFile(p.Argument("reproduction.wav"), new FrameParameters(FrameSize, Hop));
+            var chromaA = Chromagram.FromFrames(audioA.Frames, FrameSize);
+            var chromaB = Chromagram.FromFrames(audioB.Frames, FrameSize);
+            double similarity = ChromaSimilarity.Compare(chromaA, chromaB);
+            stdout.WriteLine($"Chroma (pitch-content) similarity: {similarity:P1}  ({chromaA.Count} vs {chromaB.Count} frames)");
+            return 0;
+        });
 
         var listen = new CliCommand("listen", "Transcribe live from the microphone.")
             .WithOption(new CliOption("--tempo", OptionKind.Double, "declared tempo in BPM (auto-estimated if omitted)"))
