@@ -128,6 +128,15 @@ section[aria-label="Live sheet music"] {
   overflow-x: auto;
 }
 
+/* OSMD renders the score as black SVG notation with a transparent background, so in dark mode it
+   would be black-on-dark and unreadable. Sheet music belongs on a white "page" — give the score
+   container a white paper background in BOTH themes so the notation is always legible. */
+#osmd-container {
+  background: #ffffff;
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.75rem;
+}
+
 #take-output {
   display: flex;
   flex-direction: column;

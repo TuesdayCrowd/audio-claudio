@@ -167,7 +167,9 @@ internal static class ListenAppCommand
                     if (cleared.Count > 0)
                         stdout.WriteLine($"Cleared {cleared.Count} previous output file(s) from {outDir}.");
 
-                    var projector = new LiveScoreProjector(grid); // fresh accumulation per recording
+                    // fresh accumulation per recording; estimateTempo makes the live preview track an
+                    // evolving tempo estimate so it converges to the final score instead of jumping on stop.
+                    var projector = new LiveScoreProjector(grid, estimateTempo);
                     LiveNotationServer liveServer = server;
                     var recordingWriter = new MusicXmlScoreWriter(opts.NoteNames, opts.Title);
                     server.ScoreToMusicXml = recordingWriter.WriteToString;

@@ -34,6 +34,19 @@ public class LiveViewPolishAssetTests
 
     [Fact]
     [Trait("Category", "Fast")]
+    public void StylesCssGivesTheScoreAWhitePaperBackgroundSoDarkModeIsLegible()
+    {
+        // OSMD renders black notation on a transparent background; without a white "paper" behind it
+        // the score is black-on-dark and unreadable in dark mode. The #osmd-container must carry a
+        // white background in both themes.
+        string css = File.ReadAllText(Path.Combine(WwwRoot, "styles.css"));
+
+        Assert.Contains("#osmd-container", css);
+        Assert.Contains("background: #ffffff", css);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
     public void IndexHtmlContainsTheVuMeterAndDeviceNameAndStatusBadge()
     {
         string html = File.ReadAllText(Path.Combine(WwwRoot, "index.html"));

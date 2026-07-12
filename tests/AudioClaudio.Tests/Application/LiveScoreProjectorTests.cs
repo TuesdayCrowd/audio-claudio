@@ -104,4 +104,43 @@ public class LiveScoreProjectorTests
             }
         }, iter: 200);
     }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void EstimateTempo_ConvergesTheLivePreviewToTheOnsetTempo_NotTheFallback()
+    {
+        const long gap = 26460; // 0.6 s at 44.1 kHz -> a 100 BPM median inter-onset interval
+        var projector = new LiveScoreProjector(Grid, estimateTempo: true);
+
+        // Below TempoEstimator's 3-note floor the fallback (the grid's 120) is kept, so the first
+        // couple of notes don't make the staff re-flow.
+        Assert.Equal(120.0, projector.Add(Note(60, 0)).Tempo.BeatsPerMinute);
+        Assert.Equal(120.0, projector.Add(Note(62, gap)).Tempo.BeatsPerMinute);
+
+        // From the third note on, the live tempo tracks the estimate (100), so the preview lands on
+        // the same tempo the batch pass estimates on stop instead of jumping from 120.
+        Assert.Equal(100.0, projector.Add(Note(64, 2 * gap)).Tempo.BeatsPerMinute);
+
+        Score last = projector.Add(Note(65, 3 * gap));
+        Assert.Equal(100.0, last.Tempo.BeatsPerMinute);
+        // The live tempo IS TempoEstimator over the same notes with the same fallback the batch pass
+        // uses -- that identity is precisely why the live preview and the final score converge.
+        Assert.Equal(TempoEstimator.Estimate(projector.Events, new Tempo(120)).BeatsPerMinute,
+                     last.Tempo.BeatsPerMinute);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void WithoutEstimateTempo_TheFixedGridTempoIsKept()
+    {
+        const long gap = 26460; // would imply 100 BPM if estimated
+        var projector = new LiveScoreProjector(Grid); // estimateTempo defaults to false
+
+        projector.Add(Note(60, 0));
+        projector.Add(Note(62, gap));
+        projector.Add(Note(64, 2 * gap));
+        Score s = projector.Add(Note(65, 3 * gap));
+
+        Assert.Equal(120.0, s.Tempo.BeatsPerMinute); // unchanged from the grid -- original behavior preserved
+    }
 }
