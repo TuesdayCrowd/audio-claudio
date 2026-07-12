@@ -21,10 +21,14 @@ namespace AudioClaudio.Cli.Commands;
 /// <c>AppBuilder.Build</c> registration lambda for readability. This is the composition root
 /// for live capture (Section 7 / R10.4): the mic (<see cref="PortAudioAudioSource"/>), the
 /// optional live-notation server (<see cref="LiveNotationServer"/>, <c>--view</c>), and the
-/// Start/Stop recording loop are constructed here and only here. Faithfully ports the
-/// pre-Stage-5 <c>Program.cs</c> `case "listen"` block onto the <see cref="ParsedArgs"/> /
-/// stdout/stderr handler signature -- behavior is unchanged, only the argument-reading
-/// mechanism is.
+/// Start/Stop recording loop are constructed here and only here.
+///
+/// POLYPHONIC (<see cref="LivePolyphonicView"/>) is the default engine, mirroring `transcribe`'s
+/// poly-default/`--mono` pattern -- both with `--view` (browser Start/Stop loop) and headless
+/// (single take, launch to Ctrl+C). `--mono` opts into the original monophonic path (faithfully
+/// ported from the pre-Stage-5 <c>Program.cs</c> `case "listen"` block onto the
+/// <see cref="ParsedArgs"/> / stdout/stderr handler signature -- behavior there is unchanged,
+/// only the argument-reading mechanism is).
 ///
 /// Opening a real microphone device cannot be exercised in CI (no audio device is available,
 /// same as <see cref="PortAudioAudioSource.Start"/> itself) -- this class's device-touching
@@ -43,26 +47,20 @@ internal static class ListenAppCommand
         double? tempoArg = p.Double("tempo");
         bool estimateTempo = tempoArg is null;
         double tempoBpm = tempoArg ?? 120.0;
-        string outDir = p.Path("out-dir") ?? ".";
+        string outDir = p.Path("out-dir") ?? "out";
         Directory.CreateDirectory(outDir);
         bool view = p.Flag("view");
         bool skipSilence = p.Flag("skip-silence");
         bool record = p.Flag("record") || skipSilence; // --skip-silence implies --record
         bool noteNames = p.Flag("note-names");
 
-        // Prototype fork: near-real-time POLYPHONIC live view (--poly). Entirely separate from the
-        // monophonic path below -- nothing here touches TranscriptionPipeline/LiveTranscriptionSession,
-        // and nothing below runs when --poly is set, so the proven mono `listen --view` path is
-        // completely unaffected by this branch's existence.
-        if (p.Flag("poly"))
+        // Polyphonic is the DEFAULT `listen` engine (mirrors `transcribe`'s poly-default/--mono
+        // pattern); --mono opts into the proven monophonic path below, entirely unchanged -- nothing
+        // here touches TranscriptionPipeline/LiveTranscriptionSession, and nothing below runs unless
+        // --mono is set, so the mono path is completely unaffected by this branch's existence.
+        if (!p.Flag("mono"))
         {
-            if (!view)
-            {
-                stderr.WriteLine("error: --poly requires --view (there is nowhere to display the live grand-staff prototype without it).");
-                return 1;
-            }
-
-            return RunPolyphonicPrototype(outDir, tempoBpm, stdout, stderr, logBuffer);
+            return RunPolyphonic(outDir, tempoBpm, view, stdout, stderr, logBuffer);
         }
 
         var rate = new SampleRate(SampleRateHz);
@@ -238,11 +236,18 @@ internal static class ListenAppCommand
         return 0;
     }
 
-    // The --poly prototype fork (see LivePolyphonicView's doc for the full design/threading writeup
-    // and its non-scaling caveat). SINGLE-TAKE only: the mic starts recording the moment this runs,
-    // Waits for the browser Start button per take (mirroring the mono --view loop), captures until Stop
-    // (or Ctrl+C), saves score.mid/score.musicxml, then idles for the next Start. Ctrl+C exits.
-    private static int RunPolyphonicPrototype(string outDir, double tempoBpm, TextWriter stdout, TextWriter stderr, StringBuilder logBuffer)
+    // The polyphonic default's two shapes (see LivePolyphonicView's doc for the full design/threading
+    // writeup and its non-scaling caveat): --view opens the browser Start/Stop loop; without --view
+    // it's a single headless take from launch to Ctrl+C. Routes to whichever the caller asked for.
+    private static int RunPolyphonic(string outDir, double tempoBpm, bool view, TextWriter stdout, TextWriter stderr, StringBuilder logBuffer) =>
+        view
+            ? RunPolyphonicView(outDir, tempoBpm, stdout, stderr, logBuffer)
+            : RunPolyphonicHeadless(outDir, tempoBpm, stdout, logBuffer);
+
+    // SINGLE-TAKE browser loop: the mic starts recording the moment this runs, waits for the browser
+    // Start button per take (mirroring the mono --view loop), captures until Stop (or Ctrl+C), saves
+    // score.mid/score.musicxml, then idles for the next Start. Ctrl+C exits.
+    private static int RunPolyphonicView(string outDir, double tempoBpm, TextWriter stdout, TextWriter stderr, StringBuilder logBuffer)
     {
         using var server = new LiveNotationServer(Path.Combine(AppContext.BaseDirectory, "wwwroot"), outDirPath: outDir);
         try
@@ -251,17 +256,18 @@ internal static class ListenAppCommand
         }
         catch (Exception ex)
         {
-            stderr.WriteLine($"error: live notation view unavailable ({ex.Message}); aborting the --poly prototype.");
+            stderr.WriteLine($"error: live notation view unavailable ({ex.Message}); aborting.");
             return 1;
         }
 
-        stdout.WriteLine($"Live notation view (POLYPHONIC PROTOTYPE): {server.BaseUrl}");
+        stdout.WriteLine($"Live notation view: {server.BaseUrl}");
         stdout.WriteLine("Press Start in the browser to record, Stop to save. Ctrl+C exits (saving a take in progress).");
         TryOpenBrowser(server.BaseUrl);
 
         // Same browser Start/Stop loop shape as the mono --view path: stay idle until the Start button
         // fires, capture until the Stop button (or Ctrl+C) stops the mic, save, then wait for the next
-        // Start. (The prototype ignores the per-take Record/Skip-silence/Note-names options.)
+        // Start. (Per-take Record/Skip-silence/Note-names options are out of scope here -- see the
+        // class doc's "archive machinery" note.)
         var startSignal = new SemaphoreSlim(0);
         var gate = new object();
         PortAudioAudioSource? currentMic = null;
@@ -304,6 +310,26 @@ internal static class ListenAppCommand
             lock (gate) { if (exiting) break; }
         }
 
+        return 0;
+    }
+
+    // Headless single take: no server, no browser, no periodic re-transcribe loop -- just drain the
+    // mic from launch to Ctrl+C, then one final transcribe + score.mid/score.musicxml write.
+    // LivePolyphonicView skips its whole periodic-publish machinery when constructed with a null
+    // server (see its Run() doc), so this path never pays for repeated whole-buffer inference.
+    private static int RunPolyphonicHeadless(string outDir, double tempoBpm, TextWriter stdout, StringBuilder logBuffer)
+    {
+        using var mic = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
+        using var view = new LivePolyphonicView(server: null, outDir, tempoBpm, stdout.WriteLine);
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; mic.Stop(); cts.Cancel(); };
+
+        logBuffer.Clear();
+        mic.Start();
+        // Drains until Ctrl+C stops the mic, then writes score.mid/score.musicxml.
+        view.Run(mic, cts.Token);
+
+        File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
         return 0;
     }
 

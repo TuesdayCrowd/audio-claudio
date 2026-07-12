@@ -307,7 +307,7 @@ public class LiveNotationServerTests
     [Trait("Category", "Fast")]
     public async Task PublishScoreXmlDeliversTheGivenMusicXmlVerbatimToAConnectedClient()
     {
-        // Shape-agnostic path used by the polyphonic live-view prototype (listen --view --poly):
+        // Shape-agnostic path used by the polyphonic `listen` engine (the default, `listen --view`):
         // the caller pre-serializes a GrandStaffScore itself, so PublishScoreXml must broadcast the
         // string as-is (base64-wrapped), never touching ScoreToMusicXml/the mono Score serializer.
         using var server = new LiveNotationServer(WebRoot);

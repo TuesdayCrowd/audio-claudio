@@ -11,6 +11,7 @@ const vuMeterFill = document.getElementById("vu-meter-fill");
 const vuMeter = document.getElementById("vu-meter");
 const takeOutput = document.getElementById("take-output");
 const recreationPlayer = document.getElementById("recreation-player");
+const sheetMusicViewport = document.getElementById("sheet-music-viewport");
 
 // The finished-take route (S5.11): GET /files/<name> serves these five whitelisted files
 // from the run's out-dir. Downloads point straight at the route; the player streams from it.
@@ -28,11 +29,17 @@ function setStatus(state, label) {
 
 source.addEventListener("score", (event) => {
   const xml = atob(event.data);
-  osmd.load(xml).then(() => osmd.render());
+  osmd.load(xml).then(() => {
+    osmd.render();
+    // Keep the newest system in view as notes appear: scroll the viewport to the bottom after
+    // every render, so the user watches the live edge rather than the top of the growing score.
+    sheetMusicViewport.scrollTop = sheetMusicViewport.scrollHeight;
+  });
 });
 
 source.addEventListener("clear", () => {
   osmd.clear();
+  sheetMusicViewport.scrollTop = 0; // reset the viewport for the new take's first system
   hideTakeOutput();
 });
 

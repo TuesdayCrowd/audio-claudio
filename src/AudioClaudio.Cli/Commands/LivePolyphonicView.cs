@@ -16,32 +16,38 @@ using AudioClaudio.Infrastructure.Transcription;
 namespace AudioClaudio.Cli.Commands;
 
 /// <summary>
-/// A minimal END-TO-END PROTOTYPE of near-real-time polyphonic live capture (`listen --view --poly`):
-/// while the mic runs, a background loop re-transcribes the WHOLE captured buffer every ~1.64 s with
-/// the existing batch <see cref="BasicPitchTranscriber"/> and publishes the resulting grand-staff
-/// MusicXML to the live view. This is a prototype to judge feel/latency, not a production design --
-/// re-transcribing the whole growing buffer on every tick does NOT scale (inference is roughly
-/// 9 ms per ~2 s model window, so cost grows with session length; fine for a short demo, wrong for a
-/// long one). Production polyphonic live capture needs genuinely incremental inference; that is
-/// explicitly NOT attempted here (see CLAUDE.md's live-capture precedent for the monophonic path,
-/// Step 10 -- this class is the polyphonic analogue of that step's "adapter only" scope, except the
-/// whole-buffer re-transcribe below is the one deliberately non-scaling shortcut).
+/// The polyphonic live-capture engine behind `listen` (the DEFAULT engine; `--mono` opts into the
+/// separate monophonic path instead): while the mic runs, a background loop re-transcribes the WHOLE
+/// captured buffer every ~1.64 s with the existing batch <see cref="BasicPitchTranscriber"/> and
+/// publishes the resulting grand-staff MusicXML to the live view -- but ONLY when a
+/// <see cref="LiveNotationServer"/> is actually attached (<c>listen --view</c>). Given a null server
+/// (headless `listen`, no <c>--view</c>), <see cref="Run"/> skips the periodic loop entirely -- no
+/// background task, no wasted inference -- and just drains the mic to one final transcribe on stop.
+///
+/// The periodic-republish design does NOT scale (inference is roughly 9 ms per ~2 s model window, so
+/// cost grows with session length; fine for a short take, wrong for a long one). Production polyphonic
+/// live capture needs genuinely incremental inference; that is explicitly NOT attempted here (see
+/// CLAUDE.md's live-capture precedent for the monophonic path, Step 10 -- this class is the polyphonic
+/// analogue of that step's "adapter only" scope, except the whole-buffer re-transcribe below is the one
+/// deliberately non-scaling shortcut, kept because it is good enough for a live demo take).
 ///
 /// Threading: the CALLING thread drains <c>source.Frames</c> (a blocking pull -- see
 /// <see cref="FrameAccumulator"/>'s doc and <c>CaptureFrameStream</c>) into a <see cref="FrameAccumulator"/>;
-/// a separate background <see cref="Task"/> wakes every <see cref="TranscribeInterval"/>, takes a
-/// point-in-time <see cref="FrameAccumulator.Snapshot"/> (never holding the accumulator's lock during
-/// inference), reconstructs mono, wraps it in a throwaway in-memory <see cref="IAudioSource"/>, and
-/// calls the (once-constructed, reused) transcriber. When the mic stops -- Ctrl+C or the Stop button,
-/// whichever the caller wires up -- the drain's <c>foreach</c> ends, the background loop is cancelled,
-/// and one FINAL transcribe writes <c>score.mid</c>/<c>score.musicxml</c> to the out-dir.
+/// when a server is attached, a separate background <see cref="Task"/> wakes every
+/// <see cref="TranscribeInterval"/>, takes a point-in-time <see cref="FrameAccumulator.Snapshot"/>
+/// (never holding the accumulator's lock during inference), reconstructs mono, wraps it in a throwaway
+/// in-memory <see cref="IAudioSource"/>, and calls the (once-constructed, reused) transcriber. When the
+/// mic stops -- Ctrl+C or the Stop button, whichever the caller wires up -- the drain's <c>foreach</c>
+/// ends, the background loop (if any) is cancelled, and one FINAL transcribe writes
+/// <c>score.mid</c>/<c>score.musicxml</c> to the out-dir.
 ///
 /// <see cref="Run"/> performs ONE take (drain → periodic transcribe → final save) and clears its
 /// accumulator at the start, so the caller can reuse a single instance (the ONNX model loads once)
-/// across successive takes. <c>ListenAppCommand</c>'s <c>--poly</c> loop drives the browser Start/Stop
+/// across successive takes. <c>ListenAppCommand</c>'s <c>--view</c> loop drives the browser Start/Stop
 /// buttons around it -- idle until Start, capture until Stop (or Ctrl+C), save, repeat -- mirroring the
-/// mono <c>--view</c> loop. Per-take WAV recording/archiving (the mono path's --record/skip-silence/
-/// archive machinery) is intentionally out of scope for this prototype.
+/// mono <c>--view</c> loop; the headless (no <c>--view</c>) path just runs one take from launch to
+/// Ctrl+C with a null server. Per-take WAV recording/archiving (the mono path's --record/skip-silence/
+/// archive machinery) is intentionally out of scope here.
 /// </summary>
 public sealed class LivePolyphonicView : IDisposable
 {
@@ -49,19 +55,23 @@ public sealed class LivePolyphonicView : IDisposable
     private const int FrameSize = 1024;
     private const int Hop = 256;
 
-    // ~1.64 s: the task's stated re-transcribe cadence for this prototype.
+    // ~1.64 s: the stated re-transcribe cadence when a live view is attached.
     private static readonly TimeSpan TranscribeInterval = TimeSpan.FromMilliseconds(1640);
 
-    private readonly LiveNotationServer _server;
+    private readonly LiveNotationServer? _server;
     private readonly string _outDir;
     private readonly Tempo _tempo;
     private readonly Action<string> _print;
     private readonly BasicPitchTranscriber _transcriber;
     private readonly FrameAccumulator _accumulator = new();
 
-    public LivePolyphonicView(LiveNotationServer server, string outDir, double tempoBpm, Action<string> print)
+    /// <param name="server">
+    /// The live-notation server to periodically republish to, or <c>null</c> for a headless take
+    /// (no browser view) -- when null, <see cref="Run"/> never starts the periodic re-transcribe loop.
+    /// </param>
+    public LivePolyphonicView(LiveNotationServer? server, string outDir, double tempoBpm, Action<string> print)
     {
-        _server = server ?? throw new ArgumentNullException(nameof(server));
+        _server = server;
         _outDir = outDir ?? throw new ArgumentNullException(nameof(outDir));
         _tempo = new Tempo(tempoBpm);
         _print = print ?? throw new ArgumentNullException(nameof(print));
@@ -71,11 +81,12 @@ public sealed class LivePolyphonicView : IDisposable
 
     /// <summary>
     /// Drains <paramref name="source"/> on the CALLING thread until its frames end (the mic stopped),
-    /// running the periodic background re-transcribe loop alongside, then performs one final
-    /// transcribe and writes <c>score.mid</c>/<c>score.musicxml</c>. Returns once everything is
-    /// written. <paramref name="ct"/> is observed by the background loop only (for prompt shutdown on
-    /// Ctrl+C) -- the loop is ALSO unconditionally cancelled once draining ends, regardless of
-    /// <paramref name="ct"/>'s state, so it can never keep running after this method returns.
+    /// running the periodic background re-transcribe loop alongside IF a server is attached, then
+    /// performs one final transcribe and writes <c>score.mid</c>/<c>score.musicxml</c>. Returns once
+    /// everything is written. <paramref name="ct"/> is observed by the background loop only (for
+    /// prompt shutdown on Ctrl+C) -- the loop is ALSO unconditionally cancelled once draining ends,
+    /// regardless of <paramref name="ct"/>'s state, so it can never keep running after this method
+    /// returns.
     /// </summary>
     public void Run(IAudioSource source, CancellationToken ct)
     {
@@ -83,10 +94,18 @@ public sealed class LivePolyphonicView : IDisposable
 
         // Reset so one LivePolyphonicView (model loaded once) can serve successive Start/Stop takes.
         _accumulator.Clear();
-        _print("Recording (polyphonic prototype, re-transcribing ~every 1.6s). Press Stop in the browser (or Ctrl+C) to save.");
+        _print(_server is not null
+            ? "Recording (polyphonic, re-transcribing ~every 1.6s). Press Stop in the browser (or Ctrl+C) to save."
+            : "Recording (polyphonic). Press Ctrl+C to stop and save.");
 
-        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        Task backgroundLoop = Task.Run(() => TranscribeLoopAsync(loopCts.Token));
+        // No server -> no periodic loop at all: nothing to publish to, so no point paying for the
+        // repeated whole-buffer inference (see the class doc's "no wasted inference" guarantee).
+        CancellationTokenSource? loopCts = _server is not null
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : null;
+        Task? backgroundLoop = loopCts is not null
+            ? Task.Run(() => TranscribeLoopAsync(loopCts.Token))
+            : null;
 
         try
         {
@@ -99,14 +118,21 @@ public sealed class LivePolyphonicView : IDisposable
         {
             // Stop the periodic loop the instant frames stop, however that happened -- never rely
             // solely on the caller's `ct` (it may not be the thing that ended the drain).
-            loopCts.Cancel();
-            try
+            if (loopCts is not null)
             {
-                backgroundLoop.GetAwaiter().GetResult();
-            }
-            catch (OperationCanceledException)
-            {
-                // expected shutdown path
+                loopCts.Cancel();
+                try
+                {
+                    backgroundLoop!.GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    // expected shutdown path
+                }
+                finally
+                {
+                    loopCts.Dispose();
+                }
             }
         }
 
@@ -141,13 +167,13 @@ public sealed class LivePolyphonicView : IDisposable
             }
 
             string xml = new GrandStaffMusicXmlWriter().WriteToString(grandStaff);
-            _server.PublishScoreXml(xml);
+            _server?.PublishScoreXml(xml);
             _print($"live poly: republished ({raw.Count} notes, {grandStaff.Measures.Count} bars, {snapshot.Count} frames buffered).");
         }
         catch (Exception ex)
         {
             // A tick failing (e.g. a transient ONNX hiccup on a very short/silent buffer) must not
-            // kill the whole prototype loop -- it just tries again next tick, same defensive idiom
+            // kill the whole loop -- it just tries again next tick, same defensive idiom
             // as ListenCommand's live-view hooks (SafeInvokeHook).
             _print($"live poly: transcribe tick failed ({ex.Message}); continuing.");
         }
@@ -174,7 +200,7 @@ public sealed class LivePolyphonicView : IDisposable
         }
 
         string xml = new GrandStaffMusicXmlWriter().WriteToString(grandStaff);
-        _server.PublishScoreXml(xml);
+        _server?.PublishScoreXml(xml);
 
         IReadOnlyList<NoteEvent> quantized = GrandStaffFlattener.ToNoteEvents(grandStaff, MakeGrid());
         string scorePath = Path.Combine(_outDir, "score.mid");

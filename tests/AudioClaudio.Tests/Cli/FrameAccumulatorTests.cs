@@ -5,10 +5,10 @@ using Xunit;
 namespace AudioClaudio.Tests.Cli;
 
 /// <summary>
-/// The only device-free piece of the `listen --view --poly` prototype
+/// The only device-free piece of the polyphonic `listen` engine
 /// (<see cref="AudioClaudio.Cli.Commands.LivePolyphonicView"/>) that can be unit-tested without a real
 /// microphone: the thread-safe accumulator the mic-draining thread appends to while a background
-/// transcribe loop snapshots it. The prototype's actual mic loop is device-dependent -> manual
+/// transcribe loop snapshots it. The engine's actual mic loop is device-dependent -> manual
 /// acceptance only (same precedent as <c>PortAudioAudioSource.Start</c>).
 /// </summary>
 public class FrameAccumulatorTests

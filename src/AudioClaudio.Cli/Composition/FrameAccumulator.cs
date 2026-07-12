@@ -5,7 +5,7 @@ namespace AudioClaudio.Cli.Composition;
 
 /// <summary>
 /// Thread-safe accumulator for frames drained from a live mic source, snapshotted periodically by a
-/// background transcribe loop (the polyphonic live-view prototype, `listen --view --poly` --
+/// background transcribe loop (the polyphonic `listen` engine, default with `--view` --
 /// <see cref="AudioClaudio.Cli.Commands.LivePolyphonicView"/>). One thread calls <see cref="Add"/> for
 /// every captured frame; a different thread calls <see cref="Snapshot"/> to get a point-in-time copy
 /// to re-transcribe, WITHOUT ever holding the lock during the (slow) inference that follows --

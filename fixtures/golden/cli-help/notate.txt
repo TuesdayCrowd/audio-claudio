@@ -5,7 +5,7 @@ Arguments:
   <input.mid>   the MIDI file to notate
 
 Options:
-  --out-dir <PATH>   directory to write score.mid/score.musicxml (default: .)
+  --out-dir <PATH>   directory to write score.mid/score.musicxml (default: out)
   --tempo <DOUBLE>   declared tempo in BPM (auto-estimated if omitted)
   --key <INT>        override the auto-detected key signature
   --note-names       print a scientific-pitch-name lyric under each note

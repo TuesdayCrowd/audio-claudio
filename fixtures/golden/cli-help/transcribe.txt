@@ -6,7 +6,7 @@ Arguments:
 
 Options:
   --tempo <DOUBLE>             declared tempo in BPM (auto-estimated if omitted)
-  --out-dir <PATH>             directory to write raw.mid/score.mid/score.musicxml (default: .)
+  --out-dir <PATH>             directory to write raw.mid/score.mid/score.musicxml (default: out)
   --note-names                 print a scientific-pitch-name lyric under each note
   --mono                       use the monophonic YIN pipeline instead of the polyphonic default
   --model <STRING>             explicit model path, or 'transkun' for the Transkun engine
