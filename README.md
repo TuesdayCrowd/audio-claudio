@@ -159,8 +159,8 @@ Conceptually, the CLI (composition root: `src/AudioClaudio.Cli`) has six
 commands:
 
 ```bash
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--mono] [--model <path|transkun>] [--key <fifths>] [--triplets] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]  # -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven, F1 ≥ 0.75 @ ±50 ms); --mono for the monophonic YIN pipeline (exact-recovery path); --model transkun for the self-contained Transkun engine (notation fidelity, ≥99% PyTorch parity); key auto-detected (--key overrides); --triplets engraves triplets
-claudio listen [--tempo 100] [--out-dir .] [--view] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on Ctrl+C; --tempo auto-estimated if omitted
+claudio transcribe <in.wav> [--tempo 120] [--out-dir out] [--note-names] [--mono] [--model <path|transkun>] [--key <fifths>] [--triplets] [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-len 11]  # -> raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default (closed-loop-proven, F1 ≥ 0.75 @ ±50 ms); --mono for the monophonic YIN pipeline (exact-recovery path); --model transkun for the self-contained Transkun engine (notation fidelity, ≥99% PyTorch parity); key auto-detected (--key overrides); --triplets engraves triplets
+claudio listen [--tempo 100] [--out-dir out] [--view] [--record] [--note-names] [--time-signature 4/4] [--mono] [--soundfont <path>]  # live; POLYPHONIC (Basic Pitch) by default as of v2.1.0 — a near-real-time PROTOTYPE, not a proven-accuracy path (see Limitations); --mono for the proven ~41 ms monophonic path; writes the same trio on Stop/Ctrl+C; polyphonic default uses a fixed 120 BPM unless --tempo is given (does not auto-estimate); --mono auto-estimates tempo if omitted; --skip-silence was removed in v2.1.0
 claudio play <file.mid> [--soundfont <path>]                                           # play a MIDI file through MeltySynth
 claudio render <file.mid> <out.wav> [--soundfont <path>]                               # deterministically render a MIDI file to WAV
 claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align|--warp]  # note-level precision/recall/F1 vs a reference; --align/--warp remove tempo drift/rubato before scoring
@@ -182,7 +182,7 @@ a bare `--flag` is a boolean switch.
 | `--legato` | off | *(with `--mono`)* Recover legato notes — a pitch change with no re-attack opens a new note. A deliberate trade-off: a monophonic detector cannot perfectly separate a real legato slur from a pitch wobble, so this recovers connected notes at the cost of the occasional spurious note. Off keeps the proven one-note-per-onset behavior. |
 | `--coarse-rhythm` | off | *(with `--mono`)* Floor note *values* at an eighth note, so uneven/beginner playing engraves as cleaner rhythm (drops jittery sixteenths and dotted-eighths). Onsets are never coarsened, only note lengths. |
 | `--tempo <bpm>` | 120 (poly) / auto (`--mono`) | Grid tempo. The polyphonic default uses 120 BPM unless set; `--mono` estimates it from the notes' onset spacing when omitted (see [Limitations](#limitations)). |
-| `--out-dir <dir>` | `.` | Where `raw.mid`, `score.mid`, `score.musicxml`, and `log.txt` are written. Created if absent. |
+| `--out-dir <dir>` | `out` | Where `raw.mid`, `score.mid`, `score.musicxml`, and `log.txt` are written. Created if absent. (The `notate` command shares this same default.) |
 | `--note-names` | off | Print each note's scientific-pitch name (e.g. `C4`, `F#5`) as a lyric beneath it in `score.musicxml`. |
 | `--model <path\|transkun>` | committed Basic Pitch | `--model transkun` selects the self-contained **Transkun** engine (notation fidelity — real durations, velocity, sustain/soft pedal; ≥ 99 % PyTorch parity). Otherwise a path to the polyphonic Basic Pitch `.onnx` (default: the committed `fixtures/models/basic-pitch-nmp.onnx`). Ignored by `--mono`. |
 | `--key <fifths>` | *auto-detected* | The key signature (sharps positive, flats negative — `-4` = A♭ major, `2` = D major). By default it is **auto-detected** from the notes (Krumhansl-Schmuckler); pass `--key` to override. It sets `score.musicxml`'s `<key>` and spells every accidental to match (A♭ major → E♭/A♭/B♭, not D#/G#/A#). Ignored by `--mono`. |
@@ -241,16 +241,26 @@ matters most. The artifact (ONNX + buffers + decode spec + license) lives under
 - Inference is deterministic per build, but — like the MeltySynth mixdown — not
   guaranteed bit-identical across CPU architectures (SIMD).
 
-**`listen`** — live microphone capture (writes the same trio on stop).
+**`listen`** — live microphone capture (writes the same trio on stop). **As of v2.1.0, `listen`
+DEFAULTS to a polyphonic engine** — a near-real-time *prototype*, not a proven-accuracy path; see
+[Polyphonic live capture](#polyphonic-live-capture-listen-as-of-v210-honest-caveats) below and
+[Limitations](#limitations). Pass `--mono` for the original, closed-loop-*proven* monophonic path
+(the accepted `v0.1.1` experience, ~41 ms latency).
 
 | Option | Default | Effect |
 |---|---|---|
-| `--tempo <bpm>` | auto-estimate | Grid tempo for the saved score. Omit to estimate it on stop. The live preview always uses a 120 BPM fallback grid, since the estimate is only known after the whole-signal batch pass. |
-| `--out-dir <dir>` | `.` | Where session files are written (stable latest paths in the root, plus a timestamped archive per recording). Created if absent. |
-| `--view` | off | Open a live browser sheet-music view with Start/Stop recording buttons — multiple takes per run, each saved under its own start-timestamp. Degrades to a plain single recording if the server can't start. |
+| `--mono` | off (polyphonic) | Use the monophonic YIN live path instead of the polyphonic default — lower latency (~41 ms), one note at a time, and the only `listen` path with an accuracy guarantee behind it (the exact-recovery closed loop). Auto-estimates tempo when `--tempo` is omitted. |
+| `--tempo <bpm>` | 120 (polyphonic) / auto (`--mono`) | Grid tempo for the saved score. **The polyphonic default does not auto-estimate tempo:** omitting `--tempo` uses a fixed 120 BPM grid. `--mono` estimates tempo from the notes' onset spacing when omitted, with its live preview using a 120 BPM fallback grid until the final batch pass on stop. |
+| `--out-dir <dir>` | `out` | Where session files are written (stable latest paths in the root, plus a timestamped archive per recording). Created if absent. |
+| `--view` | off | Open a live browser sheet-music view with Start/Stop recording buttons — multiple takes per run, each saved under its own start-timestamp. Degrades to a plain single recording if the server can't start. In the polyphonic default the sheet re-renders roughly every 1.6 s while recording; `--view` always uses each take's own browser time-signature selector, ignoring `--time-signature` (a headless take honors the flag directly). |
 | `--record` | off | Also write `input.wav` (the captured mic audio, losslessly reconstructed) and `recreation.wav` (the transcription re-synthesized) for A/B comparison. |
-| `--skip-silence` | off | Collapse pauses longer than ~500 ms out of both `input.wav` and `recreation.wav`, cut from each in alignment. Implies `--record`; never affects the MIDI/MusicXML timing. |
 | `--note-names` | off | Show each note's scientific-pitch name beneath it in both the `--view` rendering and `score.musicxml`. |
+| `--time-signature <N/D>` | `4/4` | Time signature for the saved score (e.g. `3/4`, `6/8`). Used by headless takes; a `--view` take uses its own per-take browser selector instead (see `--view` above). |
+| `--soundfont <path>` | committed GS SoundFont | SoundFont used to render `recreation.wav` when `--record` is passed. |
+
+**`--skip-silence` was removed in v2.1.0.** It collapsed pauses out of `input.wav`/`recreation.wav`
+for A/B comparison; it is gone from `listen` entirely (both engines) rather than ported to the new
+polyphonic default — `input.wav`/`recreation.wav` are now always written as captured, silences included.
 
 **`play <file.mid>`** — play a MIDI file aloud through MeltySynth (PortAudio output).
 
@@ -337,12 +347,16 @@ intended, rather than playing dry.
 
 ### `listen` — live microphone capture
 
-`listen` feeds the microphone into the exact same transcription pipeline the
-file path uses, so live and file transcription of the same audio agree by
-construction. The note list printed while listening is a low-latency
-*preview* (`TranscriptionPipeline.StreamNotes`); the files written on stop
-come from an accurate whole-signal batch pass over the session's recorded
-audio, not the live preview.
+**As of v2.1.0 the default `listen` engine is polyphonic** (Basic Pitch) — a near-real-time
+*prototype*, not a proven-accuracy path; see
+[Polyphonic live capture](#polyphonic-live-capture-listen-as-of-v210-honest-caveats) just below for
+exactly what that means and its honest limits. The rest of this section, including the measured
+**41 ms** latency figure, describes the **`--mono`** path: it feeds the microphone into the exact
+same transcription pipeline the file path uses, so live and file transcription of the same audio
+agree by construction. The note list printed while listening is a low-latency *preview*
+(`TranscriptionPipeline.StreamNotes`); the files written on stop come from an accurate whole-signal
+batch pass over the session's recorded audio, not the live preview. (Output files, `--view`,
+`--record`, and `--note-names` below work the same way for both engines.)
 
 - **Output files.** The out-dir root always holds the LATEST session's
   `raw.mid`/`score.mid`/`score.musicxml` (plus `--record`'s `input.wav`/
@@ -363,34 +377,74 @@ audio, not the live preview.
   waveform editor (e.g. Audacity) to compare the performance against what was
   transcribed. Omitted by default, so plain `listen` is unaffected and still
   never touches a SoundFont.
-- **`--skip-silence`.** Pass `--skip-silence` for continuous playback: it removes
-  pauses longer than ~500 ms from BOTH `input.wav` and `recreation.wav`, cutting
-  the same sample spans from each so the two stay aligned, while shorter musical
-  rests are left untouched. Implies `--record` (it only ever affects those two
-  WAVs) — `raw.mid`/`score.mid`/`score.musicxml` are never touched and keep the
-  true performance timing.
 - **`--note-names`.** Pass `--note-names` to print each note's scientific-pitch
   name (e.g. `C4`, `F#5`) beneath it in the notation — both the live `--view`
   rendering and the saved `score.musicxml`. Opt-in and off by default; `transcribe`
   also accepts the same flag for `score.musicxml`.
-- **Latency.** The worst-case *algorithmic* onset latency — key-strike to
+- **Latency (`--mono`).** The worst-case *algorithmic* onset latency — key-strike to
   the onset being known — is about **41 ms** at the default live parameters
   (44.1 kHz, 1024-sample frame, 256-sample hop, look-ahead 3), measured and
   asserted under a 150 ms budget. End-to-end latency additionally includes
   the input buffer and OS scheduling; measure it on your own machine with
   the loopback procedure below. This is a measured, documented figure, not
-  a promise.
+  a promise. The polyphonic default's latency is an entirely different regime
+  (near-real-time, ~2 s) — see the polyphonic section just below.
 - **macOS microphone permission.** On the primary dev machine (an M3 Max),
   the first `listen` run triggers a system prompt to grant microphone
   access to your terminal. If capture is silent and no prompt appeared,
   enable it under System Settings → Privacy & Security → Microphone.
 - **Manual acceptance.** There is no audio input device in CI, so the
-  device-callback path is verified by hand, not by an automated test — the
-  automated correctness burden stays entirely on the closed-loop suite
-  above. To check it yourself: run `listen`, play a few notes (or a fixture
-  WAV) aloud through your speakers, confirm notes print as they sound,
-  press Ctrl+C, and confirm `raw.mid`/`score.mid`/`score.musicxml` were
-  written and roughly match what was played.
+  device-callback path is verified by hand, not by an automated test for
+  either engine — the automated correctness burden stays entirely on the
+  closed-loop suite (`--mono`) and the batch closed-loop gate the polyphonic
+  engine already carries (see The closed loop, above). To check it yourself:
+  run `listen`, play a few notes (or a fixture WAV) aloud through your
+  speakers, confirm notes print (`--mono`) or the sheet updates (polyphonic
+  default) as you play, press Ctrl+C or Stop, and confirm
+  `raw.mid`/`score.mid`/`score.musicxml` were written and roughly match what
+  was played.
+
+### Polyphonic live capture (`listen`, as of v2.1.0) — honest caveats
+
+As of v2.1.0, `listen`'s **default** engine is polyphonic, not monophonic — mirroring
+`transcribe`'s existing poly-default/`--mono` pattern. While the mic runs, a background loop
+re-transcribes the **whole captured buffer so far** — resample, windowed Basic Pitch inference,
+decode — roughly every **1.6 s** (the model's own ~2 s context window sets the floor), streaming the
+resulting grand-staff MusicXML to the `--view` browser page as you play. On Stop (or Ctrl+C), one
+final pass over the complete session audio writes `raw.mid`/`score.mid`/`score.musicxml`, identically
+to a batch `transcribe` run over the same recording.
+
+**This is a near-real-time prototype, not a proven-accuracy feature.** Four honest limits, stated
+plainly rather than tuned away or hidden:
+
+- **Non-scaling.** Every tick re-transcribes the entire captured buffer from scratch — a deliberate
+  shortcut, not the incrementally-inferring architecture this feature's design originally sketched
+  (see the design doc below) — so per-tick cost grows with how long you've been recording. It is
+  built for short takes, not as a scalable streaming engine.
+- **Homophonic, not multi-voice.** The polyphonic notation model represents a "chord" as one or more
+  pitches sharing ONE onset and ONE duration (unchanged since Stage 3, above). Two notes struck
+  together with *different* lengths — an A held a half note under a C held a whole note — still
+  collapse to a single displayed duration; showing them independently needs multi-voice notation,
+  which has not been built.
+- **Near-real-time, not instant.** The score trails your playing by roughly the model's own ~2 s
+  context window, updating about every 1.6 s. This is inherent to a 2-second-context neural model,
+  not a bug awaiting a tuning fix.
+- **No new accuracy guarantee.** The live view carries Basic Pitch's already-measured accuracy
+  (`docs/CORPUS.md`'s closed-loop **79.6 %** F1 @ ±50 ms) and nothing more — it presents the existing
+  polyphonic engine live; live capture itself earns no F1 number of its own, and it ranks strictly
+  below every guarantee this project makes (monophonic bit-exact recovery / polyphonic-batch
+  statistical F1 / Transkun ≥ 99 % PyTorch parity), never flattened into "proven." The **saved** files
+  on Stop carry the batch engine's usual statistical guarantee; the **live view itself** does not.
+
+`--mono` sidesteps all four limits above: it keeps the original, closed-loop-*proven* monophonic live
+path (~41 ms latency) completely unchanged.
+
+The full design, a four-lens adversarial review that surfaced the limits above before any of this
+shipped, and a measured feasibility spike (window inference ~9 ms — 183× under the 1.6 s budget; a
+bounded-decode variant flat at ~1 ms regardless of session length) all live in
+[`docs/plans/2026-07-12-live-polyphony-design.md`](docs/plans/2026-07-12-live-polyphony-design.md).
+Incremental inference (so the live view scales past a short take) and multi-voice notation (so the
+A-half/C-whole example above can be shown) are the named open next steps — not silently dropped.
 
 ## Limitations
 
@@ -428,9 +482,23 @@ faking them:
   Transkun engine emit a two-staff grand staff with a temporal hand-split; porting
   the grand staff (and velocity dynamics) back to the monophonic writer is future
   work.
+- **`listen`'s default engine, as of v2.1.0, is a near-real-time polyphonic
+  *prototype*, not a proven-accuracy live feature.** It re-transcribes the whole
+  captured buffer every ~1.6 s with the same Basic Pitch engine `transcribe` uses,
+  so its accuracy is that engine's own ~80 % F1 (`docs/CORPUS.md`) — but the live
+  view itself is non-scaling (cost grows with take length; built for short takes),
+  homophonic (two notes struck together with different lengths still show one
+  duration — true multi-voice notation isn't built), and near-real-time rather
+  than instant (~2 s, updating roughly every 1.6 s). It ranks below every other
+  guarantee in this document and earns none of its own; see
+  [Polyphonic live capture](#polyphonic-live-capture-listen-as-of-v210-honest-caveats),
+  above, for the full honest accounting. `--mono` is unaffected and remains the
+  proven, ~41 ms live path.
 - **No packaged binary yet.** There is no self-contained `claudio` executable —
-  run the commands through `dotnet run` (see Usage). Packaging per platform and
-  cross-platform (macOS + Windows) validation are the **v2.1** cycle.
+  run the commands through `dotnet run` (see Usage). **v2.1.0** ships the
+  live-view polish and the polyphonic live-capture prototype above; per-platform
+  packaging and cross-platform (macOS + Windows) validation remain open, tracked
+  for a later point in the v2.1 cycle.
 - **Duration recovery has a pitch ceiling.** A note's *duration* is only
   recoverable while it stays audibly above the release threshold with this
   SoundFont — roughly MIDI 33–71 for a note an eighth or longer (see The

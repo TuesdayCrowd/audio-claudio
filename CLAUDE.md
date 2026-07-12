@@ -145,9 +145,39 @@ measures ~15–22% by onset tolerance — but that gap is performance rubato + t
 thresholds are a notation-cleanliness knob (tuned values cut the note count ~a third toward the reference's
 density at ~zero F1 cost), not an accuracy lever. Build/test green (431 tests).
 
+**`v2.1.0` (2026-07-12) ships two things off the `live-polyphony` branch: live-view polish (Area D) and a
+polyphonic live-capture prototype for `listen` — the latter is the headline, and its honesty matters as
+much as its existence.** Area D is pure polish on the already-accepted `listen --view` browser page: the
+score now renders on a white "paper" panel so it stays legible in dark mode, a VU meter + resolved
+input-device name track the mic live, the finished take plays back in-page (`<audio>`) with one-click
+downloads of `raw.mid`/`score.mid`/`score.musicxml`/`recreation.wav`, and the sheet auto-scrolls to the
+newest system as notes stream in. Separately — **`listen` now DEFAULTS to a polyphonic engine**, mirroring
+`transcribe`'s poly-default/`--mono` pattern: it re-transcribes the whole captured mic buffer every ~1.6 s
+with the existing batch Basic Pitch model and streams the resulting grand-staff score to the browser as you
+play, saving the take on Stop exactly as a batch `transcribe` run would. **This earns no new guarantee — it
+is prototype-quality, shipped as the default at Cornelius's explicit direction, not because it clears this
+project's bar.** It is non-scaling (every tick re-transcribes the ENTIRE buffer from scratch — a deliberate
+shortcut, not the incrementally-inferring architecture the design sketched, so cost grows with take length;
+short takes only), homophonic-per-staff (two notes struck together with different lengths still collapse to
+one displayed duration — the requested A-half/C-whole example still cannot be shown; multi-voice notation
+was not built), near-real-time rather than instant (~2 s, refreshing roughly every 1.6 s), and carries only
+Basic Pitch's already-known ~80% F1 (`docs/CORPUS.md`) — it presents the existing polyphonic engine live and
+sits strictly **below** the ranked guarantee hierarchy (monophonic bit-exact / polyphonic-batch statistical
+F1 / Transkun ≥99% parity), never flattened into "proven." `--mono` is completely unaffected and remains the
+only `listen` path with a proven accuracy guarantee (the exact-recovery closed loop, ~41 ms latency). Mic
+input was chosen over MIDI for this feature despite a four-lens adversarial review showing MIDI would make
+polyphony, per-note durations, and multi-voice notation all native and exact — Cornelius's call, in service
+of the project's "the microphone is just an adapter" premise. Incremental inference (so it scales) and
+multi-voice notation (so the worked example can display) are the named open next steps, not silently
+dropped. Full design + the adversarial review + a measured feasibility spike (window inference ~9 ms, 183×
+under the 1.64 s budget) are in
+[`docs/plans/2026-07-12-live-polyphony-design.md`](docs/plans/2026-07-12-live-polyphony-design.md); see
+`DECISIONS.md` "Area D" and "Live polyphonic capture".
+
 - **The v0.1.0 MVP is shipped; `v0.1.1` added live incremental notation; `v0.1.2` added the recording +
   notation tooling above; `v0.2.0` makes polyphonic transcription (previously opt-in) the default
-  `transcribe` engine (above; `--mono` keeps the proven monophonic path).** The lone open human follow-up is the MuseScore GUI
+  `transcribe` engine (above; `--mono` keeps the proven monophonic path); `v2.1.0` adds live-view polish and
+  a polyphonic live-capture PROTOTYPE for `listen` (above; again `--mono` keeps the proven path).** The lone open human follow-up is the MuseScore GUI
   load check for the MusicXML golden (R11.2 — see `DECISIONS.md`), corroborated by OSMD rendering the same
   `MusicXmlScoreWriter` output. Remaining Phase-2 items (§8): pYIN pitch-hardening for the monophonic
   detector (the rare ~0.4% octave residual, and the live-frame ≈ MIDI 42–93 range limits on real mic audio);
@@ -681,8 +711,8 @@ Commit: `docs: README; v0.1.0`.
 ## 7. CLI summary (composition root)
 
 ```
-claudio transcribe <in.wav> [--tempo 120] [--out-dir .] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   # → raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default, --mono for monophonic YIN (which auto-estimates tempo when --tempo is omitted); --note-names adds a scientific-pitch-name lyric under each note; --key declares the key signature for enharmonic spelling; the three thresholds tune note density
-claudio listen [--tempo 100] [--record] [--skip-silence] [--note-names]  # live; writes the same trio on stop (--tempo auto-estimated if omitted); --record also writes input.wav + recreation.wav (each session also archived under <out-dir>/<YYYYMMDD_HHMMSS>/); --skip-silence implies --record and collapses pauses >500ms in input.wav/recreation.wav only; --note-names shows each note's name (e.g. C4) beneath it in --view and score.musicxml
+claudio transcribe <in.wav> [--tempo 120] [--out-dir out] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   # → raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default, --mono for monophonic YIN (which auto-estimates tempo when --tempo is omitted); --note-names adds a scientific-pitch-name lyric under each note; --key declares the key signature for enharmonic spelling; the three thresholds tune note density; --out-dir defaults to `out` (also true of `notate`)
+claudio listen [--tempo 100] [--out-dir out] [--view] [--record] [--note-names] [--time-signature 4/4] [--mono] [--soundfont <path>]  # live; as of v2.1.0 POLYPHONIC (Basic Pitch) by default — a near-real-time PROTOTYPE (see "Where the project is right now"): re-transcribes the whole mic buffer ~every 1.6s and streams the score to --view; fixed 120 BPM unless --tempo is given (no auto-estimate); --mono selects the proven ~41ms monophonic path instead (auto-estimates tempo if --tempo omitted); writes the same trio on Stop/Ctrl+C; --record also writes input.wav + recreation.wav (each session archived under <out-dir>/<YYYYMMDD_HHMMSS>/); --note-names shows each note's name (e.g. C4) beneath it in --view and score.musicxml; --time-signature sets the saved score's meter (a --view take uses its own browser selector instead); --skip-silence was REMOVED in v2.1.0
 claudio play <file.mid>                                 # MeltySynth playback
 claudio render <file.mid> <out.wav>                     # deterministic render
 claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align|--warp]  # note-level precision/recall/F1 of a transcription vs a reference; --align cancels a global tempo ratio, --warp (DTW) also removes local rubato and wins if both are given
