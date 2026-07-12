@@ -22,4 +22,12 @@ public static class TranscribeModeResolver
         ArgumentNullException.ThrowIfNull(args);
         return System.Array.IndexOf(args, "--mono") >= 0 ? TranscribeMode.Monophonic : TranscribeMode.Polyphonic;
     }
+
+    /// <summary>Resolves the engine from a kernel-validated <see cref="AudioClaudio.Cli.Cli.ParsedArgs"/>
+    /// (the CLI-kernel migration's replacement for the raw <c>string[]</c> overload above).</summary>
+    public static TranscribeMode Resolve(AudioClaudio.Cli.Cli.ParsedArgs parsed)
+    {
+        ArgumentNullException.ThrowIfNull(parsed);
+        return parsed.Flag("mono") ? TranscribeMode.Monophonic : TranscribeMode.Polyphonic;
+    }
 }

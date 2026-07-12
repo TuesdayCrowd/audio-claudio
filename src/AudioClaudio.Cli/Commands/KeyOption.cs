@@ -30,4 +30,21 @@ public static class KeyOption
 
         return true;
     }
+
+    /// <summary>
+    /// Validates an already-integer-parsed --key value (the kernel's OptionKind.Int has
+    /// already rejected non-integer tokens by the time a handler sees this) against the real
+    /// key-signature range. <paramref name="fifths"/> is null when --key was omitted (always valid).
+    /// </summary>
+    public static bool Validate(int? fifths, out string? error)
+    {
+        error = null;
+        if (fifths is null) return true;
+        if (fifths is < MinFifths or > MaxFifths)
+        {
+            error = $"--key must be an integer from {MinFifths} (C-flat major) to +{MaxFifths} (C-sharp major); got '{fifths}'.";
+            return false;
+        }
+        return true;
+    }
 }
