@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Threading.Tasks;
 using AudioClaudio.Domain.Spectral;
 
 namespace AudioClaudio.Infrastructure.Transcription;
@@ -110,44 +111,55 @@ public sealed class TranskunMelFrontEnd
         double invStd = 1.0 / (std + 1e-8);
 
         // (3)–(5) per frame, per window: window → ortho rfft → power → mel → log-normalize.
+        // Frames are independent (each writes only its own features[f,*,*] and the FFT is a pure function),
+        // so this fans out across cores with thread-local scratch. The per-frame math is untouched, so the
+        // result is bit-identical to the serial loop — determinism (§4) holds. This phase is otherwise the
+        // single-threaded ~24% of transcription while the ONNX cores sit idle.
         var features = new float[nFrame, _nMels, _nWindows];
-        var buf = new double[_win];
-        var power = new double[_rfftBins];
         double orthoSq = 1.0 / _win; // |rfft(norm="ortho")|^2 = |rfft(raw)|^2 / N
         double invNegLogEps = 1.0 / (-_logEps);
+        float[] freq2mels = _buffers.Freq2Mels;
 
-        for (int f = 0; f < nFrame; f++)
-        {
-            int b = f * _hop;
-            for (int w = 0; w < _nWindows; w++)
+        Parallel.For(
+            0,
+            nFrame,
+            () => (buf: new double[_win], power: new double[_rfftBins]),
+            (f, _, scratch) =>
             {
-                float[] window = _buffers.Windows[w];
-                for (int j = 0; j < _win; j++)
+                double[] buf = scratch.buf;
+                double[] power = scratch.power;
+                int b = f * _hop;
+                for (int w = 0; w < _nWindows; w++)
                 {
-                    buf[j] = ((padded[b + j] - mean) * invStd) * window[j];
-                }
-
-                Complex[] spec = _fft.Forward(buf);
-                for (int k = 0; k < _rfftBins; k++)
-                {
-                    Complex c = spec[k];
-                    power[k] = (c.Real * c.Real + c.Imaginary * c.Imaginary) * orthoSq;
-                }
-
-                float[] freq2mels = _buffers.Freq2Mels;
-                for (int m = 0; m < _nMels; m++)
-                {
-                    double acc = 0.0;
-                    int last = _melLast[m]; // freq2mels is [rfftBins, nMels] row-major → index k*nMels + m
-                    for (int k = _melFirst[m]; k <= last; k++)
+                    float[] window = _buffers.Windows[w];
+                    for (int j = 0; j < _win; j++)
                     {
-                        acc += power[k] * freq2mels[k * _nMels + m];
+                        buf[j] = ((padded[b + j] - mean) * invStd) * window[j];
                     }
 
-                    features[f, m, w] = (float)((Math.Log(acc + _eps) - _logEps) * invNegLogEps);
+                    Complex[] spec = _fft.Forward(buf);
+                    for (int k = 0; k < _rfftBins; k++)
+                    {
+                        Complex c = spec[k];
+                        power[k] = (c.Real * c.Real + c.Imaginary * c.Imaginary) * orthoSq;
+                    }
+
+                    for (int m = 0; m < _nMels; m++)
+                    {
+                        double acc = 0.0;
+                        int last = _melLast[m]; // freq2mels is [rfftBins, nMels] row-major → index k*nMels + m
+                        for (int k = _melFirst[m]; k <= last; k++)
+                        {
+                            acc += power[k] * freq2mels[k * _nMels + m];
+                        }
+
+                        features[f, m, w] = (float)((Math.Log(acc + _eps) - _logEps) * invNegLogEps);
+                    }
                 }
-            }
-        }
+
+                return scratch;
+            },
+            _ => { });
 
         return features;
     }

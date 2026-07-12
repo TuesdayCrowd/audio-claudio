@@ -111,6 +111,11 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
         var startPos = new int[nSym];
         Array.Fill(startPos, _startFrameIdx);
 
+        bool timing = Environment.GetEnvironmentVariable("TRANSKUN_TIMING") == "1";
+        var sw = timing ? new System.Diagnostics.Stopwatch() : null;
+        double melMs = 0, onnxMs = 0, viterbiMs = 0, headsMs = 0;
+        int segCount = 0;
+
         var segment = new float[_segSamples];
         for (int i = 0; i < n; i += _stepSamples)
         {
@@ -119,13 +124,28 @@ public sealed class TranskunTranscriber : ITranscriber, IDisposable
             Array.Copy(x, i, segment, 0, len);
             double beginTime = (double)i / _fs - _padSeconds;
 
+            sw?.Restart();
             float[,,] features = _mel.Compute(segment);
+            if (timing) { melMs += sw!.Elapsed.TotalMilliseconds; sw.Restart(); }
+
             (float[] s, float[] ctx) = _model.RunWithCtx(features, out int t);
+            if (timing) { onnxMs += sw!.Elapsed.TotalMilliseconds; sw.Restart(); }
+
             IReadOnlyList<IReadOnlyList<SemiCrfViterbi.Interval>> intervals =
                 SemiCrfViterbi.Decode(s, t, nSym, startPos);
+            if (timing) { viterbiMs += sw!.Elapsed.TotalMilliseconds; sw.Restart(); }
 
             List<TkNote> curEvents = BuildSegmentEvents(intervals, ctx, t, beginTime, startPos);
+            if (timing) { headsMs += sw!.Elapsed.TotalMilliseconds; }
             MergeSegment(curEvents, eventsByType);
+            segCount++;
+        }
+
+        if (timing)
+        {
+            Console.Error.WriteLine(
+                $"[TRANSKUN_TIMING] segments={segCount}  mel={melMs:F0}ms  onnx={onnxMs:F0}ms  " +
+                $"viterbi={viterbiMs:F0}ms  heads+build={headsMs:F0}ms");
         }
 
         // At true EOF force-close the last note per track, then drop any still-open fragment; final overlap pass.

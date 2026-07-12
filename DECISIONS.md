@@ -1526,3 +1526,37 @@ earned. Runtime ~1.3× realtime (a sparse-`freq2mels` mel optimization, bit-exac
 regeneration scripts — is public at **<https://huggingface.co/TuesdayCrowd/transkun-onnx>** (license MIT,
 crediting Yujia Yan et al., linking upstream + the audio-claudio C# reference decoder). Uploaded via the `hf`
 CLI. (Was deferred at the v2.0.0 ship; published on Cornelius's go right after.) Stage 4 fully complete.
+
+## Perf — Transkun: mel front end parallelized; GPU/ANE (CoreML/MLX) offload rejected (2026-07-11)
+
+**Question (Cornelius).** Would converting the Transkun ONNX to an MLX runtime (or otherwise offloading to
+the Apple GPU/ANE) speed up transcription on Apple Silicon?
+
+**Profiled first (`TRANSKUN_TIMING=1`, env-gated phase stopwatch in `TranskunTranscriber.DecodeAllSegments`).**
+On the 21.8 s parity clip (5 segments), Release: **onnx 4179 ms (~73 %)**, mel front end 1379 ms (~24 %),
+Viterbi 175 ms (~3 %), heads+build 2 ms. Cost tracks *segment count*, not audio length — fixed 16 s windows /
+8 s hop, so a 5.45 s clip still runs 3 full forward passes. The transformer forward is the whole budget and is
+already CPU-multithreaded (`30.5 s user / 6.4 s real` ≈ 5× parallel).
+
+**GPU/ANE offload — REJECTED (measured net loss + breaks the guarantee).** Tested the closest available proxy,
+the ONNX Runtime **CoreML execution provider** (targets the same Apple GPU/ANE MLX would). Result: the
+transformer went **3.5× slower** (4179 ms → 14785 ms) *and* output diverged from the CPU path (not
+byte-identical — fp16 kernels). Root cause is structural, reported by the EP itself: *"91 partitions, 438 of
+833 nodes supported by CoreML."* Transkun's custom transformer has many ops the accelerator can't run, so the
+graph fragments into 91 CPU↔accelerator handoffs per forward pass; the sync/copy overhead dwarfs any matmul
+speedup. **MLX hits the same wall** (unsupported-op fragmentation) *plus* has no C# binding — it would require
+a Python/Swift interop layer, breaking the "no Python at runtime / single .NET runtime" property Stage 4 was
+built to earn, and it could not run on the Linux/x64 CI runner that gates parity. So GPU offload trades a
+*proven, CI-gated, note-identical* guarantee for a *slower, unverifiable* one. The CoreML experiment code was
+removed; this entry is the record so it is not re-investigated (revisit only if a future ORT/CoreML materially
+reduces the partition count).
+
+**Mel front end parallelized — KEPT (real win, parity-safe).** The mel `Compute` frame loop
+(`TranskunMelFrontEnd`) was single-threaded, running while the ONNX cores sat idle. Frames are independent
+(each writes only its own `features[f,*,*]`; the injected `Radix2Fft.Forward` is a pure, stateless function),
+so it now fans out via `Parallel.For` with thread-local scratch. The per-frame math is untouched → output is
+**bit-identical** to the serial loop, so determinism (§4) and the 4d/4e parity gate both hold (5/5 Transkun
+tests still pass). Mel dropped **1379 ms → ~230 ms (6×)**, ~22 % off total processing (~5.7 s → ~4.5 s on the
+21.8 s clip). The env-gated `TRANSKUN_TIMING` phase stopwatch was kept as an opt-in diagnostic (zero cost when
+off) for future perf regression checks. The remaining ~90 % is the transformer forward — a hard CPU floor for
+this graph.
