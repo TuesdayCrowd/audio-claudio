@@ -9,6 +9,7 @@ Options:
   --skip-silence       collapse pauses > 500ms (implies --record)
   --note-names         print a scientific-pitch-name lyric under each note
   --soundfont <PATH>   explicit SoundFont for the --record recreation (auto-discovered otherwise)
+  --poly               (prototype) near-real-time POLYPHONIC live view (requires --view)
 
 Example:
   claudio listen --view --record

@@ -49,6 +49,22 @@ internal static class ListenAppCommand
         bool skipSilence = p.Flag("skip-silence");
         bool record = p.Flag("record") || skipSilence; // --skip-silence implies --record
         bool noteNames = p.Flag("note-names");
+
+        // Prototype fork: near-real-time POLYPHONIC live view (--poly). Entirely separate from the
+        // monophonic path below -- nothing here touches TranscriptionPipeline/LiveTranscriptionSession,
+        // and nothing below runs when --poly is set, so the proven mono `listen --view` path is
+        // completely unaffected by this branch's existence.
+        if (p.Flag("poly"))
+        {
+            if (!view)
+            {
+                stderr.WriteLine("error: --poly requires --view (there is nowhere to display the live grand-staff prototype without it).");
+                return 1;
+            }
+
+            return RunPolyphonicPrototype(outDir, tempoBpm, stdout, stderr, logBuffer);
+        }
+
         var rate = new SampleRate(SampleRateHz);
 
         // SoundFont/synth construction is LAZY (Step 9 precedent): a plain listen session that
@@ -219,6 +235,42 @@ internal static class ListenAppCommand
             server?.Dispose();
         }
 
+        return 0;
+    }
+
+    // The --poly prototype fork (see LivePolyphonicView's doc for the full design/threading writeup
+    // and its non-scaling caveat). SINGLE-TAKE only: the mic starts recording the moment this runs,
+    // Ctrl+C stops and saves -- no browser Start/Stop button integration (see LivePolyphonicView).
+    private static int RunPolyphonicPrototype(string outDir, double tempoBpm, TextWriter stdout, TextWriter stderr, StringBuilder logBuffer)
+    {
+        using var server = new LiveNotationServer(Path.Combine(AppContext.BaseDirectory, "wwwroot"), outDirPath: outDir);
+        try
+        {
+            server.Start();
+        }
+        catch (Exception ex)
+        {
+            stderr.WriteLine($"error: live notation view unavailable ({ex.Message}); aborting the --poly prototype.");
+            return 1;
+        }
+
+        stdout.WriteLine($"Live notation view (POLYPHONIC PROTOTYPE): {server.BaseUrl}");
+        stdout.WriteLine("Recording starts immediately. Ctrl+C stops and writes score.mid/score.musicxml.");
+        TryOpenBrowser(server.BaseUrl);
+
+        using var mic = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
+        var levelSource = new LevelTeeingAudioSource(mic,
+            rms => server.PublishLevel(rms, mic.DeviceName ?? "Unknown microphone"));
+
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; mic.Stop(); cts.Cancel(); };
+
+        logBuffer.Clear();
+        mic.Start();
+        using var view = new LivePolyphonicView(server, outDir, tempoBpm, stdout.WriteLine);
+        view.Run(levelSource, cts.Token);
+
+        File.WriteAllText(Path.Combine(outDir, "log.txt"), logBuffer.ToString());
         return 0;
     }
 

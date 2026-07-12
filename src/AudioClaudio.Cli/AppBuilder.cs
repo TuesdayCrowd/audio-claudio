@@ -292,6 +292,7 @@ public static class AppBuilder
             .WithOption(new CliOption("--skip-silence", OptionKind.Flag, "collapse pauses > 500ms (implies --record)"))
             .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont for the --record recreation (auto-discovered otherwise)"))
+            .WithOption(new CliOption("--poly", OptionKind.Flag, "(prototype) near-real-time POLYPHONIC live view (requires --view)"))
             .WithExample("claudio listen --view --record");
         app.Register(listen, (p, stdout, stderr) => ListenAppCommand.Run(p, stdout, stderr, logBuffer));
 
