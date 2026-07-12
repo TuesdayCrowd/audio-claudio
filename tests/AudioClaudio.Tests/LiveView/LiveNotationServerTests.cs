@@ -100,6 +100,40 @@ public class LiveNotationServerTests
         Assert.True(captured.NoteNames);
         Assert.True(captured.Record);
         Assert.Equal("Hello World", captured.Title);
+        Assert.Equal(TimeSignature.FourFour, captured.TimeSignature); // no timeSignature query param
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PostToRecordStartParsesAValidTimeSignatureQueryParam()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        RecordOptions captured = default;
+        server.StartRequested = opts => captured = opts;
+        server.Start();
+        using var http = new HttpClient();
+
+        var response = await http.PostAsync(server.BaseUrl + "record/start?timeSignature=3%2F4", content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(new TimeSignature(3, 4), captured.TimeSignature);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PostToRecordStartFallsBackToFourFourOnAnInvalidTimeSignatureQueryParam()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        RecordOptions captured = default;
+        server.StartRequested = opts => captured = opts;
+        server.Start();
+        using var http = new HttpClient();
+
+        // A malformed value must never abort the take -- just silently keep the MVP default.
+        var response = await http.PostAsync(server.BaseUrl + "record/start?timeSignature=garbage", content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(TimeSignature.FourFour, captured.TimeSignature);
     }
 
     [Fact]

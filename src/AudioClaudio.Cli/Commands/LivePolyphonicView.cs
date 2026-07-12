@@ -89,6 +89,13 @@ public sealed class LivePolyphonicView : IDisposable
     // the score's work-title; null for a headless take (no browser Title input).
     private string? _title;
 
+    // Set fresh at the top of each take's Run() -- the per-take time signature (the browser's Time
+    // selector, mirroring the mono path's RecordOptions.TimeSignature; headless takes get the
+    // top-level `--time-signature` flag instead). Read by MakeGrid(), which is the ONE grid
+    // construction site this class uses for both the periodic live-publish tick and the final
+    // quantized write, so a take's live view and its saved score.mid/score.musicxml always agree.
+    private TimeSignature _timeSignature = TimeSignature.FourFour;
+
     /// <param name="server">
     /// The live-notation server to periodically republish to, or <c>null</c> for a headless take
     /// (no browser view) -- when null, <see cref="Run"/> never starts the periodic re-transcribe loop.
@@ -115,7 +122,13 @@ public sealed class LivePolyphonicView : IDisposable
     /// <param name="noteNames">This take's --note-names choice: when true, both the periodic live
     /// republish and the final score.musicxml carry a scientific-pitch-name lyric under each note
     /// (mirrors the mono path's per-take <c>RecordOptions.NoteNames</c>).</param>
-    public LivePolyphonicResult Run(IAudioSource source, CancellationToken ct, bool noteNames = false, string? title = null)
+    /// <param name="timeSignature">This take's time signature (mirrors the mono path's per-take
+    /// <c>RecordOptions.TimeSignature</c>). Null (the default) falls back to <see
+    /// cref="TimeSignature.FourFour"/> -- callers should never pass <c>default(TimeSignature)</c>
+    /// (0/0), which is not a valid signature.</param>
+    public LivePolyphonicResult Run(
+        IAudioSource source, CancellationToken ct, bool noteNames = false, string? title = null,
+        TimeSignature? timeSignature = null)
     {
         ArgumentNullException.ThrowIfNull(source);
 
@@ -123,6 +136,7 @@ public sealed class LivePolyphonicView : IDisposable
         _accumulator.Clear();
         _noteNames = noteNames;
         _title = title;
+        _timeSignature = timeSignature ?? TimeSignature.FourFour;
         _print(_server is not null
             ? "Recording (polyphonic, re-transcribing ~every 1.6s). Press Stop in the browser (or Ctrl+C) to save."
             : "Recording (polyphonic). Press Ctrl+C to stop and save.");
@@ -276,7 +290,7 @@ public sealed class LivePolyphonicView : IDisposable
     }
 
     private QuantizationGrid MakeGrid() =>
-        new(new SampleRate(BasicPitchModel.SampleRateHz), _tempo, TimeSignature.FourFour, Subdivision.Sixteenth);
+        new(new SampleRate(BasicPitchModel.SampleRateHz), _tempo, _timeSignature, Subdivision.Sixteenth);
 
     /// <summary>
     /// Converts a note list from its own declared <see cref="SampleRate"/> into <paramref name="targetRate"/>

@@ -290,6 +290,7 @@ public static class AppBuilder
             .WithOption(new CliOption("--view", OptionKind.Flag, "open a live sheet-music browser view"))
             .WithOption(new CliOption("--record", OptionKind.Flag, "also write input.wav + recreation.wav"))
             .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
+            .WithOption(new CliOption("--time-signature", OptionKind.String, "time signature for the score (e.g. 3/4, 6/8; default 4/4)", defaultValue: "4/4"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont for the --record recreation (auto-discovered otherwise)"))
             .WithOption(new CliOption("--mono", OptionKind.Flag, "use the monophonic YIN pipeline instead of the polyphonic default"))
             .WithExample("claudio listen --view --record");

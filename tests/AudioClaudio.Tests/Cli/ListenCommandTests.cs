@@ -32,6 +32,14 @@ public class ListenCommandTests
         public void Write(Score score, Stream destination) { Writes++; destination.WriteByte(1); }
     }
 
+    // Captures the LAST Score handed to Write -- used to verify the per-take time-signature
+    // override actually reaches what gets written/published, not just what Run() returns.
+    private sealed class CapturingScoreWriter : IScoreWriter
+    {
+        public Score? LastScore;
+        public void Write(Score score, Stream destination) { LastScore = score; destination.WriteByte(1); }
+    }
+
     private static NoteEvent Note(int midi, long onset) =>
         new NoteEvent(new Pitch(midi), new SamplePosition(onset, Rate), new SampleDuration(22050, Rate), 100);
 
@@ -171,6 +179,61 @@ public class ListenCommandTests
             var cmd = new ListenCommand(Session(notes), midi, midi, _ => { }); // no new params at all
             var result = cmd.Run(new FakeSource(), tempoBpm: 120, outDir: dir);
             Assert.Single(result.Events);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    // Session() always quantizes at 4/4 (see the grid built in Session() above) -- this is the
+    // pipeline's own, session-level default. The per-take time-signature override (the live-view
+    // browser's Time selector) must re-quantize onto a DIFFERENT signature for what actually gets
+    // written and published, while leaving the RETURNED result.Score (the batch pipeline's own
+    // output) untouched.
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void ARescoreOverrideChangesWhatIsWrittenAndPublishedButNotTheReturnedResult()
+    {
+        var notes = new[] { Note(60, 0), Note(62, 22050), Note(64, 44100), Note(65, 66150) };
+        var midi = new SpyMidiWriter();
+        var scoreWriter = new CapturingScoreWriter();
+        var xmlWriter = new CapturingScoreWriter();
+        Score? finalScore = null;
+        var threeFour = new TimeSignature(3, 4);
+        string dir = Path.Combine(Path.GetTempPath(), $"claudio_listen_{Guid.NewGuid():N}");
+        try
+        {
+            var cmd = new ListenCommand(Session(notes), midi, scoreWriter, _ => { },
+                                        musicXmlWriter: xmlWriter, onFinalScore: s => finalScore = s);
+            var result = cmd.Run(new FakeSource(), tempoBpm: 120, outDir: dir,
+                                 overrideSampleRate: Rate, overrideTimeSignature: threeFour);
+
+            Assert.Equal(TimeSignature.FourFour, result.Score.TimeSignature); // pipeline's own output, untouched
+
+            var expectedGrid = new QuantizationGrid(Rate, result.Score.Tempo, threeFour, result.Score.Subdivision);
+            Score expected = Quantizer.Quantize(result.Events, expectedGrid);
+
+            Assert.Equal(expected, scoreWriter.LastScore);
+            Assert.Equal(expected, xmlWriter.LastScore);
+            Assert.Equal(expected, finalScore);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    // Omitting either override parameter (or both) must behave EXACTLY as before this feature
+    // existed: the pipeline's own Score, unmodified, is what gets written and published.
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void OmittingTheRescoreOverrideWritesThePipelinesOwnScoreUnchanged()
+    {
+        var notes = new[] { Note(60, 0), Note(62, 22050) };
+        var midi = new SpyMidiWriter();
+        var scoreWriter = new CapturingScoreWriter();
+        string dir = Path.Combine(Path.GetTempPath(), $"claudio_listen_{Guid.NewGuid():N}");
+        try
+        {
+            var cmd = new ListenCommand(Session(notes), midi, scoreWriter, _ => { });
+            var result = cmd.Run(new FakeSource(), tempoBpm: 120, outDir: dir);
+
+            Assert.Equal(result.Score, scoreWriter.LastScore);
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
     }

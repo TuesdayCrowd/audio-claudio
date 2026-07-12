@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AudioClaudio.Domain;
 
 /// <summary>
@@ -33,4 +35,56 @@ public readonly record struct TimeSignature
 
     /// <summary>The MVP time signature, 4/4.</summary>
     public static TimeSignature FourFour => new(4, 4);
+
+    private const string FormatErrorMessage =
+        "time signature must look like 4/4 or 6/8 (denominator a power of two)";
+
+    /// <summary>
+    /// Parses a "N/D" time signature (e.g. "3/4", "6/8") declared on the command line or from a
+    /// web-view form field. Surrounding and interior whitespace around the numerator/denominator is
+    /// tolerated ("4 / 4" parses the same as "4/4"). On success, <paramref name="result"/> is the
+    /// parsed <see cref="TimeSignature"/> and <paramref name="error"/> is null; on failure,
+    /// <paramref name="result"/> is <c>default</c> and <paramref name="error"/> is a friendly
+    /// message suitable for printing directly to the user. The actual range/power-of-two validation
+    /// is delegated to the constructor (never duplicated here) so the two never disagree.
+    /// </summary>
+    public static bool TryParse(string? text, out TimeSignature result, out string? error)
+    {
+        result = default;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            error = FormatErrorMessage;
+            return false;
+        }
+
+        int slash = text.IndexOf('/');
+        if (slash < 0)
+        {
+            error = FormatErrorMessage;
+            return false;
+        }
+
+        string numeratorText = text[..slash].Trim();
+        string denominatorText = text[(slash + 1)..].Trim();
+
+        if (!int.TryParse(numeratorText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int beatsPerMeasure) ||
+            !int.TryParse(denominatorText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int beatUnit))
+        {
+            error = FormatErrorMessage;
+            return false;
+        }
+
+        try
+        {
+            result = new TimeSignature(beatsPerMeasure, beatUnit);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            error = FormatErrorMessage;
+            return false;
+        }
+    }
 }

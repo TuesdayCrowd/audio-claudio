@@ -165,10 +165,18 @@ public sealed class LiveNotationServer : IDisposable
             {
                 System.Collections.Specialized.NameValueCollection q = ctx.Request.QueryString;
                 bool Flag(string key) => q[key] is "true" or "1";
+                // Missing or invalid falls back to 4/4 (TryParse's own out parameter is never read
+                // on failure) -- a malformed query value must never abort a take, only silently
+                // keep the MVP default.
+                if (!TimeSignature.TryParse(q["timeSignature"], out TimeSignature timeSignature, out _))
+                {
+                    timeSignature = TimeSignature.FourFour;
+                }
                 var options = new RecordOptions(
                     Record: Flag("record"),
                     NoteNames: Flag("noteNames"),
-                    Title: string.IsNullOrWhiteSpace(q["title"]) ? null : q["title"]);
+                    Title: string.IsNullOrWhiteSpace(q["title"]) ? null : q["title"],
+                    TimeSignature: timeSignature);
                 try { StartRequested?.Invoke(options); } catch { /* best-effort control signal */ }
                 ctx.Response.StatusCode = (int)HttpStatusCode.NoContent;
                 return;

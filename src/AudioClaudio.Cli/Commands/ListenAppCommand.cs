@@ -53,13 +53,23 @@ internal static class ListenAppCommand
         bool record = p.Flag("record");
         bool noteNames = p.Flag("note-names");
 
+        // The session-level default (the CLI flag): headless takes always use it; a --view take
+        // uses its own per-take browser value instead (RecordOptions.TimeSignature) -- see the
+        // mono --view loop and RunPolyphonicView below. Invalid input is rejected the same way
+        // --key is (AppBuilder's transcribe/notate handlers): one "error:" line to stderr, exit 1.
+        if (!TimeSignature.TryParse(p.String("time-signature"), out TimeSignature timeSignature, out string? timeSignatureError))
+        {
+            stderr.WriteLine($"error: {timeSignatureError}");
+            return 1;
+        }
+
         // Polyphonic is the DEFAULT `listen` engine (mirrors `transcribe`'s poly-default/--mono
         // pattern); --mono opts into the proven monophonic path below, entirely unchanged -- nothing
         // here touches TranscriptionPipeline/LiveTranscriptionSession, and nothing below runs unless
         // --mono is set, so the mono path is completely unaffected by this branch's existence.
         if (!p.Flag("mono"))
         {
-            return RunPolyphonic(outDir, tempoBpm, view, record, noteNames, p.Path("soundfont"), stdout, stderr, logBuffer);
+            return RunPolyphonic(outDir, tempoBpm, view, record, noteNames, timeSignature, p.Path("soundfont"), stdout, stderr, logBuffer);
         }
 
         var rate = new SampleRate(SampleRateHz);
@@ -69,14 +79,20 @@ internal static class ListenAppCommand
         var synthesizer = new Lazy<MeltySynthSynthesizer>(
             () => new MeltySynthSynthesizer(SoundFontLocator.Resolve(p.Path("soundfont"))));
 
-        var settings = TranscriptionSettings.ForTempo(tempoBpm) with { FrameSize = FrameSize, Hop = Hop, EstimateTempo = estimateTempo };
+        // TimeSignature = timeSignature: the session-level default (the CLI flag) so a headless take
+        // (no --view, or the view failed to start) saves with the declared signature. A --view take
+        // re-quantizes with its OWN per-take browser value instead (see the loop below), so this
+        // default is a fallback for that path, not its final word.
+        var settings = TranscriptionSettings.ForTempo(tempoBpm) with
+        {
+            FrameSize = FrameSize,
+            Hop = Hop,
+            EstimateTempo = estimateTempo,
+            TimeSignature = timeSignature,
+        };
         var pipeline = new TranscriptionPipeline(settings, new Radix2Fft()); // Domain FFT (Step 3 Option A)
         var midiWriter = new DryWetMidiWriter(); // implements INoteEventWriter + IScoreWriter
         var session = new LiveTranscriptionSession(pipeline.StreamNotes, pipeline.Transcribe);
-        // The live preview's grid always uses the fallback/declared tempoBpm (never the estimate --
-        // the estimate is only known after the batch pass on stop); the SAVED score.mid/score.musicxml
-        // come from result.Score, which IS estimated when estimateTempo is set (via `settings` above).
-        var grid = new QuantizationGrid(rate, new Tempo(tempoBpm), TimeSignature.FourFour, Subdivision.Sixteenth);
         var musicXml = new MusicXmlScoreWriter(noteNames);
 
         // One recording's outputs: the out-dir root holds the LATEST files at stable paths; on stop,
@@ -146,7 +162,7 @@ internal static class ListenAppCommand
                 var gate = new object();
                 PortAudioAudioSource? currentMic = null;
                 bool exiting = false;
-                RecordOptions pendingOptions = default;
+                RecordOptions pendingOptions = RecordOptions.Default;
 
                 server.StartRequested = opts => { lock (gate) { pendingOptions = opts; } startSignal.Release(); };
                 server.StopRequested = () => { lock (gate) { currentMic?.Stop(); } };
@@ -174,7 +190,10 @@ internal static class ListenAppCommand
 
                     // fresh accumulation per recording; estimateTempo makes the live preview track an
                     // evolving tempo estimate so it converges to the final score instead of jumping on stop.
-                    var projector = new LiveScoreProjector(grid, estimateTempo);
+                    // The grid is built fresh per take from THIS take's browser Time selector (opts.TimeSignature),
+                    // not the session-level flag default -- mirroring how opts.NoteNames/opts.Title are per-take.
+                    var perTakeGrid = new QuantizationGrid(rate, new Tempo(tempoBpm), opts.TimeSignature, Subdivision.Sixteenth);
+                    var projector = new LiveScoreProjector(perTakeGrid, estimateTempo);
                     LiveNotationServer liveServer = server;
                     var recordingWriter = new MusicXmlScoreWriter(opts.NoteNames, opts.Title);
                     server.ScoreToMusicXml = recordingWriter.WriteToString;
@@ -189,8 +208,11 @@ internal static class ListenAppCommand
                         rms => liveServer.PublishLevel(rms, mic.DeviceName ?? "Unknown microphone"));
                     stdout.WriteLine($"Recording {timestamp}...");
                     mic.Start();
-                    // Runs until mic.Stop() ends the frames — triggered by the Stop button or Ctrl+C.
-                    var result = listenCmd.Run(levelSource, (int)Math.Round(tempoBpm), outDir, CancellationToken.None);
+                    // Runs until mic.Stop() ends the frames — triggered by the Stop button or Ctrl+C. The
+                    // rate/TimeSignature overrides re-quantize the SAVED score onto this take's own
+                    // time signature too (not just the live preview above), so the two never disagree.
+                    var result = listenCmd.Run(levelSource, (int)Math.Round(tempoBpm), outDir, CancellationToken.None,
+                        overrideSampleRate: rate, overrideTimeSignature: opts.TimeSignature);
                     lock (gate) { currentMic = null; }
                     mic.Dispose();
 
@@ -232,11 +254,14 @@ internal static class ListenAppCommand
     // writeup and its non-scaling caveat): --view opens the browser Start/Stop loop; without --view
     // it's a single headless take from launch to Ctrl+C. Routes to whichever the caller asked for.
     private static int RunPolyphonic(
-        string outDir, double tempoBpm, bool view, bool record, bool noteNames, string? soundfontPath,
-        TextWriter stdout, TextWriter stderr, StringBuilder logBuffer) =>
+        string outDir, double tempoBpm, bool view, bool record, bool noteNames, TimeSignature timeSignature,
+        string? soundfontPath, TextWriter stdout, TextWriter stderr, StringBuilder logBuffer) =>
         view
+            // --view ignores the top-level --time-signature flag in favor of each take's own browser
+            // Time selector (RecordOptions.TimeSignature, defaulting to 4/4) -- exactly the existing
+            // precedent for --note-names/--record, neither of which RunPolyphonicView receives either.
             ? RunPolyphonicView(outDir, tempoBpm, record, soundfontPath, stdout, stderr, logBuffer)
-            : RunPolyphonicHeadless(outDir, tempoBpm, record, noteNames, soundfontPath, stdout, logBuffer);
+            : RunPolyphonicHeadless(outDir, tempoBpm, record, noteNames, timeSignature, soundfontPath, stdout, logBuffer);
 
     // SINGLE-TAKE browser loop: the mic starts recording the moment this runs, waits for the browser
     // Start button per take (mirroring the mono --view loop), captures until Stop (or Ctrl+C), saves
@@ -273,7 +298,7 @@ internal static class ListenAppCommand
         var gate = new object();
         PortAudioAudioSource? currentMic = null;
         bool exiting = false;
-        RecordOptions pendingOptions = default;
+        RecordOptions pendingOptions = RecordOptions.Default;
 
         server.StartRequested = opts => { lock (gate) { pendingOptions = opts; } startSignal.Release(); };
         server.StopRequested = () => { lock (gate) { currentMic?.Stop(); } };
@@ -311,7 +336,7 @@ internal static class ListenAppCommand
             mic.Start();
             // Drains until the Stop button or Ctrl+C ends the mic frames, then writes
             // raw.mid/score.mid/score.musicxml and returns the take's raw events + captured frames.
-            LivePolyphonicResult result = view.Run(levelSource, exitCts.Token, opts.NoteNames, opts.Title);
+            LivePolyphonicResult result = view.Run(levelSource, exitCts.Token, opts.NoteNames, opts.Title, opts.TimeSignature);
             lock (gate) { currentMic = null; }
             mic.Dispose();
 
@@ -331,8 +356,8 @@ internal static class ListenAppCommand
     // LivePolyphonicView skips its whole periodic-publish machinery when constructed with a null
     // server (see its Run() doc), so this path never pays for repeated whole-buffer inference.
     private static int RunPolyphonicHeadless(
-        string outDir, double tempoBpm, bool record, bool noteNames, string? soundfontPath,
-        TextWriter stdout, StringBuilder logBuffer)
+        string outDir, double tempoBpm, bool record, bool noteNames, TimeSignature timeSignature,
+        string? soundfontPath, TextWriter stdout, StringBuilder logBuffer)
     {
         var rate = new SampleRate(SampleRateHz);
         var synthesizer = new Lazy<MeltySynthSynthesizer>(
@@ -347,7 +372,7 @@ internal static class ListenAppCommand
         logBuffer.Clear();
         mic.Start();
         // Drains until Ctrl+C stops the mic, then writes raw.mid/score.mid/score.musicxml.
-        LivePolyphonicResult result = view.Run(mic, cts.Token, noteNames, title: null);
+        LivePolyphonicResult result = view.Run(mic, cts.Token, noteNames, title: null, timeSignature);
 
         FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, record);
         return 0;

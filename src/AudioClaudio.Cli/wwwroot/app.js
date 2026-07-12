@@ -113,6 +113,7 @@ startButton.addEventListener("click", async () => {
     record: document.getElementById("opt-record").checked,
     noteNames: document.getElementById("opt-note-names").checked,
     title: document.getElementById("score-title").value,
+    timeSignature: document.getElementById("opt-time-signature").value,
   });
   await fetch("/record/start?" + params.toString(), { method: "POST" });
 });
