@@ -1,10 +1,10 @@
-# audio-claudio v2 — release workplan
+# audio-claudio 0.2.x — release workplan
 
-> **STATUS (2026-07-11): shipped as v2.0.0.** Stages 0–4 are complete and tagged **v2.0.0**
+> **STATUS (2026-07-11): shipped in the 0.2.x line.** Stages 0–4 are complete, shipped in the 0.2.x line
 > (Stage 4 = the self-contained Transkun engine via ONNX, ≥99 % PyTorch parity — measured 100 % + exact
-> velocity). **Stage 5 (packaging / robustness) is deferred to the v2.1 cycle** (Cornelius, 2026-07-11), and
+> velocity). **Stage 5 (packaging / robustness) is deferred to later 0.2.x work** (Cornelius, 2026-07-11), and
 > Stage 4f (the HuggingFace publish) is deferred with it — the artifact is committed, publish-ready, and
-> repo-only for now. Per-stage rationale is in `DECISIONS.md` ("v2 …"); this doc is the historical spec.
+> repo-only for now. Per-stage rationale is in `DECISIONS.md` ("Stage …"); this doc is the historical spec.
 
 ## Why this exists (the refocus)
 
@@ -18,7 +18,7 @@ messy piano, and a SOTA piano model (Transkun) did *not* beat the general engine
 Worse, polyphony shipped as "a capable preview" with **no correctness guarantee** — a regression from the
 one thing that defined v1: a correctness claim *earned* by the closed loop, not asserted.
 
-**v2's job:** realize the Phase-2 vision (`CLAUDE.md` §8) with v1's discipline — every new capability
+**The 0.2.x line's job:** realize the Phase-2 vision (`CLAUDE.md` §8) with v1's discipline — every new capability
 *proven* on a general synthetic corpus, with the honest claim as the headline, and no more single-piece
 chasing.
 
@@ -26,10 +26,10 @@ chasing.
 via ONNX** (Stage 4). Its value is *notation fidelity*, not raw accuracy — and it earns its place under
 the same rules as everything else here (measured on the general corpus; not the default until proven).
 
-## Principles (v1, re-affirmed — and sharpened for a neural v2)
+## Principles (v1, re-affirmed — and sharpened for a neural 0.2.x)
 
 1. **Earned, not asserted — and honest about the *kind* of proof.** v1's correctness was ordinal-free
-   (exact, or not). v2 is inherently ordinal (F1 thresholds, agreement tolerances). So: **exact-recovery
+   (exact, or not). The 0.2.x line is inherently ordinal (F1 thresholds, agreement tolerances). So: **exact-recovery
    where achievable** (the mono closed loop), a **stated statistical threshold over a fixed-seed corpus**
    where not (the neural engines). Every reported number **names its tolerance and its seed**; failures
    ratchet into permanent regression fixtures (the suite only gets harder).
@@ -59,7 +59,7 @@ the same rules as everything else here (measured on the general corpus; not the 
   closed-loop-proven"** in `--help`/README until Stage 1 earns it, then drop the label. (Resolves the
   honest-identity concern via transparency, not via a default the user doesn't want, and avoids a
   poly→mono→poly churn.)
-- Reset README/DECISIONS to describe v2's target honestly.
+- Reset README/DECISIONS to describe the 0.2.x target honestly.
 **Success:** a green per-engine baseline number from the **generated** corpus (tolerance + seed stated),
 and the poly default carries an honest "preview" label.
 
@@ -163,7 +163,7 @@ parity gate (≥99%)**, has a corpus-measured accuracy number and a stated runti
 notation; the ONNX artifact committed (and, on approval, published) with license + attribution + a usable
 decode spec.
 
-## Stage 5 — Robustness, UX, packaging — **DEFERRED to v2.1**
+## Stage 5 — Robustness, UX, packaging — **DEFERRED to later 0.2.x work**
 
 **Goal:** a tool, not a `dotnet run` demo.
 - Ship a packaged **`claudio`** executable (self-contained per platform).
@@ -172,7 +172,7 @@ decode spec.
   cost — budget it).
 **Success:** `claudio <cmd>` runs standalone on macOS and Windows.
 
-## Stage 6 — Ship v2.0.0 honestly
+## Stage 6 — Ship the 0.2.x release honestly
 
 **Goal:** an earned release.
 - Headline claims backed by the **general-corpus** numbers and the polyphonic closed loop — not Death.
@@ -180,7 +180,7 @@ decode spec.
   recovery** (strongest); Basic Pitch poly = **statistical F1 bar** over the seeded corpus (Stage 1);
   Transkun-via-ONNX = **statistical + a ≥99% PyTorch-parity** guarantee. Each with its role, its number,
   and its limits; the default (poly) states its earned status.
-- README / DECISIONS / CONTRACTS reconciled; retire the transient plan docs; tag **v2.0.0**.
+- README / DECISIONS / CONTRACTS reconciled; retire the transient plan docs; tag the release (**v0.2.1**).
 
 ---
 
