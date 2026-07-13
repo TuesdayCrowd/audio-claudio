@@ -1,0 +1,46 @@
+name: Release
+
+# Build the self-contained macOS (osx-arm64) claudio package on a real Apple-Silicon
+# runner and attach it as a downloadable asset on the GitHub Release.
+#
+# WHY a Release asset (not GitHub "Packages"): the Packages registry only hosts
+# npm/NuGet/Maven/RubyGems/container images -- it cannot host a plain .zip. A
+# self-contained binary belongs on the Release. (dotnet-tool/NuGet was rejected in
+# Stage 5: it needs the SDK, defeating "no prerequisites".)
+#
+# This also validates the REAL shipped osx-arm64 artifact in CI -- ci.yml's
+# package-smoke-linux job only proves the packaging MECHANICS on linux-x64. The
+# "runs with zero .NET installed" check remains a Mac manual-acceptance gate (Area E
+# Task 42), since actions/setup-dotnet puts the SDK on the runner.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the build to (for a manual run)"
+        required: true
+
+jobs:
+  package-macos:
+    name: Package & attach claudio-macos-arm64.zip (osx-arm64)
+    runs-on: macos-14 # Apple Silicon (arm64); free for public repos
+    permissions:
+      contents: write # upload the asset to the release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Package (self-contained osx-arm64 publish + fixtures + smoke test + zip)
+        run: scripts/package-macos.sh
+
+      - name: Attach the zip to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" artifacts/claudio-macos-arm64.zip --clobber
