@@ -18,17 +18,17 @@ Claude Code: read all of it before touching anything.
 
 ## Where the project is right now (read this first)
 
-**v2 release cycle in progress (started 2026-07-10).** The plan is
+**The 0.2.x development cycle is in progress (started 2026-07-10).** The plan is
 [`docs/plans/2026-07-10-v2-release-workplan.md`](docs/plans/2026-07-10-v2-release-workplan.md);
 its job is to realize the Phase-2 vision (§8) with v1's discipline — every new capability *proven* on a
-**general** synthetic corpus, no more single-piece chasing. **Stages 0–4 shipped as `v2.0.0`** (2026-07-11;
+**general** synthetic corpus, no more single-piece chasing. **Stages 0–4 shipped in the 0.2.x line** (2026-07-11;
 **Stage 4 = the self-contained Transkun engine via ONNX**: `transcribe --model transkun`, mel front end +
 semi-CRF Viterbi decode ported to C#, the transformer/scorer/heads in a committed 53 MB ONNX —
 **note-IDENTICAL to native PyTorch: F1 = 100 % @ ±25 ms + exact velocity**, gated in CI against committed
 native-reference MIDIs; the third guarantee tier is now earned). **Stage 5 (robustness/packaging) + 4f (the
-HuggingFace publish) are deferred to the v2.1 cycle** (Cornelius, 2026-07-11 — "publish this as v2, save
+HuggingFace publish) are deferred to later 0.2.x work** (Cornelius, 2026-07-11 — "publish this as v2, save
 Stage 5 for v2.1"); the Transkun artifact is committed + publish-ready + repo-only for now. See DECISIONS
-"v2 Stage 4"/"v2 Stage 3". Reported
+"Stage 4"/"Stage 3". Reported
 numbers now come only from the committed corpus in [`docs/CORPUS.md`](docs/CORPUS.md) (mono = bit-exact
 closed-loop recovery; poly = **closed-loop-proven**, note-level F1 ≥ 0.75 @ ±50 ms, measured 79.6% on the
 seed-4242 corpus, 451 notes, gated in CI); the polyphonic default's "preview" label is **lifted** now that
@@ -44,9 +44,9 @@ detection** (Krumhansl-Schmuckler `KeyDetector`, default; `--key` overrides + is
 non-crossing input so goldens hold) 89%→**100%** on continuous crossings; opt-in **`--triplets`**
 (`Subdivision.Twelfth` + `<time-modification>`/`<tuplet>`; mono grid provably bit-exact; off by default so
 straight music gets no spurious triplets) note-value 76.5%→**100%**. Open human gate **R11.2** (MuseScore
-load) scheduled for Cornelius (see DECISIONS "v2 Stage 3"). The
+load) scheduled for Cornelius (see DECISIONS "Stage 3"). The
 guarantee hierarchy is ranked, never flattened (mono bit-exact / poly statistical F1 / Transkun-via-ONNX
-statistical + ≥99 % PyTorch parity). See `DECISIONS.md` "v2 re-baseline", "v2 Stage 1", "v2 Stage 3". The v0.1/v0.2 history below stands.
+statistical + ≥99 % PyTorch parity). See `DECISIONS.md` "0.2.x re-baseline", "Stage 1", "Stage 3". The v0.1/v0.2 history below stands.
 
 **Steps 0–3 are complete and on `main`.** Step 0 scaffold + guards + CI + `DECISIONS.md`;
 the Domain primitives `Pitch`, `PitchMath.CentsBetween`, `SampleRate`,
@@ -137,7 +137,7 @@ conservation. Accuracy iteration (Stage 4) — `OnsetAlignment.GlobalScale`/`Dtw
 stays an honest pitch-recovery signal); `--onset-threshold`/`--frame-threshold`/`--min-note-len`
 (`PolyDecoderOptions`) tune the decoder's note density; `PitchSpeller.Spell` (line-of-fifths,
 nearest-to-centre) gives key-aware enharmonic spelling via a **declared** `--key <fifths>` (like tempo —
-declared, not estimated). **Accuracy (v2 Stage 1 closed-loop gate, see `docs/CORPUS.md`):** the engine is
+declared, not estimated). **Accuracy (Stage 1 closed-loop gate, see `docs/CORPUS.md`):** the engine is
 closed-loop-proven at note-level F1 ≥ 0.75 @ ±50 ms on the seed-4242 corpus (32 cases, 451 notes), measured
 79.6% (81.4/82.0% at ±100/150 ms). On one real copyrighted piece (audio + reference kept outside the repo, never committed) it
 measures ~15–22% by onset tolerance — but that gap is performance rubato + the OMR reference's own error,
@@ -145,7 +145,7 @@ measures ~15–22% by onset tolerance — but that gap is performance rubato + t
 thresholds are a notation-cleanliness knob (tuned values cut the note count ~a third toward the reference's
 density at ~zero F1 cost), not an accuracy lever. Build/test green (431 tests).
 
-**`v2.1.0` (2026-07-12) ships two things off the `live-polyphony` branch: live-view polish (Area D) and a
+**The 0.2.x line (2026-07-12) ships two things off the `live-polyphony` branch: live-view polish (Area D) and a
 polyphonic live-capture prototype for `listen` — the latter is the headline, and its honesty matters as
 much as its existence.** Area D is pure polish on the already-accepted `listen --view` browser page: the
 score now renders on a white "paper" panel so it stays legible in dark mode, a VU meter + resolved
@@ -176,8 +176,9 @@ under the 1.64 s budget) are in
 
 - **The v0.1.0 MVP is shipped; `v0.1.1` added live incremental notation; `v0.1.2` added the recording +
   notation tooling above; `v0.2.0` makes polyphonic transcription (previously opt-in) the default
-  `transcribe` engine (above; `--mono` keeps the proven monophonic path); `v2.1.0` adds live-view polish and
-  a polyphonic live-capture PROTOTYPE for `listen` (above; again `--mono` keeps the proven path).** The lone open human follow-up is the MuseScore GUI
+  `transcribe` engine (above; `--mono` keeps the proven monophonic path); subsequent 0.2.x development adds
+  live-view polish and a polyphonic live-capture PROTOTYPE for `listen` (above; again `--mono` keeps the
+  proven path), culminating in the current `v0.2.1`.** The lone open human follow-up is the MuseScore GUI
   load check for the MusicXML golden (R11.2 — see `DECISIONS.md`), corroborated by OSMD rendering the same
   `MusicXmlScoreWriter` output. Remaining Phase-2 items (§8): pYIN pitch-hardening for the monophonic
   detector (the rare ~0.4% octave residual, and the live-frame ≈ MIDI 42–93 range limits on real mic audio);
@@ -712,7 +713,7 @@ Commit: `docs: README; v0.1.0`.
 
 ```
 claudio transcribe <in.wav> [--tempo 120] [--out-dir out] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   # → raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default, --mono for monophonic YIN (which auto-estimates tempo when --tempo is omitted); --note-names adds a scientific-pitch-name lyric under each note; --key declares the key signature for enharmonic spelling; the three thresholds tune note density; --out-dir defaults to `out` (also true of `notate`)
-claudio listen [--tempo 100] [--out-dir out] [--view] [--record] [--note-names] [--time-signature 4/4] [--mono] [--soundfont <path>]  # live; as of v2.1.0 POLYPHONIC (Basic Pitch) by default — a near-real-time PROTOTYPE (see "Where the project is right now"): re-transcribes the whole mic buffer ~every 1.6s and streams the score to --view; fixed 120 BPM unless --tempo is given (no auto-estimate); --mono selects the proven ~41ms monophonic path instead (auto-estimates tempo if --tempo omitted); writes the same trio on Stop/Ctrl+C; --record also writes input.wav + recreation.wav (each session archived under <out-dir>/<YYYYMMDD_HHMMSS>/); --note-names shows each note's name (e.g. C4) beneath it in --view and score.musicxml; --time-signature sets the saved score's meter (a --view take uses its own browser selector instead); --skip-silence was REMOVED in v2.1.0
+claudio listen [--tempo 100] [--out-dir out] [--view] [--record] [--note-names] [--time-signature 4/4] [--mono] [--soundfont <path>]  # live; as of 0.2.1 POLYPHONIC (Basic Pitch) by default — a near-real-time PROTOTYPE (see "Where the project is right now"): re-transcribes the whole mic buffer ~every 1.6s and streams the score to --view; fixed 120 BPM unless --tempo is given (no auto-estimate); --mono selects the proven ~41ms monophonic path instead (auto-estimates tempo if --tempo omitted); writes the same trio on Stop/Ctrl+C; --record also writes input.wav + recreation.wav (each session archived under <out-dir>/<YYYYMMDD_HHMMSS>/); --note-names shows each note's name (e.g. C4) beneath it in --view and score.musicxml; --time-signature sets the saved score's meter (a --view take uses its own browser selector instead); --skip-silence was REMOVED in 0.2.1
 claudio play <file.mid>                                 # MeltySynth playback
 claudio render <file.mid> <out.wav>                     # deterministic render
 claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align|--warp]  # note-level precision/recall/F1 of a transcription vs a reference; --align cancels a global tempo ratio, --warp (DTW) also removes local rubato and wins if both are given
@@ -727,7 +728,7 @@ The CLI is the only place adapters are constructed and wired to ports.
 Recorded so the MVP can decline scope without losing the ideas. Rough order of
 value:
 
-1. **Polyphony — the default `transcribe` engine (`v0.2.0`), closed-loop-proven in v2 Stage 1**
+1. **Polyphony — the default `transcribe` engine (`v0.2.0`), closed-loop-proven in Stage 1**
    (note-level F1 ≥ 0.75 @ ±50 ms on the seed-4242 corpus, gated in CI). (see
    "Where the project is right now" above; `--mono` keeps the monophonic path).
    Spotify Basic Pitch's ONNX serialization via Microsoft.ML.OnnxRuntime, a
@@ -738,7 +739,7 @@ value:
    performance. Accuracy is instead measured by a new `evaluate` harness (Stage 1)
    scoring against a real reference recording's note-set; that is how the
    ~15–22% real-world F1 above was established. The polyphonic closed-loop **gate**
-   (`PolyphonicClosedLoopTests`, v2 Stage 1) measures the engine's *intrinsic*
+   (`PolyphonicClosedLoopTests`, Stage 1) measures the engine's *intrinsic*
    fidelity at **F1 79.6%** @±50 ms (82.0% @±150 ms, seed-4242, 451 notes) on clean
    synthesized chords and requires F1 ≥ 0.75 — showing that ~15–22% real-world figure is dominated by
    rubato + OMR-reference error, not the engine (see `DECISIONS.md` and `docs/CORPUS.md`). It is a

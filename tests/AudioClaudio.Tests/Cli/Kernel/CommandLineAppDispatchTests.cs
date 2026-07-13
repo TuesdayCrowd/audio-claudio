@@ -36,7 +36,7 @@ public class CommandLineAppDispatchTests
         var exitCode = app.Run(new[] { "--version" }, stdout, new StringWriter());
 
         Assert.Equal(0, exitCode);
-        Assert.Equal("claudio 2.1.0\n", stdout.ToString());
+        Assert.Equal("claudio 0.2.1\n", stdout.ToString());
     }
 
     [Fact]
