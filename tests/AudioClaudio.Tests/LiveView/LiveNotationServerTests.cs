@@ -94,18 +94,18 @@ public class LiveNotationServerTests
         using var http = new HttpClient();
 
         var response = await http.PostAsync(
-            server.BaseUrl + "record/start?noteNames=true&title=Hello%20World&skipSilence=true", content: null);
+            server.BaseUrl + "record/start?record=true&noteNames=true&title=Hello%20World", content: null);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.True(captured.NoteNames);
-        Assert.True(captured.SkipSilence);
-        Assert.True(captured.Record); // skip-silence implies record
+        Assert.True(captured.Record);
         Assert.Equal("Hello World", captured.Title);
+        Assert.Equal(TimeSignature.FourFour, captured.TimeSignature); // no timeSignature query param
     }
 
     [Fact]
     [Trait("Category", "Fast")]
-    public async Task PostToRecordStartWithOnlyRecordFlagDoesNotImplySkipSilence()
+    public async Task PostToRecordStartParsesAValidTimeSignatureQueryParam()
     {
         using var server = new LiveNotationServer(WebRoot);
         RecordOptions captured = default;
@@ -113,11 +113,27 @@ public class LiveNotationServerTests
         server.Start();
         using var http = new HttpClient();
 
-        var response = await http.PostAsync(server.BaseUrl + "record/start?record=true", content: null);
+        var response = await http.PostAsync(server.BaseUrl + "record/start?timeSignature=3%2F4", content: null);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.True(captured.Record);
-        Assert.False(captured.SkipSilence);
+        Assert.Equal(new TimeSignature(3, 4), captured.TimeSignature);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PostToRecordStartFallsBackToFourFourOnAnInvalidTimeSignatureQueryParam()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        RecordOptions captured = default;
+        server.StartRequested = opts => captured = opts;
+        server.Start();
+        using var http = new HttpClient();
+
+        // A malformed value must never abort the take -- just silently keep the MVP default.
+        var response = await http.PostAsync(server.BaseUrl + "record/start?timeSignature=garbage", content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(TimeSignature.FourFour, captured.TimeSignature);
     }
 
     [Fact]
@@ -301,6 +317,79 @@ public class LiveNotationServerTests
         (string eventName, string data) = await ReadSseFrameAsync(reader, TimeSpan.FromSeconds(5));
         Assert.Equal("level", eventName);
         Assert.Equal("0.4321|Test Microphone", data);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishScoreXmlDeliversTheGivenMusicXmlVerbatimToAConnectedClient()
+    {
+        // Shape-agnostic path used by the polyphonic `listen` engine (the default, `listen --view`):
+        // the caller pre-serializes a GrandStaffScore itself, so PublishScoreXml must broadcast the
+        // string as-is (base64-wrapped), never touching ScoreToMusicXml/the mono Score serializer.
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        const string xml = "<score-partwise>fake grand staff</score-partwise>";
+        server.PublishScoreXml(xml);
+
+        (string eventName, string data) = await ReadSseFrameAsync(reader, TimeSpan.FromSeconds(5));
+        Assert.Equal("score", eventName);
+        Assert.Equal(xml, Encoding.UTF8.GetString(Convert.FromBase64String(data)));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishScoreXmlIsReplayedToALateJoiningClient()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        const string xml = "<score-partwise>late join</score-partwise>";
+        server.PublishScoreXml(xml); // published BEFORE any client connects
+
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        string received = await ReadSseDataLineAsync(reader, TimeSpan.FromSeconds(5));
+        Assert.Equal(xml, received);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishTakeReadySendsATakeReadyEventToAConnectedClient()
+    {
+        // The fix for the stale-recording-player bug: the browser must not reveal a take's
+        // output (recreation.wav in particular) until the server signals every file is written,
+        // rather than racily polling for score.musicxml (see LiveNotationServer.PublishTakeReady).
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        server.PublishTakeReady();
+
+        (string eventName, string data) = await ReadSseFrameAsync(reader, TimeSpan.FromSeconds(5));
+        Assert.Equal("take-ready", eventName);
+        Assert.Equal(string.Empty, data);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public async Task PublishTakeReadyIsNotReplayedToALateJoiningClient()
+    {
+        using var server = new LiveNotationServer(WebRoot);
+        server.Start();
+        server.PublishTakeReady(); // published BEFORE any client connects
+
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(server.BaseUrl + "events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+
+        await Assert.ThrowsAsync<TimeoutException>(() => ReadSseDataLineAsync(reader, TimeSpan.FromMilliseconds(500)));
     }
 
     [Fact]

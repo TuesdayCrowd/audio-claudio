@@ -48,8 +48,23 @@ public sealed class ListenCommand
         _onFinalScore = onFinalScore;
     }
 
+    /// <remarks>
+    /// <paramref name="overrideSampleRate"/>/<paramref name="overrideTimeSignature"/> together form
+    /// a per-take time-signature override (the live-view browser's Time selector): when BOTH are
+    /// supplied, the batch pass's raw <see cref="LiveSessionResult.Events"/> are re-quantized onto a
+    /// grid identical to the pipeline's own EXCEPT for the time signature -- preserving whatever
+    /// tempo the pipeline settled on (declared or estimated; the same tempo-estimation asymmetry
+    /// already accepted for the live-preview grid, see <c>ListenAppCommand</c>) while making the
+    /// SAVED score.mid/score.musicxml (and the final live-view publish) follow the take's chosen
+    /// signature. <paramref name="overrideSampleRate"/> must equal the rate <see
+    /// cref="LiveSessionResult.Events"/>' onsets are declared at (the caller already knows this --
+    /// it is the same rate the mic/source was opened at). Null (the default) keeps the pipeline's
+    /// own <see cref="Score"/> untouched, exactly as before this parameter existed.
+    /// </remarks>
     public LiveSessionResult Run(IAudioSource source, int tempoBpm, string outDir,
-                                 CancellationToken ct = default)
+                                 CancellationToken ct = default,
+                                 SampleRate? overrideSampleRate = null,
+                                 TimeSignature? overrideTimeSignature = null)
     {
         Directory.CreateDirectory(outDir);
         _print($"Listening at {tempoBpm} BPM. Press Ctrl+C to stop.");
@@ -62,7 +77,15 @@ public sealed class ListenCommand
             _print(FormatNote(n));
             SafeInvokeHook(_onLiveNote, n, "onLiveNote");
         }, ct);
-        SafeInvokeHook(_onFinalScore, result.Score, "onFinalScore");
+
+        Score scoreToWrite = result.Score;
+        if (overrideSampleRate is { } rate && overrideTimeSignature is { } timeSignature)
+        {
+            var overrideGrid = new QuantizationGrid(rate, result.Score.Tempo, timeSignature, result.Score.Subdivision);
+            scoreToWrite = Quantizer.Quantize(result.Events, overrideGrid);
+        }
+
+        SafeInvokeHook(_onFinalScore, scoreToWrite, "onFinalScore");
 
         var tempo = new Tempo(tempoBpm);
 
@@ -71,14 +94,14 @@ public sealed class ListenCommand
         using (var raw = File.Create(rawPath))
             _rawWriter.Write(result.Events, tempo, raw);
         using (var score = File.Create(scorePath))
-            _scoreWriter.Write(result.Score, score);
+            _scoreWriter.Write(scoreToWrite, score);
         _print($"Wrote {rawPath} and {scorePath}.");
 
         if (_musicXmlWriter is not null)
         {
             string xmlPath = Path.Combine(outDir, "score.musicxml");
             using (var xml = File.Create(xmlPath))
-                _musicXmlWriter.Write(result.Score, xml);
+                _musicXmlWriter.Write(scoreToWrite, xml);
             _print($"Wrote {xmlPath}.");
         }
         return result;

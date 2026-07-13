@@ -38,4 +38,42 @@ public class TimeSignatureTests
     {
         Assert.Equal(new TimeSignature(4, 4), TimeSignature.FourFour);
     }
+
+    [Theory]
+    [Trait("Category", "Fast")]
+    [InlineData("4/4", 4, 4)]
+    [InlineData("3/4", 3, 4)]
+    [InlineData("6/8", 6, 8)]
+    [InlineData("2/2", 2, 2)]
+    [InlineData(" 4 / 4 ", 4, 4)] // whitespace around the slash and the string is tolerated
+    public void TryParse_accepts_valid_time_signatures(string text, int beatsPerMeasure, int beatUnit)
+    {
+        Assert.True(TimeSignature.TryParse(text, out TimeSignature result, out string? error));
+        Assert.Equal(new TimeSignature(beatsPerMeasure, beatUnit), result);
+        Assert.Null(error);
+    }
+
+    [Theory]
+    [Trait("Category", "Fast")]
+    [InlineData("5/3")]   // denominator not a power of two
+    [InlineData("0/4")]   // non-positive numerator
+    [InlineData("abc")]   // not numeric, no slash
+    [InlineData("4")]     // no slash at all
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryParse_rejects_invalid_time_signatures(string text)
+    {
+        Assert.False(TimeSignature.TryParse(text, out TimeSignature result, out string? error));
+        Assert.Equal(default, result);
+        Assert.False(string.IsNullOrWhiteSpace(error));
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void TryParse_rejects_null()
+    {
+        Assert.False(TimeSignature.TryParse(null, out TimeSignature result, out string? error));
+        Assert.Equal(default, result);
+        Assert.False(string.IsNullOrWhiteSpace(error));
+    }
 }

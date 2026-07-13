@@ -119,13 +119,18 @@ button:disabled { background: var(--meter-track); color: var(--idle); cursor: no
 
 #vu-meter-fill { height: 100%; width: 0%; background: var(--meter-fill); transition: width 80ms linear; }
 
-section[aria-label="Live sheet music"] {
+/* Bounded, scrollable viewport (both axes on the SAME element) so a long live take never grows the
+   page without limit -- the newest system is kept in view by app.js scrolling this element to the
+   bottom after every render (see the "score" SSE handler). */
+#sheet-music-viewport {
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   padding: 1rem;
   min-height: 200px;
+  max-height: 60vh;
   overflow-x: auto;
+  overflow-y: auto;
 }
 
 /* OSMD renders the score as black SVG notation with a transparent background, so in dark mode it

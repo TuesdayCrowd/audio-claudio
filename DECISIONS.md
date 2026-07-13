@@ -1560,3 +1560,91 @@ tests still pass). Mel dropped **1379 ms → ~230 ms (6×)**, ~22 % off total pr
 21.8 s clip). The env-gated `TRANSKUN_TIMING` phase stopwatch was kept as an opt-in diagnostic (zero cost when
 off) for future perf regression checks. The remaining ~90 % is the transformer forward — a hard CPU floor for
 this graph.
+
+## v2.1 Area D — live-view polish: paper background, VU meter, in-page playback, downloads, auto-scroll (2026-07-12)
+
+**What landed.** Four small, additive changes to the `listen --view` browser page
+(`src/AudioClaudio.Cli/wwwroot/`), none touching a transcription engine or the saved-file contract:
+
+- **A white "paper" background behind the score**, in both light and dark themes. OSMD renders the staff
+  as black SVG notation on a transparent background, which would be unreadable black-on-dark; the fix is a
+  fixed white host panel behind the notation (`styles.css`), not a themed OSMD render.
+- **A VU meter + resolved input-device name** (`#vu-meter`/`#vu-meter-fill`, `app.js`). `LevelTeeingAudioSource`
+  (`src/AudioClaudio.Cli/Composition/`) taps the mic's per-frame RMS and the device name PortAudio reports,
+  publishing both over the existing SSE channel (`LiveNotationServer.PublishLevel`); the browser drives the
+  meter fill and device label from that feed.
+- **In-page `<audio>` playback** of the finished take (`#recreation-player`) and **one-click downloads** of
+  `raw.mid`/`score.mid`/`score.musicxml`/`recreation.wav` (`#download-links`), both wired to that take's own
+  out-dir files only once `PublishTakeReady` fires — a link is never live before its file exists.
+- **Auto-scroll to the newest system** as notes stream in (the viewport scrolls to its own bottom after each
+  render), reset to the top when a new take starts.
+
+**No design decision to record.** This is UI polish on the already-accepted `listen --view` page (Phase-2 §8
+item 3; `docs/plans/2026-07-07-live-notation-design.md`), not a new capability — it ships as part of
+**v2.1.0** alongside the polyphonic live-capture prototype below, but is otherwise unrelated to it (Area D
+lands unchanged whichever `listen` engine — `--mono` or the polyphonic default — is running). See commits
+`dd875e1`, `bd44170`, `d544f44`, `727254c` for the unit-by-unit build.
+
+## v2.1 — Live polyphonic capture: mic over MIDI, poly is `listen`'s default, prototype limits accepted (2026-07-12)
+
+**The ask (Cornelius, 2026-07-12; full design in
+[`docs/plans/2026-07-12-live-polyphony-design.md`](docs/plans/2026-07-12-live-polyphony-design.md)).** Track
+multiple simultaneous notes live from the microphone, each with its own onset/offset — his worked example: an
+A struck together with a C, the A held a half note, the C held a whole note.
+
+**Decision 1 — acoustic microphone input, not MIDI (Cornelius's call, eyes open).** The design's four-lens
+adversarial review found that MIDI input would make polyphony, per-note durations, multi-voice notation, and
+low latency all **native and exact**, sidestepping every blocker below, and said so explicitly ("Reconsider
+MIDI" — the review's forced open decision #3). Cornelius chose to proceed with the acoustic-mic path anyway
+("Decision (Cornelius, 2026-07-12): proceed with the acoustic-mic spike" in the design doc) — a deliberate,
+informed trade of engineering ease for staying true to this project's stated premise that "the microphone is
+just an adapter" (`CLAUDE.md` §2). Recorded here so the trade-off is visible, not silently resolved.
+
+**Decision 2 — the performance spike gated the build, and passed.** Per the design's spike-first discipline,
+`BasicPitchStreamingSpike` (`Category=Spike`, excluded from CI) measured, on the M3 Max, before any production
+code: window inference median **~9 ms** (183× under the 1.64 s hop budget); unbounded decode over accumulated
+frames grew **linearly** (64 ms at a simulated 10-minute session, 25× under budget); a bounded trailing-window
+decode variant stayed flat at **~1 ms** regardless of length. The near-real-time premise held. One honest
+caveat recorded alongside it: the synthetic test grids don't exercise `MelodiaSweep`'s pathological O(T²) case
+(many weak-onset bursts) — bounded decode would sidestep it entirely, but see Decision 4 for why bounded
+decode was not, in the end, what shipped.
+
+**Decision 3 — polyphonic is `listen`'s DEFAULT engine; `--mono` is the opt-out.** Mirrors `transcribe`'s
+existing poly-default/`--mono` pattern (v0.2.0; and the v2-re-baseline "piano is two hands" call — see above).
+This regresses the already-accepted monophonic live view's ~41 ms latency to a near-real-time ~2 s one for
+anyone who does not pass `--mono`, an explicit and accepted trade so `listen`'s default experience shows both
+hands like `transcribe`'s already does. `--mono` is unchanged and remains the only `listen` path with a proven
+accuracy guarantee behind it (the exact-recovery closed loop, Step 10).
+
+**Decision 4 — ship the simpler non-incremental shortcut, not the design's incremental architecture; accepted
+as prototype-quality.** The adversarial review found that "reuse the pipeline incrementally" was actually a
+rewrite: `BasicPitchTranscriber.Transcribe` has no incremental entry point (`RunWindows` restarts from sample 0
+every call), decode is superlinear over a growing posteriorgram, and the resampler is whole-buffer and
+non-causal. Rather than build that rewrite — the `Confirmed`-flag placeholder mechanism, a settlement
+debounce, a causal resampler, and a new grand-staff publish surface were all explicitly listed as "deferred
+until spike passes" — the shipped `LivePolyphonicView`
+(`src/AudioClaudio.Cli/Commands/LivePolyphonicView.cs`) takes the simplest correct approach instead: every
+~1.64 s it re-runs the existing **batch** `BasicPitchTranscriber` over the **whole** captured buffer so far and
+republishes a fresh grand-staff score. This is flagged in the class's own doc comment as "the one deliberately
+non-scaling shortcut, kept because it is good enough for a live demo take" — per-tick cost grows with session
+length (unlike the spike's isolated, bounded-decode measurements above, which this shortcut does not actually
+use), so **this is accepted, named prototype-quality — a short-take demo, not a scalable live engine.** On
+Stop, the final save re-runs the identical batch transcribe over the complete session audio, so the saved
+`raw.mid`/`score.mid`/`score.musicxml` carry the same, already-earned polyphonic closed-loop guarantee (F1 ≥
+0.75 @ ±50 ms, `docs/CORPUS.md`) as any other polyphonic `transcribe`/`notate` output. **The live view itself
+earns none of that guarantee — it is the same engine, shown as it periodically resolves** — ranked below
+every existing guarantee (monophonic bit-exact / polyphonic-batch statistical F1 / Transkun parity), never
+flattened into "proven."
+
+**Decision 5 — the homophonic-per-staff limitation is accepted, unresolved; Cornelius's literal worked example
+still cannot be shown.** Stage 3's grand-staff model (see "Phase 2 — Polyphonic transcription" above)
+represents a chord as one or more pitches sharing ONE onset and ONE duration. Two notes struck together with
+different lengths — the A-half/C-whole example that opened this ask — still collapse to a single displayed
+duration; showing them independently requires multi-voice notation, which was not built. The adversarial
+review named this "the headline blocker," and it remains open.
+
+**Deferred, not silently dropped:** genuinely incremental inference (so per-tick cost stops growing with take
+length) and multi-voice notation (so simultaneously-struck notes of different lengths display independently).
+Both are named next steps in the design doc, not attempted here. **Summary: this feature is shipped as
+`listen`'s default at Cornelius's explicit direction, honestly documented as prototype-quality throughout —
+not because it has cleared this project's usual earn-it-first bar.**

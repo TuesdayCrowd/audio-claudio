@@ -65,3 +65,6 @@ out/
 raw.mid
 score.mid
 score.musicxml
+log.txt
+# Timestamped session-archive dirs (yyyyMMdd_HHmmss) from an --out-dir "." run.
+20[0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]/

@@ -82,6 +82,34 @@ public sealed class LiveNotationServer : IDisposable
     public void PublishClear() => Broadcast(("clear", string.Empty), remembered: null);
 
     /// <summary>
+    /// Signal that the take's output files (raw.mid/score.mid/score.musicxml, and -- when
+    /// --record is on -- recreation.wav/input.wav) have ALL finished being written to
+    /// <see cref="OutDirPath"/> and are now safe for the browser to fetch. Fired once, after
+    /// the take's finalize step completes (see `ListenAppCommand`'s Finalize*Recording calls),
+    /// so app.js's Stop-button handler no longer has to poll for score.musicxml and risk
+    /// revealing the PREVIOUS take's recreation.wav in the race window before the new one lands.
+    /// Never remembered for late joiners (remembered: null) -- like "clear", it's a momentary
+    /// signal, not state a fresh connection should be replayed.
+    /// </summary>
+    public void PublishTakeReady() => Broadcast(("take-ready", string.Empty), remembered: null);
+
+    /// <summary>
+    /// Shape-agnostic counterpart to <see cref="PublishScore"/>: broadcasts an already-serialized
+    /// MusicXML string directly as the "score" SSE event (same base64 wire format, same late-joiner
+    /// remembering), skipping the mono <see cref="ScoreToMusicXml"/> serializer entirely. Exists for
+    /// the polyphonic live-view prototype (`listen --view --poly`), whose <c>GrandStaffScore</c> is a
+    /// different type than the monophonic <see cref="Score"/> that <see cref="ScoreToMusicXml"/>
+    /// expects -- the browser's app.js already renders whatever "score" MusicXML arrives, grand-staff
+    /// or single-staff alike, so no client change is needed.
+    /// </summary>
+    public void PublishScoreXml(string musicXml)
+    {
+        ArgumentNullException.ThrowIfNull(musicXml);
+        string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(musicXml));
+        Broadcast(("score", base64), remembered: ("score", base64));
+    }
+
+    /// <summary>
     /// Broadcasts the current input level (RMS) and the capture device's name as a small "level"
     /// SSE event -- the VU-meter feed for the live-view page (S5.10). Never remembered for late
     /// joiners (remembered: null): a level reading is momentary, unlike a score.
@@ -137,11 +165,18 @@ public sealed class LiveNotationServer : IDisposable
             {
                 System.Collections.Specialized.NameValueCollection q = ctx.Request.QueryString;
                 bool Flag(string key) => q[key] is "true" or "1";
+                // Missing or invalid falls back to 4/4 (TryParse's own out parameter is never read
+                // on failure) -- a malformed query value must never abort a take, only silently
+                // keep the MVP default.
+                if (!TimeSignature.TryParse(q["timeSignature"], out TimeSignature timeSignature, out _))
+                {
+                    timeSignature = TimeSignature.FourFour;
+                }
                 var options = new RecordOptions(
-                    Record: Flag("record") || Flag("skipSilence"), // skip-silence needs audio to de-silence
-                    SkipSilence: Flag("skipSilence"),
+                    Record: Flag("record"),
                     NoteNames: Flag("noteNames"),
-                    Title: string.IsNullOrWhiteSpace(q["title"]) ? null : q["title"]);
+                    Title: string.IsNullOrWhiteSpace(q["title"]) ? null : q["title"],
+                    TimeSignature: timeSignature);
                 try { StartRequested?.Invoke(options); } catch { /* best-effort control signal */ }
                 ctx.Response.StatusCode = (int)HttpStatusCode.NoContent;
                 return;
@@ -272,6 +307,12 @@ public sealed class LiveNotationServer : IDisposable
         }
 
         ctx.Response.ContentType = ContentTypeFor(filePath);
+        // Defense-in-depth against stale-take caching: every take writes to the SAME path
+        // (recreation.wav etc.), so without this a browser may serve a cached earlier take's
+        // bytes even when app.js requests a fresh, cache-busted URL. The primary fix is the
+        // cache-busting query string in app.js; this header means a client that ignores it (or
+        // an intermediary cache) still revalidates instead of serving stale audio.
+        ctx.Response.Headers["Cache-Control"] = "no-cache";
         byte[] bytes = await File.ReadAllBytesAsync(filePath).ConfigureAwait(false);
         ctx.Response.ContentLength64 = bytes.Length;
         await ctx.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);

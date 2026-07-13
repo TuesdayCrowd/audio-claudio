@@ -16,8 +16,17 @@
     <section id="controls" aria-label="Recording controls">
       <label>Title <input id="score-title" type="text" placeholder="Untitled Score" /></label>
       <label><input id="opt-record" type="checkbox" checked /> Record audio</label>
-      <label><input id="opt-skip-silence" type="checkbox" /> Skip silence</label>
       <label><input id="opt-note-names" type="checkbox" /> Note names</label>
+      <label>Time
+        <select id="opt-time-signature">
+          <option value="4/4" selected>4/4</option>
+          <option value="3/4">3/4</option>
+          <option value="2/4">2/4</option>
+          <option value="6/8">6/8</option>
+          <option value="3/8">3/8</option>
+          <option value="2/2">2/2</option>
+        </select>
+      </label>
       <button id="start-recording" type="button">● Start recording</button>
       <button id="stop-recording" type="button" disabled>■ Stop recording</button>
     </section>
@@ -29,7 +38,7 @@
       </div>
     </section>
 
-    <section aria-label="Live sheet music">
+    <section id="sheet-music-viewport" aria-label="Live sheet music">
       <div id="osmd-container"></div>
     </section>
 

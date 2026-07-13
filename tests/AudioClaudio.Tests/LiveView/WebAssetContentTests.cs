@@ -49,8 +49,19 @@ public class WebAssetContentTests
 
         Assert.Contains("id=\"score-title\"", html);
         Assert.Contains("id=\"opt-record\"", html);
-        Assert.Contains("id=\"opt-skip-silence\"", html);
         Assert.Contains("id=\"opt-note-names\"", html);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void IndexHtmlContainsTheTimeSignatureSelectorDefaultingToFourFour()
+    {
+        string html = File.ReadAllText(Path.Combine(WwwRoot, "index.html"));
+
+        Assert.Contains("id=\"opt-time-signature\"", html);
+        Assert.Contains("<option value=\"4/4\" selected>4/4</option>", html);
+        Assert.Contains("<option value=\"3/4\">3/4</option>", html);
+        Assert.Contains("<option value=\"6/8\">6/8</option>", html);
     }
 
     [Fact]
@@ -72,5 +83,15 @@ public class WebAssetContentTests
 
         Assert.Contains(".checked", js);
         Assert.Contains("score-title", js);
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void AppJsSendsTheTimeSignatureSelectorValueWithStart()
+    {
+        string js = File.ReadAllText(Path.Combine(WwwRoot, "app.js"));
+
+        Assert.Contains("opt-time-signature", js);
+        Assert.Contains("timeSignature:", js);
     }
 }

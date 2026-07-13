@@ -62,7 +62,7 @@ public static class AppBuilder
         var transcribe = new CliCommand("transcribe", "Transcribe a WAV recording to MIDI + MusicXML.")
             .WithArgument(new CliArgument("input.wav", "the recording to transcribe"))
             .WithOption(new CliOption("--tempo", OptionKind.Double, "declared tempo in BPM (auto-estimated if omitted)"))
-            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write raw.mid/score.mid/score.musicxml", defaultValue: "."))
+            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write raw.mid/score.mid/score.musicxml", defaultValue: "out"))
             .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
             .WithOption(new CliOption("--mono", OptionKind.Flag, "use the monophonic YIN pipeline instead of the polyphonic default"))
             .WithOption(new CliOption("--model", OptionKind.String, "explicit model path, or 'transkun' for the Transkun engine"))
@@ -79,7 +79,7 @@ public static class AppBuilder
             if (!TryRequireFile(p.Argument("input.wav"), stderr, styler)) return 1;
 
             double? tempo = p.Double("tempo");
-            string outDir = p.Path("out-dir") ?? ".";
+            string outDir = p.Path("out-dir") ?? "out";
             bool noteNames = p.Flag("note-names");
             bool legato = p.Flag("legato");
             bool coarseRhythm = p.Flag("coarse-rhythm");
@@ -161,7 +161,7 @@ public static class AppBuilder
 
         var notate = new CliCommand("notate", "Engrave an existing MIDI file as a grand-staff score.")
             .WithArgument(new CliArgument("input.mid", "the MIDI file to notate"))
-            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write score.mid/score.musicxml", defaultValue: "."))
+            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write score.mid/score.musicxml", defaultValue: "out"))
             .WithOption(new CliOption("--tempo", OptionKind.Double, "declared tempo in BPM (auto-estimated if omitted)"))
             .WithOption(new CliOption("--key", OptionKind.Int, "override the auto-detected key signature"))
             .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
@@ -171,7 +171,7 @@ public static class AppBuilder
         {
             if (!TryRequireFile(p.Argument("input.mid"), stderr, styler)) return 1;
 
-            string outDir = p.Path("out-dir") ?? ".";
+            string outDir = p.Path("out-dir") ?? "out";
             Directory.CreateDirectory(outDir);
             bool noteNames = p.Flag("note-names");
 
@@ -286,12 +286,13 @@ public static class AppBuilder
 
         var listen = new CliCommand("listen", "Transcribe live from the microphone.")
             .WithOption(new CliOption("--tempo", OptionKind.Double, "declared tempo in BPM (auto-estimated if omitted)"))
-            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write raw.mid/score.mid/score.musicxml", defaultValue: "."))
+            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write raw.mid/score.mid/score.musicxml", defaultValue: "out"))
             .WithOption(new CliOption("--view", OptionKind.Flag, "open a live sheet-music browser view"))
             .WithOption(new CliOption("--record", OptionKind.Flag, "also write input.wav + recreation.wav"))
-            .WithOption(new CliOption("--skip-silence", OptionKind.Flag, "collapse pauses > 500ms (implies --record)"))
             .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
+            .WithOption(new CliOption("--time-signature", OptionKind.String, "time signature for the score (e.g. 3/4, 6/8; default 4/4)", defaultValue: "4/4"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont for the --record recreation (auto-discovered otherwise)"))
+            .WithOption(new CliOption("--mono", OptionKind.Flag, "use the monophonic YIN pipeline instead of the polyphonic default"))
             .WithExample("claudio listen --view --record");
         app.Register(listen, (p, stdout, stderr) => ListenAppCommand.Run(p, stdout, stderr, logBuffer));
 
