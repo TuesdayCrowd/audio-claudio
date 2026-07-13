@@ -1,13 +1,13 @@
-# v2 Stage 5 — UX, robustness, packaging (design)
+# Stage 5 — UX, robustness, packaging (design)
 
 > **Status:** design validated with Cornelius (2026-07-11), not yet implemented.
-> Turns the deferred Stage 5 of the [v2 release workplan](2026-07-10-v2-release-workplan.md)
+> Turns the deferred Stage 5 of the [0.2.x release workplan](2026-07-10-v2-release-workplan.md)
 > into a concrete, staged deliverable. Its headline is **UX**: make `claudio` a
 > tool a person installs and runs, not a `dotnet run` demo.
 
 ## Why this exists
 
-v2.0.0 shipped three transcription engines with earned guarantees, but the tool
+The 0.2.x line shipped three transcription engines with earned guarantees, but the tool
 around them still speaks like a prototype. Its entire command surface is one
 460-line `switch` in `Program.cs` with ad-hoc flag parsing; help is a six-line
 wall of stderr, some lines over 700 characters wide; unknown flags pass silently;
@@ -25,7 +25,7 @@ a missing file or a bad `--tempo` throws a raw .NET stack trace; and you run it 
 | Live view | All four: input feedback, in-page playback, downloads, visual polish | — |
 | Terminal color | Tasteful ANSI, auto-off when piped / `NO_COLOR` / `--no-color` | Plain-only; always-on color |
 
-These carry into `DECISIONS.md` as one "v2 Stage 5" entry when implementation lands.
+These carry into `DECISIONS.md` as one "Stage 5" entry when implementation lands.
 
 ## The five work areas
 

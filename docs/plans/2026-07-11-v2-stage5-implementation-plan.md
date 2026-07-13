@@ -1,4 +1,4 @@
-# v2 Stage 5 (UX, robustness, packaging) Implementation Plan
+# Stage 5 (UX, robustness, packaging) Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -1045,7 +1045,7 @@ internal static class SampleCli
 {
     public const string ToolName = "claudio";
     public const string ToolSummary = "a real-time piano transcriber";
-    public const string Version = "2.1.0";
+    public const string Version = "0.2.1";
 
     public static readonly CliCommand Transcribe =
         new CliCommand("transcribe", "Transcribe an audio file to notation.")
@@ -1379,7 +1379,7 @@ public class CommandLineAppDispatchTests
         var exitCode = app.Run(new[] { "--version" }, stdout, new StringWriter());
 
         Assert.Equal(0, exitCode);
-        Assert.Equal("claudio 2.1.0\n", stdout.ToString());
+        Assert.Equal("claudio 0.2.1\n", stdout.ToString());
     }
 
     [Fact]
@@ -5732,17 +5732,17 @@ public class ClaudeMdCompletenessTests
 dotnet test --filter "FullyQualifiedName~AudioClaudio.Tests.Ship.ClaudeMdCompletenessTests"
 ```
 
-Expected FAILURE: the status note says Stage 5 is deferred to v2.1, not landed; §7 lacks `notate`
+Expected FAILURE: the status note says Stage 5 is deferred to later 0.2.x work, not landed; §7 lacks `notate`
 and `evaluate-audio`; §7 lacks `--version`/`--no-color`/"did you mean".
 
 **Step 3 — Minimal implementation.** Replace the "Where the project is right now" Stage 5 sentence:
 
 ```markdown
 native-reference MIDIs; the third guarantee tier is now earned). **4f (the HuggingFace publish) shipped
-post-v2.0.0** — the complete Transkun-ONNX package is public at
+post-v0.2.0** — the complete Transkun-ONNX package is public at
 <https://huggingface.co/TuesdayCrowd/transkun-onnx> (see DECISIONS.md "v2 Stage 4"). **Stage 5 (UX,
 robustness, packaging) has now landed too** (Cornelius, 2026-07-11 — "publish this as v2, save Stage 5 for
-v2.1"; this is that v2.1 work): a self-contained, prerequisite-free `claudio-macos-arm64.zip`
+v2.1"; this is that later 0.2.x work): a self-contained, prerequisite-free `claudio-macos-arm64.zip`
 (`scripts/package-macos.sh`; **macOS `osx-arm64` only this cycle** — Windows packaging is an explicit
 deferred non-goal, not an oversight); a hand-rolled CLI kernel (`Cli/CliCommand`/`CliOption`/
 `CommandLineApp`/`HelpRenderer`/`AnsiStyler`) generating every `--help`, usage line, and value
@@ -5851,17 +5851,17 @@ Expected FAILURE: no "v2 Stage 5" row exists yet.
 after the "Beyond v0.1.0 — Phase 2" table's closing paragraph:
 
 ```markdown
-## v2 release cycle (see [`2026-07-10-v2-release-workplan.md`](2026-07-10-v2-release-workplan.md))
+## 0.2.x release cycle (see [`2026-07-10-v2-release-workplan.md`](2026-07-10-v2-release-workplan.md))
 
 | Stage | Design | Status |
 |---|---|---|
-| 0 — Re-baseline & positioning | — | ✅ Done, shipped in **v2.0.0** |
-| 1 — Earn polyphony (closed-loop F1 gate) | — | ✅ Done, shipped in **v2.0.0** |
-| 2 — Core detection quality (velocity, legato, coarse-rhythm) | — | ✅ Done, shipped in **v2.0.0** |
-| 3 — Notation quality (key detection, hand-split, triplets) | — | ✅ Done, shipped in **v2.0.0**; **R11.2** (MuseScore human gate) still open |
-| 4 — Transkun engine via ONNX | — | ✅ Done, shipped in **v2.0.0**; **4f** (HuggingFace publish) landed post-ship |
+| 0 — Re-baseline & positioning | — | ✅ Done, shipped in the **0.2.x line** |
+| 1 — Earn polyphony (closed-loop F1 gate) | — | ✅ Done, shipped in the **0.2.x line** |
+| 2 — Core detection quality (velocity, legato, coarse-rhythm) | — | ✅ Done, shipped in the **0.2.x line** |
+| 3 — Notation quality (key detection, hand-split, triplets) | — | ✅ Done, shipped in the **0.2.x line**; **R11.2** (MuseScore human gate) still open |
+| 4 — Transkun engine via ONNX | — | ✅ Done, shipped in the **0.2.x line**; **4f** (HuggingFace publish) landed post-ship |
 | 5 — UX, robustness, packaging | [design](2026-07-11-v2-stage5-ux-packaging-design.md) | ✅ Done — CLI kernel (help/errors/color), packaged `claudio-macos-arm64.zip` (macOS `osx-arm64` only this cycle), `listen --view` polish (VU meter, in-page playback, downloads, dark mode). See [`DECISIONS.md`](../../DECISIONS.md) "v2 Stage 5" for the six locked decisions and [the manual-acceptance checklist](2026-07-11-v2-stage5-manual-acceptance.md) (S5-accept, plus **R11.2** carried forward) for the human gate |
-| 6 — Ship v2.0.0 honestly | — | ✅ Done, tagged **v2.0.0** |
+| 6 — Ship the 0.2.x release honestly | — | ✅ Done, tagged **v0.2.1** |
 ```
 
 **Step 4 — Run to verify it passes:**
