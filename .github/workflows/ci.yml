@@ -29,3 +29,35 @@ jobs:
         # direct Gen.Generate loop. The deep-closed-loop workflow runs far more, unpinned. See DECISIONS.md,
         # "Step 9 — The closed loop".
         run: dotnet test --no-build --configuration Release --verbosity normal
+
+  package-smoke-linux:
+    name: Packaging mechanics smoke (linux-x64)
+    runs-on: ubuntu-latest
+    # CI runs on Linux, so this job can only prove the PACKAGING MECHANICS -- a
+    # self-contained publish + fixtures staged beside the binary + a --version/
+    # transcribe/render smoke pass -- via a linux-x64 build (S5.9). It does NOT
+    # validate the shipped osx-arm64 artifact that scripts/package-macos.sh produces;
+    # that binary is a Mac manual-acceptance step (Task 42).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish self-contained linux-x64
+        run: >
+          dotnet publish src/AudioClaudio.Cli/AudioClaudio.Cli.csproj
+          -r linux-x64 -c Release --self-contained true
+          -o artifacts/publish-linux-x64
+
+      - name: Stage fixtures beside the binary (mirrors scripts/package-macos.sh)
+        run: |
+          mkdir -p artifacts/publish-linux-x64/fixtures
+          cp -R fixtures/models artifacts/publish-linux-x64/fixtures/models
+          cp -R fixtures/soundfont artifacts/publish-linux-x64/fixtures/soundfont
+
+      - name: Smoke test the packaged output
+        run: scripts/smoke-test-packaged.sh artifacts/publish-linux-x64 fixtures/golden/two-bar.wav

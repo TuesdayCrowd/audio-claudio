@@ -23,4 +23,16 @@ public class CiWorkflowTests
         Assert.Contains("dotnet build", yaml);         // builds
         Assert.Contains("dotnet test", yaml);          // and tests
     }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Ci_workflow_smokes_packaging_mechanics_on_linux_x64()
+    {
+        var yaml = File.ReadAllText(WorkflowPath);
+
+        Assert.Contains("linux-x64", yaml);
+        Assert.Contains("--self-contained", yaml);
+        Assert.Contains("scripts/smoke-test-packaged.sh", yaml);
+        Assert.Contains("PACKAGING MECHANICS", yaml);
+    }
 }
