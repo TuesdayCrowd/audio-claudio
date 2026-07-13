@@ -114,7 +114,7 @@ internal static class ListenAppCommand
         if (view)
         {
             server = new LiveNotationServer(Path.Combine(AppContext.BaseDirectory, "wwwroot"),
-                                            scoreToMusicXml: musicXml.WriteToString);
+                                            scoreToMusicXml: musicXml.WriteToString, outDirPath: outDir);
             try
             {
                 server.Start();
@@ -167,7 +167,9 @@ internal static class ListenAppCommand
                     if (cleared.Count > 0)
                         stdout.WriteLine($"Cleared {cleared.Count} previous output file(s) from {outDir}.");
 
-                    var projector = new LiveScoreProjector(grid); // fresh accumulation per recording
+                    // fresh accumulation per recording; estimateTempo makes the live preview track an
+                    // evolving tempo estimate so it converges to the final score instead of jumping on stop.
+                    var projector = new LiveScoreProjector(grid, estimateTempo);
                     LiveNotationServer liveServer = server;
                     var recordingWriter = new MusicXmlScoreWriter(opts.NoteNames, opts.Title);
                     server.ScoreToMusicXml = recordingWriter.WriteToString;
@@ -178,10 +180,12 @@ internal static class ListenAppCommand
 
                     var mic = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
                     lock (gate) { currentMic = mic; }
+                    var levelSource = new LevelTeeingAudioSource(mic,
+                        rms => liveServer.PublishLevel(rms, mic.DeviceName ?? "Unknown microphone"));
                     stdout.WriteLine($"Recording {timestamp}...");
                     mic.Start();
                     // Runs until mic.Stop() ends the frames — triggered by the Stop button or Ctrl+C.
-                    var result = listenCmd.Run(mic, (int)Math.Round(tempoBpm), outDir, CancellationToken.None);
+                    var result = listenCmd.Run(levelSource, (int)Math.Round(tempoBpm), outDir, CancellationToken.None);
                     lock (gate) { currentMic = null; }
                     mic.Dispose();
 

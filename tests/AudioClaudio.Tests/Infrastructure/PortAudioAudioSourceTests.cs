@@ -41,4 +41,14 @@ public class PortAudioAudioSourceTests
         foreach (var v in outFrames[0].Samples)
             Assert.Equal(0.5f, v, 6);
     }
+
+    // Device-free (never calls Start()): proves the property exists and defaults to null.
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void DeviceNameIsNullBeforeStart()
+    {
+        using var src = new PortAudioAudioSource(sampleRateHz: 44100, frameSize: N, hop: H);
+
+        Assert.Null(src.DeviceName);
+    }
 }

@@ -21,9 +21,27 @@ namespace AudioClaudio.Application.UseCases;
 public sealed class LiveScoreProjector
 {
     private readonly QuantizationGrid _grid;
+    private readonly bool _estimateTempo;
     private readonly List<NoteEvent> _events = new();
 
-    public LiveScoreProjector(QuantizationGrid grid) => _grid = grid;
+    public LiveScoreProjector(QuantizationGrid grid) : this(grid, estimateTempo: false) { }
+
+    /// <summary>
+    /// When <paramref name="estimateTempo"/> is true (v2 Stage 5), each update re-estimates the tempo
+    /// from the notes so far — the median inter-onset interval, <see cref="TempoEstimator"/> — and
+    /// re-quantizes at THAT tempo instead of the grid's fixed fallback. The live preview then
+    /// converges to the final batch score's estimated tempo rather than sitting at the fallback and
+    /// visibly "jumping" when the recording stops. It uses the SAME estimator and the SAME fallback
+    /// (the grid's tempo) that <see cref="TranscriptionPipeline"/>'s batch pass uses, so the live and
+    /// final tempos agree. Below the estimator's 3-note floor the fallback is returned unchanged, so
+    /// the first couple of notes don't cause the staff to re-flow. When false (an explicit tempo was
+    /// declared), the grid's fixed tempo is kept — identical to the original behavior.
+    /// </summary>
+    public LiveScoreProjector(QuantizationGrid grid, bool estimateTempo)
+    {
+        _grid = grid;
+        _estimateTempo = estimateTempo;
+    }
 
     /// <summary>The accumulated performance so far, in the order notes were added.</summary>
     public IReadOnlyList<NoteEvent> Events => _events;
@@ -32,7 +50,14 @@ public sealed class LiveScoreProjector
     public Score Add(NoteEvent note)
     {
         _events.Add(note);
-        return Quantizer.Quantize(_events, _grid);
+        // QuantizationGrid's properties are get-only (no init accessor), so rebuild via its ctor
+        // rather than a `with` expression.
+        QuantizationGrid grid = _estimateTempo
+            ? new QuantizationGrid(
+                _grid.SampleRate, TempoEstimator.Estimate(_events, _grid.Tempo),
+                _grid.TimeSignature, _grid.Subdivision)
+            : _grid;
+        return Quantizer.Quantize(_events, grid);
     }
 
     /// <summary>
