@@ -5,7 +5,7 @@
 > the **generated** corpus described here, never on a single recording. (One real
 > recording's confounded figures, ~15–22 % F1 and 78.6 % chroma, still appear in those
 > docs as explicitly-labelled, non-headline context — the gap explained, never used to
-> state a ceiling.) The v2 re-baseline (see the v2 release workplan and `DECISIONS.md`)
+> state a ceiling.) The 0.2.x re-baseline (see the release workplan and `DECISIONS.md`)
 > exists precisely to stop reporting one copyrighted piece's chroma similarity as if it
 > were a quality signal.
 
@@ -115,7 +115,7 @@ small-sample artifact.
 ### Measured result (the committed gate)
 
 Note-level **F1 79.6 %** at ±50 ms (81.4 % / 82.0 % at ±100 / 150 ms; recall ~90 %,
-precision ~72 %). The gate (`PolyphonicClosedLoopTests`, v2 Stage 1) requires **F1 ≥ 0.75
+precision ~72 %). The gate (`PolyphonicClosedLoopTests`, Stage 1) requires **F1 ≥ 0.75
 at ±50 ms** — the committed threshold (Cornelius, 2026-07-10) — and runs on every CI push
 (the ONNX inference is ~4–5 s for the whole corpus). Every real improvement raises the
 bar; a drop below it is a regression; the worst offending cases are quarantined (WAV +

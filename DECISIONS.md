@@ -1142,7 +1142,7 @@ depress the real-world "Death" number (an OMR-derived reference with its own err
 rubato vs an engraved *score*). On 8 clean synthetic cases (114 reference notes, mid-range MIDI 40–72 so
 this SoundFont actually sustains them): **note-level F1 ≈ 80% (recall ~90%, precision ~73%) at ±50–150 ms**,
 versus ~15–22% on real Death audio. *(This was the pre-ghost-filter measurement; the harmonic-ghost filter
-in the next entry raised it to F1 82.9% / precision 75.9%, and the v2 re-baseline below restates the current
+in the next entry raised it to F1 82.9% / precision 75.9%, and the 0.2.x re-baseline below restates the current
 81.3 / 82.1 / 82.9% at ±50 / 100 / 150 ms — see `docs/CORPUS.md`.)*
 
 **What it decides.** The engine is **not** the bottleneck — Basic Pitch recovers ~90% of notes with tight
@@ -1255,7 +1255,7 @@ own pedal-less MIDIs (Basic Pitch stays 78.6%). Any pedalled MIDI now renders co
 ONNX/semi-CRF integration that would not have moved the number — and yielded a genuine pedal-rendering fix
 as a byproduct.
 
-## v2 re-baseline — general-corpus numbers, ranked guarantees, and the polyphony "preview" label (2026-07-10)
+## 0.2.x re-baseline — general-corpus numbers, ranked guarantees, and the polyphony "preview" label (2026-07-10)
 
 **The pivot.** v0.2.0's later work drifted into optimizing ONE recording (the copyrighted *Death* piano
 piece) judged by ONE metric (chroma similarity to that recording). Both are dead ends by construction:
@@ -1265,11 +1265,11 @@ single out-of-distribution clip is not a quality signal for the tool. Worse, pol
 correctness guarantee**, a regression from the one thing that defined v1: a correctness claim *earned* by
 the closed loop, not asserted.
 
-**The reset (v2 Stage 0).** Reported *numbers* now come only from the **generated** corpus, whose
+**The reset (Stage 0).** Reported *numbers* now come only from the **generated** corpus, whose
 distribution is committed and documented in [`docs/CORPUS.md`](docs/CORPUS.md). Every figure names its
 tolerance and its seed. The single-recording chroma number is retired as a headline/goal — `evaluate-audio`
 stays as a general tool, but nothing is optimized toward one clip's number (see "Explicitly out of scope"
-in the v2 workplan).
+in the 0.2.x workplan).
 
 **Per-engine baselines, measured — the new headline** (the Death figure is retired *as the headline*, not
 erased; it still stands below as labelled, non-headline context):
@@ -1280,7 +1280,7 @@ erased; it still stands below as labelled, non-headline context):
 - **Polyphonic (Basic Pitch):** note-level F1 **81.3 / 82.1 / 82.9 %** at ±50 / 100 / 150 ms on the
   seed-4242 synthetic corpus (8 cases, 114 reference notes; recall ~90 %, precision ~76 %). Still asserted
   only as a diagnostic *floor* (≥ 55 %), not a gate — Stage 1 promotes it to a committed-threshold property
-  suite. *(Superseded by the "v2 Stage 1" entry below: the committed gate uses a larger 32-case /
+  suite. *(Superseded by the "Stage 1" entry below: the committed gate uses a larger 32-case /
   451-note corpus where the converged F1 @±50 ms is **79.6 %** — that is the current headline; this 8-case
   figure was the Stage-0 snapshot.)*
 
@@ -1300,7 +1300,7 @@ silver bullet. It re-enters in Stage 4 as a **notation-fidelity** engine (real k
 velocity, native pedal), measured on this same general corpus and *not* defaulted until earned — the same
 discipline every engine here is held to.
 
-## v2 Stage 1 — polyphony earned: the closed-loop gate (2026-07-10)
+## Stage 1 — polyphony earned: the closed-loop gate (2026-07-10)
 
 **What landed.** The polyphonic closed loop is promoted from a *diagnostic* (regression floor F1 ≥ 0.55,
 "not a pass/fail property") to a **committed-F1 property gate** (`PolyphonicClosedLoopTests`): generate a
@@ -1320,8 +1320,8 @@ corpus; ONNX inference is ~0.15 s/case), so the corpus is sized for credibility,
 
 **Why not exact recovery (like the mono loop).** Basic Pitch is a neural model; it never returns a score
 bit-for-bit (~80 % F1 on clean synth chords is its ceiling — see the diagnostic entry above). So the earned
-guarantee is **ordinal**: a stated statistical F1 bar over a stated seed at a stated tolerance (v2 workplan
-Principle 1). The three engines' guarantees are **ranked, never flattened**: mono = bit-exact recovery;
+guarantee is **ordinal**: a stated statistical F1 bar over a stated seed at a stated tolerance (the 0.2.x
+workplan's Principle 1). The three engines' guarantees are **ranked, never flattened**: mono = bit-exact recovery;
 poly = this F1 gate; Transkun-via-ONNX (Stage 4) will add a ≥ 99 % PyTorch-parity gate on top.
 
 **Runs in CI, can't flake.** `ci.yml` runs the full suite (no `--filter`), so the Slow gate runs on every
@@ -1336,7 +1336,7 @@ F1 bar so the suite only gets harder.
 **This same harness proves Stage 4.** Transkun (the third engine) will be measured against this exact
 general corpus — one oracle, every engine held to the same bar.
 
-## v2 Stage 2 — velocity from onset energy (mono path) (2026-07-10)
+## Stage 2 — velocity from onset energy (mono path) (2026-07-10)
 
 **What landed.** The monophonic pipeline stamped every note with a constant `NoteEvent.DefaultVelocity`
 (64); it now derives a real per-note velocity from the attack energy. `VelocityEstimator.FromAttackEnergy`
@@ -1361,7 +1361,7 @@ cut. Non-constant, ordering-correct velocity feeding pp..ff is a real improvemen
 what the workplan asked for. Wiring this velocity to **dynamic marks** in the mono `MusicXmlScoreWriter`
 (as the grand-staff writer already does) is Stage 3 (notation).
 
-## v2 Stage 2 — legato recovery + coarse-grid note-off (both opt-in) (2026-07-10)
+## Stage 2 — legato recovery + coarse-grid note-off (both opt-in) (2026-07-10)
 
 **Legato recovery (`--legato`; `NoteSegmenterOptions.RecoverLegato`, default OFF).** The segmenter emitted
 one note per onset, so a legato pitch change WITHIN an onset span — connected notes with no re-attack — was
@@ -1387,7 +1387,7 @@ Both hold the same discipline as velocity: the mono closed loop stays bit-exact 
 default), and each is a documented, tested opt-in. Legato is batch-only (`Transcribe`); the live
 `StreamNotes` preview is unchanged (its saved files come from the batch pass).
 
-## v2 Stage 2 — pYIN-lite: octave correction built + tested; a SAFE pipeline integration is unsolved (2026-07-11)
+## Stage 2 — pYIN-lite: octave correction built + tested; a SAFE pipeline integration is unsolved (2026-07-11)
 
 **What was built (kept).** The YIN detector gained an octave-correction SEAM:
 `YinPitchDetector.Detect(frame, options, previous)` collects the runner-up candidate periods
@@ -1421,7 +1421,7 @@ remains as the foundation for a future offline/HMM-based integration. Confidence
 aperiodicity). The rare ~0.4% octave/onset residual is therefore **still open, and honestly so** — a causal
 pYIN-lite cannot close it without regressing real octave leaps.
 
-## v2 Stage 3 — Notation quality: key detection, temporal hand-split, triplets (2026-07-11)
+## Stage 3 — Notation quality: key detection, temporal hand-split, triplets (2026-07-11)
 
 Measured on a **notation-quality harness** (`tests/…/Notation/`), not eyeballed: a ground-truth corpus
 (`NotationCorpusGen`, seed 5137, 40 cases) whose rhythm, key, per-note hand and dynamics are all known is
@@ -1474,14 +1474,14 @@ corpus-tested here**, not re-implemented.
 ### R11.2 — the human MuseScore-load check (ACTION: Cornelius) — still open, now scheduled
 
 No MuseScore in CI, so R11.2 (the grand-staff MusicXML "loads cleanly in MuseScore") stays a **human gate**
-that can block the v2.0.0 ship. The writer is validated in CI by the byte-golden + `xmllint` well-formedness
+that can block the ship. The writer is validated in CI by the byte-golden + `xmllint` well-formedness
 + the MusicXML-4.0 structural checks (incl. the new triplet markup), and OSMD renders the same output in
-`listen --view`. **Action for Cornelius before Stage 6 ships v2.0.0:** run
+`listen --view`. **Action for Cornelius before Stage 6 ships:** run
 `claudio notate <midi> --triplets --note-names` (and a plain `transcribe`) and open the resulting
 `score.musicxml` in MuseScore; confirm the two staves, clefs, the auto-detected key signature, dynamics,
 sustain-pedal lines, and the triplet brackets all render cleanly. Record the pass here.
 
-## v2 Stage 4 — Transkun engine, self-contained via ONNX (2026-07-11)
+## Stage 4 — Transkun engine, self-contained via ONNX (2026-07-11)
 
 A third `ITranscriber` — Yujia Yan's **Transkun** (Neural Semi-CRF, 0.984 MAESTRO, MIT) — running
 **in-process via ONNX, no Python/torch at runtime**. Its role is **notation fidelity** (real key-press
@@ -1520,12 +1520,12 @@ tier of the ranked guarantee hierarchy — **Transkun-via-ONNX = statistical + �
 earned. Runtime ~1.3× realtime (a sparse-`freq2mels` mel optimization, bit-exact, cut it ~4×; the
 172 MB/segment `S` now dominates).
 
-**4f — PUBLISHED to HuggingFace (2026-07-11, post-v2.0.0).** The complete package — both ONNX (`transkun.onnx`
+**4f — PUBLISHED to HuggingFace (2026-07-11, shortly after Stages 0–4 shipped).** The complete package — both ONNX (`transkun.onnx`
 + `transkun-heads.onnx`, LFS), the frozen buffers, `params`/`manifest`, `LICENSE`, the model card
 (`README.md`), the decode spec (`DECODE_SPEC.md`), the `ref3b`/`ref3c` validation fixtures, and the
 regeneration scripts — is public at **<https://huggingface.co/TuesdayCrowd/transkun-onnx>** (license MIT,
 crediting Yujia Yan et al., linking upstream + the audio-claudio C# reference decoder). Uploaded via the `hf`
-CLI. (Was deferred at the v2.0.0 ship; published on Cornelius's go right after.) Stage 4 fully complete.
+CLI. (Was deferred at the Stages 0–4 ship; published on Cornelius's go right after.) Stage 4 fully complete.
 
 ## Perf — Transkun: mel front end parallelized; GPU/ANE (CoreML/MLX) offload rejected (2026-07-11)
 
@@ -1561,7 +1561,7 @@ tests still pass). Mel dropped **1379 ms → ~230 ms (6×)**, ~22 % off total pr
 off) for future perf regression checks. The remaining ~90 % is the transformer forward — a hard CPU floor for
 this graph.
 
-## v2.1 Area D — live-view polish: paper background, VU meter, in-page playback, downloads, auto-scroll (2026-07-12)
+## Area D — live-view polish: paper background, VU meter, in-page playback, downloads, auto-scroll (2026-07-12)
 
 **What landed.** Four small, additive changes to the `listen --view` browser page
 (`src/AudioClaudio.Cli/wwwroot/`), none touching a transcription engine or the saved-file contract:
@@ -1580,12 +1580,12 @@ this graph.
   render), reset to the top when a new take starts.
 
 **No design decision to record.** This is UI polish on the already-accepted `listen --view` page (Phase-2 §8
-item 3; `docs/plans/2026-07-07-live-notation-design.md`), not a new capability — it ships as part of
-**v2.1.0** alongside the polyphonic live-capture prototype below, but is otherwise unrelated to it (Area D
+item 3; `docs/plans/2026-07-07-live-notation-design.md`), not a new capability — it ships in the 0.2.x line
+alongside the polyphonic live-capture prototype below, but is otherwise unrelated to it (Area D
 lands unchanged whichever `listen` engine — `--mono` or the polyphonic default — is running). See commits
 `dd875e1`, `bd44170`, `d544f44`, `727254c` for the unit-by-unit build.
 
-## v2.1 — Live polyphonic capture: mic over MIDI, poly is `listen`'s default, prototype limits accepted (2026-07-12)
+## Live polyphonic capture: mic over MIDI, poly is `listen`'s default, prototype limits accepted (2026-07-12)
 
 **The ask (Cornelius, 2026-07-12; full design in
 [`docs/plans/2026-07-12-live-polyphony-design.md`](docs/plans/2026-07-12-live-polyphony-design.md)).** Track
@@ -1610,7 +1610,7 @@ caveat recorded alongside it: the synthetic test grids don't exercise `MelodiaSw
 decode was not, in the end, what shipped.
 
 **Decision 3 — polyphonic is `listen`'s DEFAULT engine; `--mono` is the opt-out.** Mirrors `transcribe`'s
-existing poly-default/`--mono` pattern (v0.2.0; and the v2-re-baseline "piano is two hands" call — see above).
+existing poly-default/`--mono` pattern (v0.2.0; and the 0.2.x re-baseline "piano is two hands" call — see above).
 This regresses the already-accepted monophonic live view's ~41 ms latency to a near-real-time ~2 s one for
 anyone who does not pass `--mono`, an explicit and accepted trade so `listen`'s default experience shows both
 hands like `transcribe`'s already does. `--mono` is unchanged and remains the only `listen` path with a proven

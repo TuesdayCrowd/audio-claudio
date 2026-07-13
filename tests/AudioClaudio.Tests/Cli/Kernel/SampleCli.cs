@@ -10,7 +10,7 @@ internal static class SampleCli
 {
     public const string ToolName = "claudio";
     public const string ToolSummary = "a real-time piano transcriber";
-    public const string Version = "2.1.0";
+    public const string Version = "0.2.1";
 
     public static readonly CliCommand Transcribe =
         new CliCommand("transcribe", "Transcribe an audio file to notation.")
