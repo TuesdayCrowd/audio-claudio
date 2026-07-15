@@ -1648,3 +1648,93 @@ length) and multi-voice notation (so simultaneously-struck notes of different le
 Both are named next steps in the design doc, not attempted here. **Summary: this feature is shipped as
 `listen`'s default at Cornelius's explicit direction, honestly documented as prototype-quality throughout —
 not because it has cleared this project's usual earn-it-first bar.**
+
+## Source separation — model + weight license (Stage 1 of the multi-instrument → piano-reduction feature)
+
+Design: [`docs/plans/2026-07-13-multi-instrument-piano-reduction-design.md`](docs/plans/2026-07-13-multi-instrument-piano-reduction-design.md).
+Stage-1 plan: [`docs/plans/2026-07-14-stage1-source-separation-plan.md`](docs/plans/2026-07-14-stage1-source-separation-plan.md).
+Resolved by Cornelius, 2026-07-13/14, after a source-verified survey (9 research agents, primary sources only).
+
+**Scope decision — build the falsifiable half (Stages 1–3), stop at multi-track MIDI.** Arrangement (Stage 4)
+is a separate, later, opt-in verb, never a default and never chained silently onto the ranked stages (design §2).
+This plan is Stage 1 (source separation + its SI-SDR closed-loop oracle) only.
+
+**Model decision — Spleeter 5-stem (Deezer).** Chosen because it is the **only** model in the entire field
+with a native **piano** stem, which is the feature's whole motivation ("hear the band, print the piano part").
+Cornelius's call, 2026-07-14: *"If Spleeter 5-stem is the only model with piano, then it is the only option."*
+
+**The survey that forced the choice — no music-source-separation model cleanly passes strict §1.7.** §1.7
+requires the WEIGHTS (not just the code) to carry an *explicit* permissive-commercial grant with no
+non-commercial and no copyleft clause. Verified at source across the field:
+
+| Model | Weight license (verified) | Training data | Piano? | §1.7 |
+|---|---|---|---|---|
+| **Spleeter 5-stem** | code MIT; weights **ambiguous** (see below); private data | Deezer "Bean" (non-MUSDB) | **yes** | closest to a pass |
+| Demucs `htdemucs_6s` | MIT *code*, **no explicit weight grant**; community split MIT-vs-CC-BY-NC on identical weights | MUSDB-HQ + undisclosed | **yes** (but Meta: "a lot of bleeding and artifacts… not working great") | **FAIL** |
+| SCNet (base) | explicit repo MIT | MUSDB18-HQ | no | AMBIGUOUS (MUSDB shadow) |
+| Open-Unmix `umxhq` | bare Zenodo `mit-license` tag (DOI 10.5281/zenodo.3370489) | MUSDB18-HQ (Zenodo 3338373, `other-nc`) | no | AMBIGUOUS |
+| Open-Unmix `umxl` | **CC-BY-NC-SA-4.0** (Zenodo 5069601, explicit) | private | no | **FAIL** (NC + copyleft) |
+| KUIELab-MDX-Net Track A | **CC-BY-4.0** (Zenodo 5717356, authors' upload); native ONNX | MUSDB18-HQ | no | best explicit grant, but no piano + MUSDB shadow |
+| Asteroid (all) | **CC-BY-SA-3.0** blanket (copyleft) | varies | some | **FAIL** |
+| Bandit/Banquet | **CC-BY-NC-4.0** (Zenodo 10160698) | DnR | query-able | **FAIL** |
+| Wave-U-Net / D3Net / ByteDance / torchaudio HDEMUCS / viperx RoFormer / MVSEP-MDX23 / UVR-MDX | no explicit commercial weight grant, or MUSDB-tainted, or unlicensed/AGPL | mostly MUSDB | no | **FAIL** |
+
+The load-bearing confound: **MUSDB18/-HQ is the field's universal training corpus and is itself non-commercial**
+(Zenodo `other-nc`: *"provided for educational purposes only… should not be used for any commercial purpose
+without the express permission of the copyright holders"*; its MedleyDB/Easton-Ellises components are
+CC-BY-NC-SA). Whether that propagates to trained weights is legally unsettled, but it shadows nearly every
+"MIT-tagged" checkpoint in the field. UMX-HQ was rejected specifically because its bare `mit-license` Zenodo tag
+sits over exactly this MUSDB-HQ NC data — the identical fact pattern that rules out Demucs.
+
+**Why Spleeter clears the bar where the others don't:** it is the one model whose training data is
+*commercially clean* — Deezer trained it on its private "Bean" catalog, never MUSDB (JOSS, DOI 10.21105/joss.02154:
+*"while it was not trained, validated or optimized in any way with musdb18 data"*; *"we cannot release the
+training data for copyright reasons… sharing pre-trained models were the only way"*). So there is **no
+third-party rights holder** — the only residual question is Deezer's own grant wording.
+
+**The Spleeter weight-license ambiguity, recorded honestly (do not cite as clean MIT):**
+- Code: **MIT**, verbatim `https://github.com/deezer/spleeter/blob/master/LICENSE` (Copyright 2019-present, Deezer SA).
+- Weights: the repo README §License says only *"The code of Spleeter is MIT-licensed"* (scoped to code, unchanged
+  since 2019); the peer-reviewed JOSS paper (Deezer Research authors) says *"source code and pre-trained models
+  are… distributed under a MIT license"* — a broader, explicit models grant. The weight artifact
+  (`5stems.tar.gz`, v1.4.0) ships raw TF checkpoints with **no embedded license file**. A direct request for
+  clarification (GitHub issue `deezer/spleeter#898`) has had **zero maintainer response since 2024-04-26**.
+- **Posture adopted:** commit the weights under Deezer's MIT grant (relying on the JOSS statement, consistent
+  with how the repo already accepts Basic Pitch's Apache grant), with `fixtures/models/spleeter/LICENSE.spleeter`
+  (Deezer's MIT text) + a `MODEL_CARD.md` that documents this README-vs-JOSS discrepancy in full. The repo's
+  UNLICENSE covers the *code*, not the bundled model (precedent: Basic Pitch, Transkun, GeneralUser GS, OSMD all
+  carry their own license files). **Commercial use is out of scope for this project** (the reason Cornelius chose
+  UNLICENSE), so even the pessimistic reading of the ambiguity carries no practical exposure. This does not
+  require relaxing §1.7 — Spleeter is the one arguably-compliant option (clean data + a published MIT-on-models
+  grant); §1.7 stands unamended.
+
+**Export ownership — we own the 5-stem TF→ONNX export (spike-gated).** Only a *2-stem* Spleeter ONNX exists
+publicly; the 5-stem export is unclaimed (the softmax-coupled 5-output head is unprecedented). We extend the
+**Apache-2.0** `k2-fsa/sherpa-onnx` + `csukuangfj/spleeter-torch` recipe (TF ckpt → frozen `.pb` → PyTorch
+`state_dict` → `torch.onnx.export`), committing `fixtures/models/spleeter/export_spleeter.py` + the resulting
+ONNX (mirroring `export_transkun.py`). **Avoid** `bigcash/spleeter-pytorch-mnn` (**GPL-3.0**). The export is
+Stage 1.0 and is a **hard gate**: it must hit the repo's tight ONNX↔TF parity bar (corr ≈ 1.0, max-rel-err
+~1e-5, not sherpa's loose `atol=1e-1`) or the model choice is reconsidered before any C# work.
+
+**Honesty ranking (unchanged):** this feature's separation quality is a *statistical* SI-SDR gate on clean
+synthetic mixes, ranked **below** the existing hierarchy (monophonic bit-exact / polyphonic-batch statistical
+F1 / Transkun ≥99% parity), never flattened. Spleeter's piano is its weakest stem and its ~11 kHz spectral
+ceiling is a known weight property; no jazz-specific quality is claimed (all Spleeter numbers are pop/rock).
+
+**Stage-1 blocker resolutions (Cornelius, 2026-07-14):**
+- **No quantization — fp32 only.** Quantizing committed ONNX weights is rejected outright: a prior attempt caused a
+  *drastic loss in transcription quality*, and the project's guarantees rest on model fidelity (Transkun ≥99%
+  parity). This forced a rethink of the committed-artifact size, which resolved *better* than the original
+  monolithic-graph plan: because the 5-stem `softmax_unet` head is a pure non-learned op, the **cross-branch
+  softmax is lifted OUT of the ONNX graph into C#** (like the STFT and ratio-mask already are), so Spleeter ships
+  as **5 independent per-branch fp32 ONNX files** (`{vocals,drums,bass,piano,other}.onnx`, ~39 MB each — every
+  blob comfortably under GitHub's 100 MB limit, **no Git LFS**, ~196 MB total). This also collapses the
+  previously-"unprecedented" softmax-coupled export into the *proven* 2-stem per-branch recipe applied 5× —
+  the load-bearing export risk shrank. The only remaining unknown is whether the per-branch weight op-name
+  mapping generalizes across 5 branches (Stage 1.0's spike + bail-out).
+- **Accept the mono flatten (stereo ceiling accepted).** Spleeter is stereo-native, but the repo's `IAudioSource`
+  contract is mono (R2.1) and `WavAudioSource` force-downmixes to mono; `separate` runs Spleeter on the mono
+  signal upmixed to L=R. Real inter-channel separation cues are unavailable and the SI-SDR oracle (also
+  mono-summed) can't measure the loss — the human gate is the only check. A stereo-capable source path is a
+  named future enhancement, deliberately out of Stage-1 scope; the mono ceiling is a documented, accepted
+  limitation, not an open question.
