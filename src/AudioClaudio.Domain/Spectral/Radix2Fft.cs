@@ -49,4 +49,36 @@ public sealed class Radix2Fft : IFourierTransform
 
         return a;
     }
+
+    public Complex[] Inverse(Complex[] spectrum)
+    {
+        ArgumentNullException.ThrowIfNull(spectrum);
+        int n = spectrum.Length;
+        if (n == 0 || (n & (n - 1)) != 0)
+            throw new ArgumentException($"IFFT length must be a positive power of two, got {n}.", nameof(spectrum));
+
+        // Conjugate trick: ifft(X) = conj(fft(conj(X))) / N. The DFT is linear over ℂ,
+        // and Forward already computes fft of a real array (its imaginary part zero),
+        // so fft(conj(X)) = fft(Re(X)) − i·fft(Im(X)) — two real-input Forward calls,
+        // no separate complex-input FFT engine needed.
+        var re = new double[n];
+        var im = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            re[i] = spectrum[i].Real;
+            im[i] = spectrum[i].Imaginary;
+        }
+
+        Complex[] fftRe = Forward(re);
+        Complex[] fftIm = Forward(im);
+
+        var result = new Complex[n];
+        for (int k = 0; k < n; k++)
+        {
+            Complex fftConjX = fftRe[k] - Complex.ImaginaryOne * fftIm[k];
+            result[k] = Complex.Conjugate(fftConjX) / n;
+        }
+
+        return result;
+    }
 }
