@@ -5,7 +5,7 @@
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 > **Commit discipline:** this repo uses **GitButler**, never raw `git`. Every "Commit" step means the gitbutler skill (`but commit <branch> -m "…" --changes <ids>`), per `CLAUDE.md` §1 rule 4.
 
-**Goal:** Add an `ISourceSeparator` port and one Spleeter-5-stem ONNX adapter that splits a mixed recording into labeled stems (piano / bass / other, plus vocals / drums), exposed as a `separate <mix.wav>` command, and proven by a synthesize→separate SI-SDR closed-loop gate in CI.
+**Goal:** Add an `ISourceSeparator` port and one Spleeter-5-stem ONNX adapter that splits a mixed recording into labeled stems (piano / bass / other, plus vocals / drums), exposed as a `separate <mix.wav>` command, and guarded by a synthesize→separate SI-SDR regression gate in CI (a statistical floor against pipeline regressions, never a quality *proof* — see `docs/CORPUS.md` "Corpus 3").
 
 **Architecture:** Hexagonal, same discipline as the rest of the repo. A separated stem is *just another* `IAudioSource`, so the existing `ITranscriber` middle is reused verbatim in later stages. New DSP (inverse STFT + overlap-add reconstruction) lands in `AudioClaudio.Domain`; the ONNX adapter + in-memory PCM source land in `AudioClaudio.Infrastructure`; the port lands in `AudioClaudio.Application.Ports`; the model locator + `separate` verb land in `AudioClaudio.Cli`. The Spleeter weights are converted to ONNX by an offline Python script we own (mirroring `fixtures/models/transkun/export_transkun.py`) and committed under `fixtures/models/spleeter/`.
 

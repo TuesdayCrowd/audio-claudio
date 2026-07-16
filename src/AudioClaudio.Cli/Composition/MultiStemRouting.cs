@@ -15,7 +15,7 @@ namespace AudioClaudio.Cli.Composition;
 /// ONNX session's load time/memory for a model that is stateless per call. GM programs tag each
 /// stem for a later multi-track MIDI stage: piano 0 (acoustic grand piano), bass 32 (acoustic bass),
 /// other 26 (jazz guitar -- a reasonable stand-in for an unclassified pitched stem), vocals 54
-/// (voice oohs). <c>drums</c> is deliberately never given an entry -- <see cref="MultiStemTranscriber"/>
+/// (synth voice -- the GM patch program 54 actually selects). <c>drums</c> is deliberately never given an entry -- <see cref="MultiStemTranscriber"/>
 /// silently skips any stem absent from its routing table, which IS the documented drop-drums decision
 /// (a drum stem has no pitched notes).
 ///
@@ -45,7 +45,19 @@ public static class MultiStemRouting
         string? transkunModelDir = null, string? basicPitchModelPath = null)
     {
         var transkun = new TranskunTranscriber(TranskunModelLocator.Resolve(transkunModelDir), new Radix2Fft());
-        var basicPitch = new BasicPitchTranscriber(ModelLocator.Resolve(basicPitchModelPath));
+        BasicPitchTranscriber basicPitch;
+        try
+        {
+            basicPitch = new BasicPitchTranscriber(ModelLocator.Resolve(basicPitchModelPath));
+        }
+        catch
+        {
+            // Don't leak the already-constructed Transkun session if Basic Pitch construction fails (e.g.
+            // a missing/corrupt Basic Pitch fixture): no caller ever receives the StemTranscribers handle
+            // to dispose it, so clean it up here before rethrowing.
+            transkun.Dispose();
+            throw;
+        }
 
         var routing = new List<StemRoute>
         {

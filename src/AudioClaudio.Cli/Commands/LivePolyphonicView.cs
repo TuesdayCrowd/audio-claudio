@@ -131,8 +131,12 @@ public sealed class LivePolyphonicView : IDisposable
     // Non-separated path (the default): one BasicPitchTranscriber, constructed once, reused per tick.
     private readonly BasicPitchTranscriber? _transcriber;
 
-    // Separated path (`separate: true`): the separator + stem routing table are likewise constructed
-    // ONCE per session and reused across every tick AND the final save -- never re-loaded per tick.
+    // Separated path (`separate: true`): the separator + stem routing table are constructed ONCE per
+    // session and reused across every live-view TICK (BuildSeparatedGrandStaff) -- never re-loaded per
+    // tick. The Stop-triggered final save (FinalPianizeAndWrite) does NOT reuse these: it runs the whole
+    // take through the batch PianizeCommand.PianizeSource pipeline, which constructs (and disposes) its
+    // own separator + transcribers. Reusing these already-warm instances on Stop is a possible latency
+    // optimization, deliberately deferred (the final save is already inherently multi-second).
     private readonly SpleeterSourceSeparator? _separator;
     private readonly MultiStemTranscriber? _multiStemTranscriber;
     private readonly IDisposable? _stemTranscribers; // disposes the routing table's transcribers

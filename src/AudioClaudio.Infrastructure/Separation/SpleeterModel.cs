@@ -42,9 +42,29 @@ public sealed class SpleeterModel : IDisposable
     public SpleeterModel(string modelDir)
     {
         ArgumentNullException.ThrowIfNull(modelDir);
-        _sessions = StemNames
-            .Select(stem => new InferenceSession(Path.Combine(modelDir, stem + ".onnx")))
-            .ToArray();
+
+        // Open one session per stem, disposing any already opened if a later stem's ONNX fails to load:
+        // the constructor would otherwise throw mid-stream, leaving a partially-built object that never
+        // reaches Dispose() and leaks the sessions for the earlier stems (a corrupt/incomplete model dir).
+        var sessions = new List<InferenceSession>(StemNames.Count);
+        try
+        {
+            foreach (string stem in StemNames)
+            {
+                sessions.Add(new InferenceSession(Path.Combine(modelDir, stem + ".onnx")));
+            }
+        }
+        catch
+        {
+            foreach (InferenceSession session in sessions)
+            {
+                session.Dispose();
+            }
+
+            throw;
+        }
+
+        _sessions = sessions;
     }
 
     /// <summary>

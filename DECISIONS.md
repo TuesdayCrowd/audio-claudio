@@ -1703,8 +1703,11 @@ third-party rights holder** — the only residual question is Deezer's own grant
   with how the repo already accepts Basic Pitch's Apache grant), with `fixtures/models/spleeter/LICENSE.spleeter`
   (Deezer's MIT text) + a `MODEL_CARD.md` that documents this README-vs-JOSS discrepancy in full. The repo's
   UNLICENSE covers the *code*, not the bundled model (precedent: Basic Pitch, Transkun, GeneralUser GS, OSMD all
-  carry their own license files). **Commercial use is out of scope for this project** (the reason Cornelius chose
-  UNLICENSE), so even the pessimistic reading of the ambiguity carries no practical exposure. This does not
+  carry their own license files). The load-bearing basis is the JOSS models-grant + the good-faith clarification
+  request on record (above), **not** the downstream use: copyright's default "all rights reserved" bars
+  unauthorized redistribution regardless of whether *our* use is commercial, so "non-commercial" is not itself a
+  defense. Commercial use being out of scope for this project (the reason Cornelius chose UNLICENSE) only bounds
+  the *stakes* were the pessimistic reading ever correct — it does not answer the copyright question. This does not
   require relaxing §1.7 — Spleeter is the one arguably-compliant option (clean data + a published MIT-on-models
   grant); §1.7 stands unamended.
 
