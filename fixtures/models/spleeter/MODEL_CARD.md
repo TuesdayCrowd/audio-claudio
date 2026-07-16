@@ -18,9 +18,9 @@ same "STFT stays outside the ONNX" split the repo already uses for Transkun.
 - **Stem order (branch k):** `[vocals, piano, drums, bass, other]` — graph-confirmed from the `stack`→`softmax` op fed by `conv2d_{6,13,20,27,34}/BiasAdd`, matching `5stems.json`.
 
 ## Reconstruction the C# side owns (all non-learned)
-1. STFT of the mixture: 44100 Hz, n_fft=4096, hop=1024, **Hann periodic**, zero-pad-then-hop (prepend one 4096 frame; NOT centered), crop magnitude to the first **F=1024** bins (~11.025 kHz ceiling — a weight property), pad+partition time to a multiple of **T=512**. Stereo required; mono is upmixed L=R.
+1. STFT of the mixture: 44100 Hz, n_fft=4096, hop=1024, **Hann periodic**, **framed from sample 0 — NOT centered and with NO leading pad** (`pad_end` zero-fills only the final partial frame). *(Correction, verified against `golden/magnitude_nhwc.f32`: an earlier draft here said "prepend one 4096 frame" — that is wrong; it offsets the magnitude by exactly 4 frames. `strided_slice_3` in the TF graph is framed from sample 0.)* Crop magnitude to the first **F=1024** bins (~11.025 kHz ceiling — a weight property), pad+partition time to a multiple of **T=512**. Stereo required; mono is upmixed L=R.
 2. Run all 5 ONNX → 5 logits. **Softmax across the 5-stem axis** → 5 masks. **× mixture magnitude** → 5 estimated magnitudes.
-3. Power-ratio remask (`separation_exponent=2`), zero-extend F 1024→2049, × mixture **complex** STFT (mixture phase reused), iSTFT (Hann periodic, ×2/3 window-compensation), crop the leading pad.
+3. Power-ratio remask (`separation_exponent=2`), zero-extend F 1024→2049, × mixture **complex** STFT (mixture phase reused), iSTFT (Hann periodic OLA, ×2/3 window-compensation), truncate to the original sample count — **no leading-pad crop** (there is no leading pad, per the correction in step 1).
 
 ## Architecture (verified by direct TF-graph tracing — not assumed)
 5 independent U-Nets. Each: 6 encoder Conv2d (5×5, stride 2, filters 16→512) with `BN→ELU` (except the 512-ch bottleneck conv, which has **no BN/activation** — its `batch_normalization_{12k+5}` is *dead code* in the graph); 6 ConvTranspose2d decoders with **`deconv→crop[1:-2,1:-2]→ELU→BN`** and encoder-skip concatenation; a final `Conv2d(1→2, k=4, dilation=2, pad=3)` = the logit.
