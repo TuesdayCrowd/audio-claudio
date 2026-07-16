@@ -1738,3 +1738,38 @@ ceiling is a known weight property; no jazz-specific quality is claimed (all Spl
   mono-summed) can't measure the loss — the human gate is the only check. A stereo-capable source path is a
   named future enhancement, deliberately out of Stage-1 scope; the mono ceiling is a documented, accepted
   limitation, not an open question.
+
+## Multi-instrument → piano: scope refined to "all notes on piano" (Stages 2+, Cornelius 2026-07-15)
+
+After Stage 1 shipped, Cornelius clarified the end goal and refined the scope. The target is **not** the
+deferred Stage-4 playable *reduction*, but a lighter, faithful **"all notes, on piano"** pipeline, offered on
+both a batch `.wav` path and a live mic path:
+
+> audio → separate (Stage 1) → transcribe each pitched stem (Stage 2) → **multi-track MIDI** (one track per
+> instrument, faithful — Stage 3) → **merge all included stems' notes into ONE grand-staff piano score** →
+> `score.mid` + `score.musicxml` (every note kept, treble/bass split by register — the *existing* polyphonic
+> grand-staff pipeline, NOT the Stage-4 reduction) + `recreation.wav` (all notes rendered on piano, program 0).
+
+**Decisions (Cornelius, 2026-07-15):**
+- **Drums — dropped.** A drum stem has no pitched notes.
+- **Vocals — default-dropped** from the combined piano arrangement; a **`--include-vocals`** flag folds the
+  vocal line in, for when the voice is instrumental (scat/vocalise). **The vocal stem is always transcribed
+  into the multi-track MIDI as its own track regardless**, so the notes are never lost. Rationale: reliably
+  auto-detecting "voice as instrument" vs lyrical singing is a research-grade classifier, not a hand-rollable
+  deterministic heuristic — so it is a *declared* flag (like `--tempo`/`--key`), never estimated.
+- **Per-stem transcription engine — Transkun for the piano stem** (its ≥99% piano-parity specialty),
+  **Basic Pitch for the rest** (bass, other, and vocals-if-included). Both are existing `ITranscriber`s.
+- **Mic input — yes.** A **live-separated `listen --view` prototype**: capture → every ~1.6 s separate the
+  whole buffer + transcribe each stem + merge → live grand-staff piano view (extending the existing
+  live-poly prototype). **PROTOTYPE-quality, earns no accuracy guarantee** — heavier than the existing
+  live-poly view (5 U-Nets + 5× transcription per tick on a growing buffer): non-scaling, near-real-time
+  (multi-second refresh, likely slower than 1.6 s), short-takes-only, carrying compounded
+  separation×transcription error. **Gated on a feasibility spike** (measure the real per-tick cost) before
+  commit — same discipline as the existing live view.
+
+**Honesty.** This "all-notes-on-piano" output is *dense* — a combo's bass + comping + horns on one keyboard
+exceeds two playable hands (thick chords, wide spans). It is a *complete, faithful* piano rendering of the
+recovered transcription, **not** a clean/playable arrangement; making it playable is the still-deferred
+**Stage 4** reduction (unfalsifiable, permanently human-gated). Output quality is the compounded chain
+(separation lossy × per-stem transcription ~80 % F1 × no note-dropping) — a faithful *sketch*, ranked as a
+*statistical* capability, never "proven." Stage 4 (playable reduction) + Stage 5 (multiple styles) remain deferred.
