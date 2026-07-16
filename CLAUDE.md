@@ -717,6 +717,7 @@ claudio listen [--tempo 100] [--out-dir out] [--view] [--record] [--note-names] 
 claudio play <file.mid>                                 # MeltySynth playback
 claudio render <file.mid> <out.wav>                     # deterministic render
 claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align|--warp]  # note-level precision/recall/F1 of a transcription vs a reference; --align cancels a global tempo ratio, --warp (DTW) also removes local rubato and wins if both are given
+claudio separate <mix.wav> [--out-dir out] [--model <dir>]  # split a mixed recording into 5 stem WAVs (vocals/piano/drums/bass/other) via the committed Spleeter 5-stem ONNX; writes {stem}.wav to the out-dir root at 44100 Hz. Stage 1 of the multi-instrument→piano-reduction feature; a *statistical* SI-SDR regression gate (docs/CORPUS.md "Corpus 3"), ranked BELOW the transcription tiers, never flattened. Mono input (stereo flattened to L=R — accepted ceiling); piano is Spleeter's weakest stem
 ```
 
 The CLI is the only place adapters are constructed and wired to ports.

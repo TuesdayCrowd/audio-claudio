@@ -1,5 +1,7 @@
 # Stage 1 — Source Separation Implementation Plan
 
+> **STATUS: ✅ COMPLETE (2026-07-15).** All stages 1.0–1.5 shipped on branch `stage-1-source-separation`; full suite 747/747 green. Two spec corrections were made *against the committed golden* during implementation and are recorded in `MODEL_CARD.md`: (a) the Spleeter architecture is **ELU** (not LeakyReLU) with a `deconv→ELU→BN` decoder order — the sherpa 2-stem reference is wrong for 5-stem; (b) the STFT frames **from sample 0 with NO leading pad**. The export also runs **natively on Apple Silicon** (`uv` + `tensorflow-macos 2.12`) — the "Linux x86/Docker/CI" framing below was over-cautious. Open human gate: the R11.2-style piano-stem-on-a-real-recording listen check (Cornelius).
+>
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 > **Commit discipline:** this repo uses **GitButler**, never raw `git`. Every "Commit" step means the gitbutler skill (`but commit <branch> -m "…" --changes <ids>`), per `CLAUDE.md` §1 rule 4.
 
