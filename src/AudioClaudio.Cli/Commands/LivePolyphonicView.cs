@@ -292,37 +292,6 @@ public sealed class LivePolyphonicView : IDisposable
     private QuantizationGrid MakeGrid() =>
         new(new SampleRate(BasicPitchModel.SampleRateHz), _tempo, _timeSignature, Subdivision.Sixteenth);
 
-    /// <summary>
-    /// Converts a note list from its own declared <see cref="SampleRate"/> into <paramref name="targetRate"/>
-    /// by scaling onset/duration sample counts by the exact rate ratio -- e.g. 2x between the mic's 44100 Hz
-    /// and this engine's internal <see cref="BasicPitchModel.SampleRateHz"/> (22050 Hz). Pure; never coerces
-    /// across rates silently (the Domain's mixed-sample-rate non-negotiable, CLAUDE.md §4) -- this performs
-    /// the explicit, exact conversion that <see cref="BasicPitchTranscriber"/>'s internal resampling makes
-    /// necessary before <see cref="LivePolyphonicResult.RawEvents"/> can be handed to rate-sensitive helpers
-    /// (e.g. <c>ISynthesizer.Render</c>) that require notes and audio to share ONE declared rate. A no-op
-    /// (returns <paramref name="notes"/> unchanged) when the list is empty.
-    /// </summary>
-    public static IReadOnlyList<NoteEvent> RescaleNotes(IReadOnlyList<NoteEvent> notes, SampleRate targetRate)
-    {
-        ArgumentNullException.ThrowIfNull(notes);
-        if (notes.Count == 0)
-        {
-            return notes;
-        }
-
-        var rescaled = new List<NoteEvent>(notes.Count);
-        foreach (NoteEvent n in notes)
-        {
-            double ratio = (double)targetRate.Hz / n.Onset.Rate.Hz;
-            long onset = (long)Math.Round(n.Onset.Samples * ratio);
-            long duration = Math.Max(1, (long)Math.Round(n.Duration.Samples * ratio));
-            rescaled.Add(new NoteEvent(
-                n.Pitch, new SamplePosition(onset, targetRate), new SampleDuration(duration, targetRate), n.Velocity));
-        }
-
-        return rescaled;
-    }
-
     public void Dispose() => _transcriber.Dispose();
 
     // Trivial in-memory IAudioSource: frames a mono buffer via the Domain splitter. A fresh instance

@@ -383,7 +383,7 @@ internal static class ListenAppCommand
     // the take's output files into <outDir>/<timestamp>/ + writes log.txt. The one wrinkle versus
     // mono: LivePolyphonicResult.RawEvents live at the poly engine's OWN sample rate
     // (BasicPitchModel.SampleRateHz -- BasicPitchTranscriber resamples internally), not the mic's --
-    // so they are rescaled to `rate` (the mic rate) first via LivePolyphonicView.RescaleNotes. That
+    // so they are rescaled to `rate` (the mic rate) first via NoteEventRescaler.Rescale. That
     // lets RenderCommand/WavFileWriter -- which require notes and audio to share ONE declared rate
     // (the Domain's mixed-sample-rate guard, CLAUDE.md §4 non-negotiable 3) -- be reused completely
     // unchanged, exactly as the mono path uses them.
@@ -397,7 +397,7 @@ internal static class ListenAppCommand
             float[] inputPcm = result.CapturedFrames.Count > 0
                 ? Framing.ReconstructMono(result.CapturedFrames)
                 : Array.Empty<float>();
-            IReadOnlyList<NoteEvent> recreationNotes = LivePolyphonicView.RescaleNotes(result.RawEvents, rate);
+            IReadOnlyList<NoteEvent> recreationNotes = NoteEventRescaler.Rescale(result.RawEvents, rate);
 
             if (inputPcm.Length > 0)
             {

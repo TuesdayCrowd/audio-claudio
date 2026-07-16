@@ -1,18 +1,17 @@
+using System;
 using System.Collections.Generic;
-using AudioClaudio.Cli.Commands;
 using AudioClaudio.Domain;
 using Xunit;
 
-namespace AudioClaudio.Tests.Cli;
+namespace AudioClaudio.Tests.Domain;
 
 /// <summary>
-/// The one piece of the polyphonic `listen` engine's --record restoration
-/// (<see cref="LivePolyphonicView.RescaleNotes"/>) that is pure and device-free: converting a note
-/// list declared at one <see cref="SampleRate"/> (the poly engine's own, internally-resampled rate)
-/// into another (the mic's) by an exact ratio, so rate-sensitive helpers downstream (e.g.
-/// ISynthesizer.Render) that require notes and audio to share one declared rate can be reused unchanged.
+/// <see cref="NoteEventRescaler"/> — the pure, BCL-only Domain helper lifted out of
+/// <c>LivePolyphonicView</c>'s former private <c>RescaleNotes</c> (Stage 2 of the multi-instrument
+/// plan) so both the live-poly path and the new per-stem batch path (<c>MultiStemTranscriber</c>)
+/// share ONE rescale implementation instead of each carrying its own copy.
 /// </summary>
-public class LivePolyphonicViewRescaleNotesTests
+public class NoteEventRescalerTests
 {
     private static readonly SampleRate PolyRate = new(22050);
     private static readonly SampleRate MicRate = new(44100);
@@ -26,7 +25,7 @@ public class LivePolyphonicViewRescaleNotesTests
     {
         var note = MakeNote(PolyRate, onset: 1000, duration: 500);
 
-        var rescaled = LivePolyphonicView.RescaleNotes(new[] { note }, MicRate);
+        IReadOnlyList<NoteEvent> rescaled = NoteEventRescaler.Rescale(new[] { note }, MicRate);
 
         Assert.Single(rescaled);
         Assert.Equal(2000, rescaled[0].Onset.Samples);
@@ -41,7 +40,7 @@ public class LivePolyphonicViewRescaleNotesTests
     {
         var note = MakeNote(PolyRate, onset: 0, duration: 100, midi: 72, velocity: 88);
 
-        var rescaled = LivePolyphonicView.RescaleNotes(new[] { note }, MicRate);
+        IReadOnlyList<NoteEvent> rescaled = NoteEventRescaler.Rescale(new[] { note }, MicRate);
 
         Assert.Equal(72, rescaled[0].Pitch.MidiNumber);
         Assert.Equal(88, rescaled[0].Velocity);
@@ -49,14 +48,15 @@ public class LivePolyphonicViewRescaleNotesTests
 
     [Fact]
     [Trait("Category", "Fast")]
-    public void Rescaling_to_the_same_rate_is_a_no_op_on_values()
+    public void Rescaling_to_the_same_rate_is_an_identity_on_values()
     {
         var note = MakeNote(PolyRate, onset: 12345, duration: 678);
 
-        var rescaled = LivePolyphonicView.RescaleNotes(new[] { note }, PolyRate);
+        IReadOnlyList<NoteEvent> rescaled = NoteEventRescaler.Rescale(new[] { note }, PolyRate);
 
         Assert.Equal(12345, rescaled[0].Onset.Samples);
         Assert.Equal(678, rescaled[0].Duration.Samples);
+        Assert.Equal(PolyRate, rescaled[0].Onset.Rate);
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public class LivePolyphonicViewRescaleNotesTests
         // note to have positive length (mirrors NoteEvent's own downstream consumers, e.g. DryWetMidiWriter).
         var note = MakeNote(MicRate, onset: 0, duration: 1);
 
-        var rescaled = LivePolyphonicView.RescaleNotes(new[] { note }, PolyRate);
+        IReadOnlyList<NoteEvent> rescaled = NoteEventRescaler.Rescale(new[] { note }, PolyRate);
 
         Assert.True(rescaled[0].Duration.Samples >= 1);
     }
@@ -76,7 +76,7 @@ public class LivePolyphonicViewRescaleNotesTests
     [Trait("Category", "Fast")]
     public void Empty_input_returns_empty_without_throwing()
     {
-        var rescaled = LivePolyphonicView.RescaleNotes(Array.Empty<NoteEvent>(), MicRate);
+        IReadOnlyList<NoteEvent> rescaled = NoteEventRescaler.Rescale(Array.Empty<NoteEvent>(), MicRate);
 
         Assert.Empty(rescaled);
     }
@@ -92,10 +92,21 @@ public class LivePolyphonicViewRescaleNotesTests
             MakeNote(PolyRate, onset: 300, duration: 50, midi: 67),
         };
 
-        var rescaled = LivePolyphonicView.RescaleNotes(notes, MicRate);
+        IReadOnlyList<NoteEvent> rescaled = NoteEventRescaler.Rescale(notes, MicRate);
 
         Assert.Equal(3, rescaled.Count);
-        Assert.Equal(new[] { 200L, 400L, 600L }, new[] { rescaled[0].Onset.Samples, rescaled[1].Onset.Samples, rescaled[2].Onset.Samples });
-        Assert.Equal(new[] { 60, 64, 67 }, new[] { rescaled[0].Pitch.MidiNumber, rescaled[1].Pitch.MidiNumber, rescaled[2].Pitch.MidiNumber });
+        Assert.Equal(
+            new[] { 200L, 400L, 600L },
+            new[] { rescaled[0].Onset.Samples, rescaled[1].Onset.Samples, rescaled[2].Onset.Samples });
+        Assert.Equal(
+            new[] { 60, 64, 67 },
+            new[] { rescaled[0].Pitch.MidiNumber, rescaled[1].Pitch.MidiNumber, rescaled[2].Pitch.MidiNumber });
+    }
+
+    [Fact]
+    [Trait("Category", "Fast")]
+    public void Null_input_throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => NoteEventRescaler.Rescale(null!, MicRate));
     }
 }
