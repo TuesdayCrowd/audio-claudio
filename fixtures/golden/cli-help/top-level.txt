@@ -12,5 +12,6 @@ Commands:
   evaluate-audio   Compare two WAVs by pitch-content (chroma) similarity.
   listen           Transcribe live from the microphone.
   separate         Split a mixed recording into instrument stem WAVs.
+  pianize          Turn a multi-instrument mix into an "all notes on piano" arrangement.
 
 Run 'claudio <command> --help' for details on a command.
