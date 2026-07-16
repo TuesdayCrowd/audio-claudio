@@ -3,6 +3,18 @@
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans / subagent-driven-development.
 > **Commit discipline:** GitButler only (`but commit <branch> --changes <ids>`), never raw `git`.
 
+> **STATUS: COMPLETE (2026-07-15), on branch `stage-1-source-separation` (not yet on `main`).** All stages
+> shipped: Stage 2 (`MultiStemTranscriber` + `MultiStemRouting`), Stage 3 (`MultiTrackMidiWriter` + the
+> grand-staff merge), the batch `claudio pianize` verb, the Stage-5 feasibility spike (`SeparationLiveSpike`
+> — proved the naive whole-buffer live path degrades: 4.6/8.3/13.8 s per tick at 5/15/30 s), and the
+> `listen --separate` live prototype (bounded ~7 s window tick + full-quality capture-then-pianize on Stop).
+> **One deviation from §0 as written:** the live seam did NOT stay a single `BuildGrandStaff` insertion —
+> the separated path is a sibling method `LivePolyphonicView.BuildSeparatedGrandStaff` (bounded window) with
+> the final save routed through `PianizeCommand.PianizeSource`, so the non-separated path is provably
+> untouched. Full suite green (Fast 728/728; the new [Slow] separated + buffer tests pass). Open human gate:
+> does a real recording's piano `recreation.wav` render a recognizable tune. See `DECISIONS.md`
+> "Multi-instrument -> piano" + "Live-separated `listen --separate` prototype".
+
 **Goal:** Turn a multi-instrument recording (`.wav` or live mic) into (a) a faithful **multi-track MIDI** (one track per instrument) and (b) an **"all notes on piano"** rendering — `score.mid` + `score.musicxml` (every note, on a grand staff) + `recreation.wav` (rendered on piano). *Not* a playable reduction (that's the still-deferred Stage 4).
 
 **Architecture:** Bolt onto the completed Stage 1 separator. A separated stem is just an `IAudioSource`, so each pitched stem routes through the **existing** `ITranscriber` (Transkun for piano, Basic Pitch for the rest); the merged notes feed the **existing** polyphonic grand-staff pipeline + MeltySynth. Almost entirely reuse — the only genuinely new pieces are a multi-track MIDI writer and the per-stem routing/merge glue.
