@@ -293,6 +293,8 @@ public static class AppBuilder
             .WithOption(new CliOption("--time-signature", OptionKind.String, "time signature for the score (e.g. 3/4, 6/8; default 4/4)", defaultValue: "4/4"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont for the --record recreation (auto-discovered otherwise)"))
             .WithOption(new CliOption("--mono", OptionKind.Flag, "use the monophonic YIN pipeline instead of the polyphonic default"))
+            .WithOption(new CliOption("--separate", OptionKind.Flag, "route through source separation before transcribing each stem (prototype-quality; see DECISIONS.md)"))
+            .WithOption(new CliOption("--include-vocals", OptionKind.Flag, "with --separate, fold the vocal stem into the piano score/recreation (always a multitrack.mid track regardless)"))
             .WithExample("claudio listen --view --record");
         app.Register(listen, (p, stdout, stderr) => ListenAppCommand.Run(p, stdout, stderr, logBuffer));
 

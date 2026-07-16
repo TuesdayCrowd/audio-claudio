@@ -29,7 +29,7 @@ public class AppBuilderTests
     [InlineData("play", new[] { "--soundfont" })]
     [InlineData("evaluate", new[] { "--onset-tolerance-ms", "--align", "--warp" })]
     [InlineData("evaluate-audio", new string[0])]
-    [InlineData("listen", new[] { "--tempo", "--out-dir", "--view", "--record", "--note-names", "--time-signature", "--soundfont", "--mono" })]
+    [InlineData("listen", new[] { "--tempo", "--out-dir", "--view", "--record", "--note-names", "--time-signature", "--soundfont", "--mono", "--separate", "--include-vocals" })]
     [InlineData("separate", new[] { "--out-dir", "--model" })]
     [InlineData("pianize", new[] { "--out-dir", "--model", "--tempo", "--key", "--include-vocals", "--note-names", "--triplets", "--soundfont" })]
     public void Each_command_declares_exactly_its_option_surface(string commandName, string[] expectedOptions)

@@ -1773,3 +1773,63 @@ recovered transcription, **not** a clean/playable arrangement; making it playabl
 **Stage 4** reduction (unfalsifiable, permanently human-gated). Output quality is the compounded chain
 (separation lossy × per-stem transcription ~80 % F1 × no note-dropping) — a faithful *sketch*, ranked as a
 *statistical* capability, never "proven." Stage 4 (playable reduction) + Stage 5 (multiple styles) remain deferred.
+
+## Live-separated `listen --separate` prototype: bounded-window tick + capture-then-pianize on Stop (2026-07-15)
+
+Builds the mic-input item promised above, after `SeparationLiveSpike` (already committed) measured the naive
+approach — re-separating and re-transcribing the WHOLE captured buffer every tick — and found it not just
+over budget but **degrading**: 4.6 s / 8.3 s / 13.8 s total per tick at 5 s / 15 s / 30 s of buffered audio
+(all already past the 1.64 s tick budget, and getting worse as a take runs longer, unlike the existing
+single-engine live-poly view whose cost is roughly flat). Cornelius accepted a laggy prototype rather than
+rejecting the feature, so the shipped design is **two different things behind one flag**, each honestly
+scoped to what it actually is:
+
+- **The bounded-window live tick** (`LivePolyphonicView.BuildSeparatedGrandStaff`, internal): each tick
+  reconstructs mono from the snapshot but re-separates/re-transcribes only the **last 7 seconds** of it,
+  not the whole growing buffer — this keeps per-tick cost roughly CONSTANT as a take runs longer instead of
+  degrading. The window was picked from a direct measurement on the dev machine (Apple M3 Max) of 6 s/7 s/8 s
+  windows through the real separate + multi-stem-transcribe pipeline (the committed golden Spleeter fixture,
+  tiled to length, same method as `SeparationLiveSpike`): 6 s ≈ 4.8 s/tick, **7 s ≈ 5.0 s/tick**, 8 s ≈
+  6.3 s/tick. 7 s lands inside `SeparationLiveSpike`'s own ballpark (its 5 s point measured 4.6 s) with
+  headroom before 8 s's jump past 6 s. Combined with the existing ~1.64 s `TranscribeInterval` wait between
+  ticks, the resulting steady-state refresh is roughly **1.64 + 5.0 ≈ 6.6 s** — a laggy, multi-second-refresh
+  prototype, by design, never real-time. The separator (`SpleeterSourceSeparator`) and the stem-routing
+  table (`MultiStemRouting.Build()`, Transkun + one shared Basic Pitch) are each constructed exactly ONCE
+  per `LivePolyphonicView` session and reused across every tick, disposed on session end — never reloaded
+  per tick, mirroring the existing non-separated `_transcriber` field's lifecycle.
+- **Capture-then-pianize on Stop** (`LivePolyphonicView.FinalPianizeAndWrite`): the final save does NOT use
+  the bounded window — it wraps the WHOLE captured take in a `PcmAudioSource` and runs it through
+  `PianizeCommand.PianizeSource` (a new reusable core extracted from `PianizeCommand.Run`, which is now a
+  thin file-reading wrapper over it), the exact same batch pipeline `claudio pianize <file.wav>` uses. This
+  is the real deliverable: full-quality separation + per-stem transcription over the entire recording,
+  writing the 5 stem WAVs, `multitrack.mid`, `score.mid`/`score.musicxml`, and `recreation.wav` — and
+  deliberately **no `raw.mid`**, since there is no single "raw" engine in separated mode; `multitrack.mid`
+  IS the faithful per-instrument raw view, exactly as for `pianize` itself.
+
+**Other decisions:**
+- **`--include-vocals` passes through** from `listen --separate` to the final `PianizeSource` call and to
+  the tick's stem merge, exactly mirroring `pianize --include-vocals` (vocals excluded from the merged piano
+  score/recreation by default; always present in `multitrack.mid` regardless).
+- **`--record`'s recreation.wav render is skipped in separated mode.** `FinalPianizeAndWrite` already wrote
+  `recreation.wav` (always, not gated behind `--record` — matching `pianize`'s own unconditional behavior);
+  `ListenAppCommand.FinalizePolyphonicRecording` would otherwise redundantly re-render the same notes a
+  second time for no benefit (rendering is deterministic, R8.2). `input.wav` (the raw captured mic audio)
+  is still written when `--record` is set, unchanged.
+- **Known limitation, not fixed here: time signature.** `PianizeCommand` always quantizes in 4/4 (it never
+  accepted a time-signature parameter); the separated final save inherits that, so a take's own
+  `--time-signature`/browser Time selector is silently NOT honored in separated mode's `score.mid`/
+  `score.musicxml`. This is inherited from `pianize`'s existing scope, not a regression introduced here —
+  fixing it means teaching `PianizeCommand` a time signature, deferred as a follow-up.
+- **The non-separated path is untouched.** `separate: false` (the default) is byte-for-byte the prior
+  behavior — same fields, same code paths, same artifacts, verified by the full existing test suite passing
+  unchanged.
+- **Testability over reflection tricks.** `BuildSeparatedGrandStaff` is `internal`, not `private`, with a
+  matching `InternalsVisibleTo` added to `AudioClaudio.Cli.csproj` for `AudioClaudio.Tests` — a file-backed
+  `IAudioSource` drains far faster than real time, so the real ~1.64 s background timer loop essentially
+  never fires within a test; calling the tick's build method directly against a fixture buffer is the
+  boring, reliable alternative to racing a timer. `LivePolyphonicViewSeparatedTests` covers both the tick
+  build (asserts a non-null `GrandStaffScore`, notes at 44100 Hz) and the full `Run()` drain-to-final path
+  (asserts the pianize artifact set, and the absence of `raw.mid`); `PianizeCommandTests` gained a
+  buffer-based test proving `PianizeSource` behaves identically to `Run` from a `PcmAudioSource` instead of
+  a file. As always, the real microphone device itself remains manual-acceptance-only — CI has no audio
+  device (Step 10 precedent).

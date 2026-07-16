@@ -6,6 +6,14 @@
     <ProjectReference Include="..\AudioClaudio.Infrastructure\AudioClaudio.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets AudioClaudio.Tests exercise LivePolyphonicView's internal bounded window separated
+         build (the `listen`, separate mode, tick's logic) directly with a fixture buffer, instead
+         of racing the real 1.64 second background timer loop (which a file backed IAudioSource
+         drains far too fast to ever trigger). See DECISIONS.md, "Live separated listen prototype". -->
+    <InternalsVisibleTo Include="AudioClaudio.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>claudio</AssemblyName>

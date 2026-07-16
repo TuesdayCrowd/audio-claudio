@@ -20,7 +20,11 @@ public class ListenHandlerRegistrationTests
         var cmd = app.Commands.Single(c => c.Name == "listen");
 
         Assert.Equal(
-            new[] { "--mono", "--note-names", "--out-dir", "--record", "--soundfont", "--tempo", "--time-signature", "--view" },
+            new[]
+            {
+                "--include-vocals", "--mono", "--note-names", "--out-dir", "--record", "--separate",
+                "--soundfont", "--tempo", "--time-signature", "--view",
+            },
             cmd.Options.Select(o => o.Name).OrderBy(n => n));
     }
 }

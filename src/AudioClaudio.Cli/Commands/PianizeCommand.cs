@@ -28,6 +28,13 @@ namespace AudioClaudio.Cli.Commands;
 /// <c>recreation.wav</c>. Root-only output, mirroring <see cref="SeparateCommand"/>/
 /// <see cref="TranscribeCommand"/>. This is a dense, faithful "all notes on piano" rendering, NOT a
 /// playable reduction -- a combo's combined stems routinely exceed two hands.
+///
+/// <see cref="Run"/> (the file-based CLI verb) is a thin wrapper over <see cref="PianizeSource"/>,
+/// the reusable core over an already-constructed <see cref="IAudioSource"/> -- this is what
+/// `listen --separate`'s "capture-then-pianize on Stop" final save
+/// (<see cref="LivePolyphonicView"/>) calls with a <see cref="PcmAudioSource"/> wrapping the WHOLE
+/// captured mic take, so the live path's on-Stop artifact is byte-for-byte the same pipeline as
+/// running `claudio pianize` on an equivalent WAV file, no temp-file round trip needed.
 /// </summary>
 public static class PianizeCommand
 {
@@ -52,6 +59,10 @@ public static class PianizeCommand
         int Key,
         bool KeyDetected);
 
+    /// <summary>
+    /// Reads <paramref name="mixWav"/> from disk and runs <see cref="PianizeSource"/> over it -- the
+    /// `claudio pianize &lt;mix.wav&gt;` CLI verb's implementation.
+    /// </summary>
     public static Result Run(
         string mixWav,
         string outDir,
@@ -63,12 +74,34 @@ public static class PianizeCommand
         bool triplets,
         string? soundfontPath)
     {
+        using var source = WavAudioSource.FromFile(mixWav, InputFrameParameters);
+        return PianizeSource(
+            source, outDir, separatorModelDir, tempoBpm, keyFifths, includeVocals, includeNoteNames,
+            triplets, soundfontPath);
+    }
+
+    /// <summary>
+    /// The reusable core of the batch pianize pipeline, over an already-constructed
+    /// <see cref="IAudioSource"/> rather than a file path (see the class doc). Identical behavior to
+    /// <see cref="Run"/> in every other respect.
+    /// </summary>
+    public static Result PianizeSource(
+        IAudioSource source,
+        string outDir,
+        string? separatorModelDir,
+        double? tempoBpm,
+        int? keyFifths,
+        bool includeVocals,
+        bool includeNoteNames,
+        bool triplets,
+        string? soundfontPath)
+    {
+        ArgumentNullException.ThrowIfNull(source);
         Directory.CreateDirectory(outDir);
 
         // 1. Separate the mix (Stage 1) and write the 5 stem WAVs so the intermediates are
         // inspectable, exactly as `separate` does on its own.
         IReadOnlyList<SeparatedStem> stems;
-        using (var source = WavAudioSource.FromFile(mixWav, InputFrameParameters))
         using (var separator = new SpleeterSourceSeparator(SeparatorModelLocator.Resolve(separatorModelDir), new Radix2Fft()))
         {
             stems = separator.Separate(source);

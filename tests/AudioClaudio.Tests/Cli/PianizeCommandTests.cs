@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Xml.Linq;
 using AudioClaudio.Cli;
+using AudioClaudio.Cli.Commands;
 using AudioClaudio.Domain;
 using AudioClaudio.Infrastructure.Audio;
 using AudioClaudio.Infrastructure.Midi;
@@ -127,6 +128,78 @@ public class PianizeCommandTests
         {
             if (Directory.Exists(dirWithout)) Directory.Delete(dirWithout, recursive: true);
             if (Directory.Exists(dirWith)) Directory.Delete(dirWith, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Proves the <c>PianizeCommand.Run</c>/<c>PianizeSource</c> refactor (extracted so `listen
+    /// --separate`'s capture-then-pianize final save, <see cref="LivePolyphonicView"/>, can drive the
+    /// same batch pipeline from a captured mic buffer, not just a file): running
+    /// <see cref="PianizeCommand.PianizeSource"/> directly over a <see cref="PcmAudioSource"/> built
+    /// from the golden WAV's own samples (no file on disk at all) writes exactly the same artifact
+    /// set as <see cref="PianizeCommand.Run"/> does from the file itself.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Slow")] // loads Spleeter (5 models) + Transkun + Basic Pitch
+    public void PianizeSource_over_a_buffer_yields_the_same_artifact_set_as_Run_over_the_file()
+    {
+        string dir = NewTempDir();
+        try
+        {
+            float[] mono;
+            SampleRate rate;
+            using (var wav = WavAudioSource.FromFile(MixWav, new FrameParameters(4096, 4096)))
+            {
+                var frames = wav.Frames.ToList();
+                mono = Framing.ReconstructMono(frames);
+                rate = frames[0].Rate;
+            }
+
+            var bufferSource = new PcmAudioSource(mono, rate, new FrameParameters(4096, 4096));
+            PianizeCommand.Result result = PianizeCommand.PianizeSource(
+                bufferSource, dir, separatorModelDir: null, tempoBpm: null, keyFifths: null,
+                includeVocals: false, includeNoteNames: false, triplets: false, soundfontPath: null);
+
+            Assert.NotEmpty(result.MergedNotes);
+
+            foreach (string name in StemNames)
+            {
+                string path = Path.Combine(dir, $"{name}.wav");
+                Assert.True(File.Exists(path), $"expected {path} to exist");
+                using var source = WavAudioSource.FromFile(path, new FrameParameters(4096, 4096));
+                float[] pcm = Framing.ReconstructMono(source.Frames.ToList());
+                Assert.True(pcm.Length > 0, $"{name}.wav yielded no samples");
+            }
+
+            string multitrackPath = Path.Combine(dir, "multitrack.mid");
+            Assert.True(File.Exists(multitrackPath));
+            using (var stream = File.OpenRead(multitrackPath))
+            {
+                var midi = MidiFile.Read(stream);
+                Assert.True(midi.GetTrackChunks().Count() >= 2);
+            }
+
+            string scoreMidPath = Path.Combine(dir, "score.mid");
+            Assert.True(File.Exists(scoreMidPath));
+            Assert.NotEmpty(MidiFileReader.ReadFile(scoreMidPath, Rate).Events);
+
+            string musicXmlPath = Path.Combine(dir, "score.musicxml");
+            Assert.True(File.Exists(musicXmlPath));
+            string musicXmlText = File.ReadAllText(musicXmlPath);
+            Assert.False(string.IsNullOrWhiteSpace(musicXmlText));
+            XDocument.Parse(musicXmlText);
+
+            string recreationPath = Path.Combine(dir, "recreation.wav");
+            Assert.True(File.Exists(recreationPath));
+            using (var recreationSource = WavAudioSource.FromFile(recreationPath, new FrameParameters(4096, 4096)))
+            {
+                float[] pcm = Framing.ReconstructMono(recreationSource.Frames.ToList());
+                Assert.True(pcm.Length > 0, "recreation.wav yielded no samples");
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         }
     }
 }

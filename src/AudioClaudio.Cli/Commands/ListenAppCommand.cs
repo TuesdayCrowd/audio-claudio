@@ -69,7 +69,11 @@ internal static class ListenAppCommand
         // --mono is set, so the mono path is completely unaffected by this branch's existence.
         if (!p.Flag("mono"))
         {
-            return RunPolyphonic(outDir, tempoBpm, view, record, noteNames, timeSignature, p.Path("soundfont"), stdout, stderr, logBuffer);
+            bool separate = p.Flag("separate");
+            bool includeVocals = p.Flag("include-vocals");
+            return RunPolyphonic(
+                outDir, tempoBpm, view, record, noteNames, timeSignature, p.Path("soundfont"),
+                separate, includeVocals, stdout, stderr, logBuffer);
         }
 
         var rate = new SampleRate(SampleRateHz);
@@ -255,19 +259,20 @@ internal static class ListenAppCommand
     // it's a single headless take from launch to Ctrl+C. Routes to whichever the caller asked for.
     private static int RunPolyphonic(
         string outDir, double tempoBpm, bool view, bool record, bool noteNames, TimeSignature timeSignature,
-        string? soundfontPath, TextWriter stdout, TextWriter stderr, StringBuilder logBuffer) =>
+        string? soundfontPath, bool separate, bool includeVocals,
+        TextWriter stdout, TextWriter stderr, StringBuilder logBuffer) =>
         view
             // --view ignores the top-level --time-signature flag in favor of each take's own browser
             // Time selector (RecordOptions.TimeSignature, defaulting to 4/4) -- exactly the existing
             // precedent for --note-names/--record, neither of which RunPolyphonicView receives either.
-            ? RunPolyphonicView(outDir, tempoBpm, record, soundfontPath, stdout, stderr, logBuffer)
-            : RunPolyphonicHeadless(outDir, tempoBpm, record, noteNames, timeSignature, soundfontPath, stdout, logBuffer);
+            ? RunPolyphonicView(outDir, tempoBpm, record, soundfontPath, separate, includeVocals, stdout, stderr, logBuffer)
+            : RunPolyphonicHeadless(outDir, tempoBpm, record, noteNames, timeSignature, soundfontPath, separate, includeVocals, stdout, logBuffer);
 
     // SINGLE-TAKE browser loop: the mic starts recording the moment this runs, waits for the browser
     // Start button per take (mirroring the mono --view loop), captures until Stop (or Ctrl+C), saves
     // score.mid/score.musicxml, then idles for the next Start. Ctrl+C exits.
     private static int RunPolyphonicView(
-        string outDir, double tempoBpm, bool record, string? soundfontPath,
+        string outDir, double tempoBpm, bool record, string? soundfontPath, bool separate, bool includeVocals,
         TextWriter stdout, TextWriter stderr, StringBuilder logBuffer)
     {
         using var server = new LiveNotationServer(Path.Combine(AppContext.BaseDirectory, "wwwroot"), outDirPath: outDir);
@@ -312,7 +317,7 @@ internal static class ListenAppCommand
         };
 
         // One view (the ONNX model loads once) reused across takes; Run() clears its accumulator each take.
-        using var view = new LivePolyphonicView(server, outDir, tempoBpm, stdout.WriteLine);
+        using var view = new LivePolyphonicView(server, outDir, tempoBpm, stdout.WriteLine, separate, includeVocals, soundfontPath);
 
         while (true)
         {
@@ -340,7 +345,7 @@ internal static class ListenAppCommand
             lock (gate) { currentMic = null; }
             mic.Dispose();
 
-            FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, opts.Record);
+            FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, opts.Record, separate);
             server.PublishTakeReady(); // every take file is now written; safe for the browser to fetch
             Thread.Sleep(TimeSpan.FromSeconds(1)); // let the final SSE push reach the browser
             lock (gate) { if (exiting) break; }
@@ -357,24 +362,26 @@ internal static class ListenAppCommand
     // server (see its Run() doc), so this path never pays for repeated whole-buffer inference.
     private static int RunPolyphonicHeadless(
         string outDir, double tempoBpm, bool record, bool noteNames, TimeSignature timeSignature,
-        string? soundfontPath, TextWriter stdout, StringBuilder logBuffer)
+        string? soundfontPath, bool separate, bool includeVocals, TextWriter stdout, StringBuilder logBuffer)
     {
         var rate = new SampleRate(SampleRateHz);
         var synthesizer = new Lazy<MeltySynthSynthesizer>(
             () => new MeltySynthSynthesizer(SoundFontLocator.Resolve(soundfontPath)));
 
         using var mic = new PortAudioAudioSource(SampleRateHz, FrameSize, Hop, channels: 1);
-        using var view = new LivePolyphonicView(server: null, outDir, tempoBpm, stdout.WriteLine);
+        using var view = new LivePolyphonicView(server: null, outDir, tempoBpm, stdout.WriteLine, separate, includeVocals, soundfontPath);
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; mic.Stop(); cts.Cancel(); };
 
         string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         logBuffer.Clear();
         mic.Start();
-        // Drains until Ctrl+C stops the mic, then writes raw.mid/score.mid/score.musicxml.
+        // Drains until Ctrl+C stops the mic, then writes raw.mid/score.mid/score.musicxml (or, with
+        // --separate, multitrack.mid/score.mid/score.musicxml/recreation.wav + stem WAVs -- see
+        // LivePolyphonicView's class doc).
         LivePolyphonicResult result = view.Run(mic, cts.Token, noteNames, title: null, timeSignature);
 
-        FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, record);
+        FinalizePolyphonicRecording(outDir, rate, synthesizer, stdout, logBuffer, result, timestamp, record, separate);
         return 0;
     }
 
@@ -387,17 +394,23 @@ internal static class ListenAppCommand
     // lets RenderCommand/WavFileWriter -- which require notes and audio to share ONE declared rate
     // (the Domain's mixed-sample-rate guard, CLAUDE.md §4 non-negotiable 3) -- be reused completely
     // unchanged, exactly as the mono path uses them.
+    //
+    // `separate`: with `listen --separate`, LivePolyphonicView's own final save
+    // (FinalPianizeAndWrite) ALREADY wrote recreation.wav via the full batch pianize pipeline (all
+    // stems, always -- not gated behind --record) -- re-rendering it here from
+    // result.RawEvents/NoteEventRescaler would be redundant work for no benefit (rendering is
+    // deterministic, R8.2, so at best it reproduces the same bytes), so that step is skipped;
+    // input.wav (raw captured mic audio) is still written when --record is set, exactly as usual.
     private static void FinalizePolyphonicRecording(
         string outDir, SampleRate rate, Lazy<MeltySynthSynthesizer> synthesizer,
         TextWriter stdout, StringBuilder logBuffer,
-        LivePolyphonicResult result, string timestamp, bool doRecord)
+        LivePolyphonicResult result, string timestamp, bool doRecord, bool separate)
     {
         if (doRecord)
         {
             float[] inputPcm = result.CapturedFrames.Count > 0
                 ? Framing.ReconstructMono(result.CapturedFrames)
                 : Array.Empty<float>();
-            IReadOnlyList<NoteEvent> recreationNotes = NoteEventRescaler.Rescale(result.RawEvents, rate);
 
             if (inputPcm.Length > 0)
             {
@@ -406,9 +419,13 @@ internal static class ListenAppCommand
                 stdout.WriteLine($"Wrote {inputPath}.");
             }
 
-            string recreationPath = Path.Combine(outDir, "recreation.wav");
-            RenderCommand.RenderToWav(recreationNotes, synthesizer.Value, rate, recreationPath);
-            stdout.WriteLine($"Wrote {recreationPath}.");
+            if (!separate)
+            {
+                IReadOnlyList<NoteEvent> recreationNotes = NoteEventRescaler.Rescale(result.RawEvents, rate);
+                string recreationPath = Path.Combine(outDir, "recreation.wav");
+                RenderCommand.RenderToWav(recreationNotes, synthesizer.Value, rate, recreationPath);
+                stdout.WriteLine($"Wrote {recreationPath}.");
+            }
         }
 
         string archiveDir = SessionOutputArchive.Archive(outDir, timestamp);
