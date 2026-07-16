@@ -126,6 +126,60 @@ but ordinal (a statistical F1 bar) rather than exact — the two are ranked, nev
 
 ---
 
+## Corpus 3 — source separation (`SeparationClosedLoopGen`)
+
+Backs the Spleeter-based source separator's **regression-guard** claim — the weakest of the
+three-plus-one guarantee tiers (below). Unlike Corpora 1–2, this is not a release-quality bar:
+Spleeter is trained on real commercial recordings (Deezer's private "Bean" catalog), not
+synthesized General MIDI renders, so its absolute separation quality on this corpus is expected
+to be modest. The gate exists purely to catch a *regression* in the separation pipeline (the STFT
+front end, the cross-branch softmax masking, the iSTFT/OLA reconstruction, or the committed ONNX
+weights themselves) — never to assert that separation is "good."
+
+Each case is a small ensemble mix of **three independent monophonic instrument parts**, each on its
+own General MIDI program and in its own pitch band (kept genuinely disjoint, not just "mostly
+separate," so a stem swap in the output is an unambiguous failure):
+
+| Instrument | GM program | Pitch band (MIDI) | Target Spleeter stem |
+|---|---|---|---|
+| Bass | 32 (Acoustic Bass) | 28–47 | `bass` |
+| Piano | 0 (Acoustic Grand Piano) | 52–63 | `piano` |
+| Tenor sax | 66 (Tenor Sax) | 64–84 | `other` |
+
+| Dimension | Distribution |
+|---|---|
+| Notes per instrument part | 5–8, monophonic (no overlap within an instrument), ≥ an eighth note |
+| Tempo | 80–120 BPM, shared across the three parts in a case |
+| Velocity | constant 100 |
+| Sample rate | 44 100 Hz (Spleeter's native rate) |
+
+Each instrument part is rendered independently on its **own** `MeltySynthSynthesizer` instance (one
+GM program per instance), then the three renders are summed (padded to equal length) into the mix
+fed to `SpleeterSourceSeparator`. Each recovered stem is scored against its own ground-truth render
+with `SiSdr.Compute` (scale-invariant SDR, dB; +∞ for a perfect scaled match).
+
+### Seed & case count
+
+Seed **4242**, **6 cases** (18 instrument-scores) in the committed gate — small on purpose, since
+each case is one full ONNX separation pass (already the suite's most expensive single test). A
+deep run overrides the count via `SEPARATION_CLOSED_LOOP_CASES`.
+
+### Measured result (the committed gate)
+
+First measured run: median SI-SDR **17.01 dB** (bass) / **11.70 dB** (tenor sax → `other`) /
+**6.44 dB** (piano) per stem, **12.14 dB** pooled overall median. Piano is Spleeter's
+weakest stem (a known weight property — see `DECISIONS.md`), consistent with this ranking.
+The gate (`SeparationClosedLoopTests`) requires the overall pooled median SI-SDR to be **≥ 6.0 dB**
+— set with roughly 6 dB (≈ 4× in power) of headroom below the measured overall median, and at or
+below every individual stem's own median, so ordinary same-machine reruns or documented
+cross-architecture ONNX SIMD drift (the same caveat `PolyphonicClosedLoopTests` documents for Basic
+Pitch) have ample room without masking a real regression. On a gate failure, the worst cases'
+mix + ground-truth stems are quarantined (mirroring the polyphonic gate's R9.3 discipline) for
+reproduction. This threshold is provisional — frozen after the first measured run, to be revisited
+once it has run on CI hardware a few times.
+
+---
+
 ## Qualitative smoke set
 
 A small set (~6–10) of short, *varied* clips — a chromatic run, a chord progression, an
@@ -150,6 +204,9 @@ uniform "proven":
 | Monophonic (YIN) | **Bit-exact closed-loop recovery** — exact count/pitch/onset, duration where audible | Corpus 1 |
 | Polyphonic (Basic Pitch) | **Statistical** — corpus note-level F1 ≥ 0.75 at ±50 ms (measured 79.6 %), gated in CI (Stage 1) | Corpus 2 |
 | Transkun-via-ONNX | **Statistical + a ≥ 99 % PyTorch-parity** gate (Stage 4) | Corpus 2 |
+| Source separation (Spleeter) | **Statistical regression guard, not a quality claim** — pooled median SI-SDR ≥ 6.0 dB (measured 12.14 dB), gated in CI (Stage 1.4) | Corpus 3 |
 
 Each carries its own number and its own limits; the default (polyphonic) states its
-earned status honestly.
+earned status honestly. Separation sits strictly *below* the other three: it earns no accuracy or
+parity claim, only a floor against pipeline regressions — never to be reported alongside the other
+tiers as if it were a comparable guarantee.

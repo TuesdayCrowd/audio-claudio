@@ -293,8 +293,70 @@ public static class AppBuilder
             .WithOption(new CliOption("--time-signature", OptionKind.String, "time signature for the score (e.g. 3/4, 6/8; default 4/4)", defaultValue: "4/4"))
             .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont for the --record recreation (auto-discovered otherwise)"))
             .WithOption(new CliOption("--mono", OptionKind.Flag, "use the monophonic YIN pipeline instead of the polyphonic default"))
+            .WithOption(new CliOption("--separate", OptionKind.Flag, "route through source separation before transcribing each stem (prototype-quality; see DECISIONS.md)"))
+            .WithOption(new CliOption("--include-vocals", OptionKind.Flag, "with --separate, fold the vocal stem into the piano score/recreation (always a multitrack.mid track regardless)"))
             .WithExample("claudio listen --view --record");
         app.Register(listen, (p, stdout, stderr) => ListenAppCommand.Run(p, stdout, stderr, logBuffer));
+
+        var separate = new CliCommand("separate", "Split a mixed recording into instrument stem WAVs.")
+            .WithArgument(new CliArgument("mix.wav", "the mixed recording to separate"))
+            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write the 5 stem WAVs", defaultValue: "out"))
+            .WithOption(new CliOption("--model", OptionKind.Path, "explicit Spleeter model directory override"))
+            .WithExample("claudio separate mix.wav --out-dir out");
+        app.Register(separate, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("mix.wav"), stderr, styler)) return 1;
+
+            string outDir = p.Path("out-dir") ?? "out";
+            var stems = SeparateCommand.Run(p.Argument("mix.wav"), outDir, p.Path("model"));
+            foreach (var stem in stems)
+                stdout.WriteLine($"{stem.Name} -> {Path.Combine(outDir, stem.Name + ".wav")}");
+            return 0;
+        });
+
+        var pianize = new CliCommand("pianize", "Turn a multi-instrument mix into an \"all notes on piano\" arrangement.")
+            .WithArgument(new CliArgument("mix.wav", "the mixed recording to pianize"))
+            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write the stems, multitrack.mid, score.mid/musicxml, recreation.wav", defaultValue: "out"))
+            .WithOption(new CliOption("--model", OptionKind.Path, "explicit Spleeter model directory override"))
+            .WithOption(new CliOption("--tempo", OptionKind.Double, "declared tempo in BPM (auto-estimated if omitted)"))
+            .WithOption(new CliOption("--key", OptionKind.Int, "override the auto-detected key signature (sharps +, flats -)"))
+            .WithOption(new CliOption("--include-vocals", OptionKind.Flag, "fold the vocal stem into the piano score.mid/score.musicxml/recreation.wav (always a multitrack.mid track regardless)"))
+            .WithOption(new CliOption("--note-names", OptionKind.Flag, "print a scientific-pitch-name lyric under each note"))
+            .WithOption(new CliOption("--triplets", OptionKind.Flag, "engrave eighth-note triplets"))
+            .WithOption(new CliOption("--soundfont", OptionKind.Path, "explicit SoundFont for recreation.wav (auto-discovered otherwise)"))
+            .WithExample("claudio pianize band-mix.wav --out-dir out");
+        app.Register(pianize, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("mix.wav"), stderr, styler)) return 1;
+
+            if (!KeyOption.Validate(p.Int("key"), out string? pianizeKeyError))
+            {
+                stderr.Write($"{styler.Error("error:")} {pianizeKeyError}\n");
+                return 1;
+            }
+
+            string outDir = p.Path("out-dir") ?? "out";
+            bool includeVocals = p.Flag("include-vocals");
+            PianizeCommand.Result result = PianizeCommand.Run(
+                p.Argument("mix.wav"),
+                outDir,
+                p.Path("model"),
+                p.Double("tempo"),
+                p.Int("key"),
+                includeVocals,
+                p.Flag("note-names"),
+                p.Flag("triplets"),
+                p.Path("soundfont"));
+
+            foreach (var stem in result.Stems)
+                stdout.WriteLine($"{stem.Name} -> {Path.Combine(outDir, stem.Name + ".wav")}");
+            stdout.WriteLine($"multitrack.mid -> {Path.Combine(outDir, "multitrack.mid")} ({result.Transcriptions.Count} tracks)");
+            stdout.WriteLine($"score.mid + score.musicxml -> {outDir} (grand staff, {result.MergedNotes.Count} notes{(includeVocals ? " incl. vocals" : "")}, "
+                + $"{result.GrandStaff.Measures.Count} bars, {result.Tempo.BeatsPerMinute:F0} BPM{(result.TempoEstimated ? " estimated" : "")}, "
+                + $"key {result.Key:+#;-#;0}{(result.KeyDetected ? " detected" : " declared")})");
+            stdout.WriteLine($"recreation.wav -> {Path.Combine(outDir, "recreation.wav")}");
+            return 0;
+        });
 
         return app;
     }

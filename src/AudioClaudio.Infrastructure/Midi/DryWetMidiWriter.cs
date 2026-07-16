@@ -18,17 +18,19 @@ public sealed class DryWetMidiWriter : INoteEventWriter, IScoreWriter
     /// Ticks per quarter note. 480 = 2^5·3·5 makes every MVP grid value
     /// (whole..sixteenth and their dotted forms) land on an integer tick, so
     /// score grid positions serialize losslessly (R7.2). Also the DAW-standard.
+    /// Mirrors <see cref="MidiTickMath.TicksPerQuarterNote"/> (kept public here since
+    /// existing callers/tests reference it via this type).
     /// </summary>
-    public const short TicksPerQuarterNote = 480;
+    public const short TicksPerQuarterNote = MidiTickMath.TicksPerQuarterNote;
 
     public void Write(IReadOnlyList<NoteEvent> events, Tempo tempo, Stream destination)
     {
-        var header = new List<ITimedObject> { TempoEvent(tempo) };
+        var header = new List<ITimedObject> { MidiTickMath.TempoEvent(tempo) };
         var notes = new List<TimedNote>(events.Count);
         foreach (var e in events)
         {
-            long onset = SamplesToTicks(e.Onset.Samples, e.Onset.Rate, tempo.BeatsPerMinute);
-            long length = SamplesToTicks(e.Duration.Samples, e.Duration.Rate, tempo.BeatsPerMinute);
+            long onset = MidiTickMath.SamplesToTicks(e.Onset.Samples, e.Onset.Rate, tempo.BeatsPerMinute);
+            long length = MidiTickMath.SamplesToTicks(e.Duration.Samples, e.Duration.Rate, tempo.BeatsPerMinute);
 
             // A sounding note must have positive length; a sub-tick duration
             // clamps to one tick, still within the R7.2 tick-resolution bound.
@@ -42,7 +44,7 @@ public sealed class DryWetMidiWriter : INoteEventWriter, IScoreWriter
     {
         var header = new List<ITimedObject>
         {
-            TempoEvent(score.Tempo),
+            MidiTickMath.TempoEvent(score.Tempo),
             new TimedEvent(
                 new TimeSignatureEvent(
                     (byte)score.TimeSignature.BeatsPerMeasure,
@@ -87,19 +89,6 @@ public sealed class DryWetMidiWriter : INoteEventWriter, IScoreWriter
         return notes;
     }
 
-    private static long SamplesToTicks(long samples, SampleRate rate, double bpm)
-    {
-        // ticksPerSecond = PPQN · BPM / 60  ⇒  ticks = samples/rate · ticksPerSecond
-        double ticks = (double)samples * TicksPerQuarterNote * bpm / (60.0 * rate.Hz);
-        return (long)Math.Round(ticks, MidpointRounding.ToEven);
-    }
-
-    private static TimedEvent TempoEvent(Tempo tempo)
-    {
-        long microsecondsPerQuarter = (long)Math.Round(60_000_000.0 / tempo.BeatsPerMinute);
-        return new TimedEvent(new SetTempoEvent(microsecondsPerQuarter), 0);
-    }
-
     private static void WriteTrack(
         IReadOnlyList<ITimedObject> headerEvents,
         IReadOnlyList<TimedNote> notes,
@@ -108,10 +97,7 @@ public sealed class DryWetMidiWriter : INoteEventWriter, IScoreWriter
         var objects = new List<ITimedObject>(headerEvents);
         foreach (var n in notes)
         {
-            objects.Add(new Note((SevenBitNumber)n.MidiNumber, n.TickLength, n.TickOnset)
-            {
-                Velocity = (SevenBitNumber)n.Velocity,
-            });
+            objects.Add(MidiTickMath.NoteFromTicks(n.MidiNumber, n.TickOnset, n.TickLength, n.Velocity, (FourBitNumber)0));
         }
 
         var midiFile = new MidiFile(objects.ToTrackChunk())

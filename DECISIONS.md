@@ -1648,3 +1648,191 @@ length) and multi-voice notation (so simultaneously-struck notes of different le
 Both are named next steps in the design doc, not attempted here. **Summary: this feature is shipped as
 `listen`'s default at Cornelius's explicit direction, honestly documented as prototype-quality throughout —
 not because it has cleared this project's usual earn-it-first bar.**
+
+## Source separation — model + weight license (Stage 1 of the multi-instrument → piano-reduction feature)
+
+Design: [`docs/plans/2026-07-13-multi-instrument-piano-reduction-design.md`](docs/plans/2026-07-13-multi-instrument-piano-reduction-design.md).
+Stage-1 plan: [`docs/plans/2026-07-14-stage1-source-separation-plan.md`](docs/plans/2026-07-14-stage1-source-separation-plan.md).
+Resolved by Cornelius, 2026-07-13/14, after a source-verified survey (9 research agents, primary sources only).
+
+**Scope decision — build the falsifiable half (Stages 1–3), stop at multi-track MIDI.** Arrangement (Stage 4)
+is a separate, later, opt-in verb, never a default and never chained silently onto the ranked stages (design §2).
+This plan is Stage 1 (source separation + its SI-SDR closed-loop oracle) only.
+
+**Model decision — Spleeter 5-stem (Deezer).** Chosen because it is the **only** model in the entire field
+with a native **piano** stem, which is the feature's whole motivation ("hear the band, print the piano part").
+Cornelius's call, 2026-07-14: *"If Spleeter 5-stem is the only model with piano, then it is the only option."*
+
+**The survey that forced the choice — no music-source-separation model cleanly passes strict §1.7.** §1.7
+requires the WEIGHTS (not just the code) to carry an *explicit* permissive-commercial grant with no
+non-commercial and no copyleft clause. Verified at source across the field:
+
+| Model | Weight license (verified) | Training data | Piano? | §1.7 |
+|---|---|---|---|---|
+| **Spleeter 5-stem** | code MIT; weights **ambiguous** (see below); private data | Deezer "Bean" (non-MUSDB) | **yes** | closest to a pass |
+| Demucs `htdemucs_6s` | MIT *code*, **no explicit weight grant**; community split MIT-vs-CC-BY-NC on identical weights | MUSDB-HQ + undisclosed | **yes** (but Meta: "a lot of bleeding and artifacts… not working great") | **FAIL** |
+| SCNet (base) | explicit repo MIT | MUSDB18-HQ | no | AMBIGUOUS (MUSDB shadow) |
+| Open-Unmix `umxhq` | bare Zenodo `mit-license` tag (DOI 10.5281/zenodo.3370489) | MUSDB18-HQ (Zenodo 3338373, `other-nc`) | no | AMBIGUOUS |
+| Open-Unmix `umxl` | **CC-BY-NC-SA-4.0** (Zenodo 5069601, explicit) | private | no | **FAIL** (NC + copyleft) |
+| KUIELab-MDX-Net Track A | **CC-BY-4.0** (Zenodo 5717356, authors' upload); native ONNX | MUSDB18-HQ | no | best explicit grant, but no piano + MUSDB shadow |
+| Asteroid (all) | **CC-BY-SA-3.0** blanket (copyleft) | varies | some | **FAIL** |
+| Bandit/Banquet | **CC-BY-NC-4.0** (Zenodo 10160698) | DnR | query-able | **FAIL** |
+| Wave-U-Net / D3Net / ByteDance / torchaudio HDEMUCS / viperx RoFormer / MVSEP-MDX23 / UVR-MDX | no explicit commercial weight grant, or MUSDB-tainted, or unlicensed/AGPL | mostly MUSDB | no | **FAIL** |
+
+The load-bearing confound: **MUSDB18/-HQ is the field's universal training corpus and is itself non-commercial**
+(Zenodo `other-nc`: *"provided for educational purposes only… should not be used for any commercial purpose
+without the express permission of the copyright holders"*; its MedleyDB/Easton-Ellises components are
+CC-BY-NC-SA). Whether that propagates to trained weights is legally unsettled, but it shadows nearly every
+"MIT-tagged" checkpoint in the field. UMX-HQ was rejected specifically because its bare `mit-license` Zenodo tag
+sits over exactly this MUSDB-HQ NC data — the identical fact pattern that rules out Demucs.
+
+**Why Spleeter clears the bar where the others don't:** it is the one model whose training data is
+*commercially clean* — Deezer trained it on its private "Bean" catalog, never MUSDB (JOSS, DOI 10.21105/joss.02154:
+*"while it was not trained, validated or optimized in any way with musdb18 data"*; *"we cannot release the
+training data for copyright reasons… sharing pre-trained models were the only way"*). So there is **no
+third-party rights holder** — the only residual question is Deezer's own grant wording.
+
+**The Spleeter weight-license ambiguity, recorded honestly (do not cite as clean MIT):**
+- Code: **MIT**, verbatim `https://github.com/deezer/spleeter/blob/master/LICENSE` (Copyright 2019-present, Deezer SA).
+- Weights: the repo README §License says only *"The code of Spleeter is MIT-licensed"* (scoped to code, unchanged
+  since 2019); the peer-reviewed JOSS paper (Deezer Research authors) says *"source code and pre-trained models
+  are… distributed under a MIT license"* — a broader, explicit models grant. The weight artifact
+  (`5stems.tar.gz`, v1.4.0) ships raw TF checkpoints with **no embedded license file**. A direct request for
+  clarification (GitHub issue `deezer/spleeter#898`) has had **zero maintainer response since 2024-04-26**.
+- **Posture adopted:** commit the weights under Deezer's MIT grant (relying on the JOSS statement, consistent
+  with how the repo already accepts Basic Pitch's Apache grant), with `fixtures/models/spleeter/LICENSE.spleeter`
+  (Deezer's MIT text) + a `MODEL_CARD.md` that documents this README-vs-JOSS discrepancy in full. The repo's
+  UNLICENSE covers the *code*, not the bundled model (precedent: Basic Pitch, Transkun, GeneralUser GS, OSMD all
+  carry their own license files). The load-bearing basis is the JOSS models-grant + the good-faith clarification
+  request on record (above), **not** the downstream use: copyright's default "all rights reserved" bars
+  unauthorized redistribution regardless of whether *our* use is commercial, so "non-commercial" is not itself a
+  defense. Commercial use being out of scope for this project (the reason Cornelius chose UNLICENSE) only bounds
+  the *stakes* were the pessimistic reading ever correct — it does not answer the copyright question. This does not
+  require relaxing §1.7 — Spleeter is the one arguably-compliant option (clean data + a published MIT-on-models
+  grant); §1.7 stands unamended.
+
+**Export ownership — we own the 5-stem TF→ONNX export (spike-gated).** Only a *2-stem* Spleeter ONNX exists
+publicly; the 5-stem export is unclaimed (the softmax-coupled 5-output head is unprecedented). We extend the
+**Apache-2.0** `k2-fsa/sherpa-onnx` + `csukuangfj/spleeter-torch` recipe (TF ckpt → frozen `.pb` → PyTorch
+`state_dict` → `torch.onnx.export`), committing `fixtures/models/spleeter/export_spleeter.py` + the resulting
+ONNX (mirroring `export_transkun.py`). **Avoid** `bigcash/spleeter-pytorch-mnn` (**GPL-3.0**). The export is
+Stage 1.0 and is a **hard gate**: it must hit the repo's tight ONNX↔TF parity bar (corr ≈ 1.0, max-rel-err
+~1e-5, not sherpa's loose `atol=1e-1`) or the model choice is reconsidered before any C# work.
+
+**Honesty ranking (unchanged):** this feature's separation quality is a *statistical* SI-SDR gate on clean
+synthetic mixes, ranked **below** the existing hierarchy (monophonic bit-exact / polyphonic-batch statistical
+F1 / Transkun ≥99% parity), never flattened. Spleeter's piano is its weakest stem and its ~11 kHz spectral
+ceiling is a known weight property; no jazz-specific quality is claimed (all Spleeter numbers are pop/rock).
+
+**Stage-1 blocker resolutions (Cornelius, 2026-07-14):**
+- **No quantization — fp32 only.** Quantizing committed ONNX weights is rejected outright: a prior attempt caused a
+  *drastic loss in transcription quality*, and the project's guarantees rest on model fidelity (Transkun ≥99%
+  parity). This forced a rethink of the committed-artifact size, which resolved *better* than the original
+  monolithic-graph plan: because the 5-stem `softmax_unet` head is a pure non-learned op, the **cross-branch
+  softmax is lifted OUT of the ONNX graph into C#** (like the STFT and ratio-mask already are), so Spleeter ships
+  as **5 independent per-branch fp32 ONNX files** (`{vocals,drums,bass,piano,other}.onnx`, ~39 MB each — every
+  blob comfortably under GitHub's 100 MB limit, **no Git LFS**, ~196 MB total). This also collapses the
+  previously-"unprecedented" softmax-coupled export into the *proven* 2-stem per-branch recipe applied 5× —
+  the load-bearing export risk shrank. The only remaining unknown is whether the per-branch weight op-name
+  mapping generalizes across 5 branches (Stage 1.0's spike + bail-out).
+- **Accept the mono flatten (stereo ceiling accepted).** Spleeter is stereo-native, but the repo's `IAudioSource`
+  contract is mono (R2.1) and `WavAudioSource` force-downmixes to mono; `separate` runs Spleeter on the mono
+  signal upmixed to L=R. Real inter-channel separation cues are unavailable and the SI-SDR oracle (also
+  mono-summed) can't measure the loss — the human gate is the only check. A stereo-capable source path is a
+  named future enhancement, deliberately out of Stage-1 scope; the mono ceiling is a documented, accepted
+  limitation, not an open question.
+
+## Multi-instrument → piano: scope refined to "all notes on piano" (Stages 2+, Cornelius 2026-07-15)
+
+After Stage 1 shipped, Cornelius clarified the end goal and refined the scope. The target is **not** the
+deferred Stage-4 playable *reduction*, but a lighter, faithful **"all notes, on piano"** pipeline, offered on
+both a batch `.wav` path and a live mic path:
+
+> audio → separate (Stage 1) → transcribe each pitched stem (Stage 2) → **multi-track MIDI** (one track per
+> instrument, faithful — Stage 3) → **merge all included stems' notes into ONE grand-staff piano score** →
+> `score.mid` + `score.musicxml` (every note kept, treble/bass split by register — the *existing* polyphonic
+> grand-staff pipeline, NOT the Stage-4 reduction) + `recreation.wav` (all notes rendered on piano, program 0).
+
+**Decisions (Cornelius, 2026-07-15):**
+- **Drums — dropped.** A drum stem has no pitched notes.
+- **Vocals — default-dropped** from the combined piano arrangement; a **`--include-vocals`** flag folds the
+  vocal line in, for when the voice is instrumental (scat/vocalise). **The vocal stem is always transcribed
+  into the multi-track MIDI as its own track regardless**, so the notes are never lost. Rationale: reliably
+  auto-detecting "voice as instrument" vs lyrical singing is a research-grade classifier, not a hand-rollable
+  deterministic heuristic — so it is a *declared* flag (like `--tempo`/`--key`), never estimated.
+- **Per-stem transcription engine — Transkun for the piano stem** (its ≥99% piano-parity specialty),
+  **Basic Pitch for the rest** (bass, other, and vocals-if-included). Both are existing `ITranscriber`s.
+- **Mic input — yes.** A **live-separated `listen --view` prototype**: capture → every ~1.6 s separate the
+  whole buffer + transcribe each stem + merge → live grand-staff piano view (extending the existing
+  live-poly prototype). **PROTOTYPE-quality, earns no accuracy guarantee** — heavier than the existing
+  live-poly view (5 U-Nets + 5× transcription per tick on a growing buffer): non-scaling, near-real-time
+  (multi-second refresh, likely slower than 1.6 s), short-takes-only, carrying compounded
+  separation×transcription error. **Gated on a feasibility spike** (measure the real per-tick cost) before
+  commit — same discipline as the existing live view.
+
+**Honesty.** This "all-notes-on-piano" output is *dense* — a combo's bass + comping + horns on one keyboard
+exceeds two playable hands (thick chords, wide spans). It is a *complete, faithful* piano rendering of the
+recovered transcription, **not** a clean/playable arrangement; making it playable is the still-deferred
+**Stage 4** reduction (unfalsifiable, permanently human-gated). Output quality is the compounded chain
+(separation lossy × per-stem transcription ~80 % F1 × no note-dropping) — a faithful *sketch*, ranked as a
+*statistical* capability, never "proven." Stage 4 (playable reduction) + Stage 5 (multiple styles) remain deferred.
+
+## Live-separated `listen --separate` prototype: bounded-window tick + capture-then-pianize on Stop (2026-07-15)
+
+Builds the mic-input item promised above, after `SeparationLiveSpike` (already committed) measured the naive
+approach — re-separating and re-transcribing the WHOLE captured buffer every tick — and found it not just
+over budget but **degrading**: 4.6 s / 8.3 s / 13.8 s total per tick at 5 s / 15 s / 30 s of buffered audio
+(all already past the 1.64 s tick budget, and getting worse as a take runs longer, unlike the existing
+single-engine live-poly view whose cost is roughly flat). Cornelius accepted a laggy prototype rather than
+rejecting the feature, so the shipped design is **two different things behind one flag**, each honestly
+scoped to what it actually is:
+
+- **The bounded-window live tick** (`LivePolyphonicView.BuildSeparatedGrandStaff`, internal): each tick
+  reconstructs mono from the snapshot but re-separates/re-transcribes only the **last 7 seconds** of it,
+  not the whole growing buffer — this keeps per-tick cost roughly CONSTANT as a take runs longer instead of
+  degrading. The window was picked from a direct measurement on the dev machine (Apple M3 Max) of 6 s/7 s/8 s
+  windows through the real separate + multi-stem-transcribe pipeline (the committed golden Spleeter fixture,
+  tiled to length, same method as `SeparationLiveSpike`): 6 s ≈ 4.8 s/tick, **7 s ≈ 5.0 s/tick**, 8 s ≈
+  6.3 s/tick. 7 s lands inside `SeparationLiveSpike`'s own ballpark (its 5 s point measured 4.6 s) with
+  headroom before 8 s's jump past 6 s. Combined with the existing ~1.64 s `TranscribeInterval` wait between
+  ticks, the resulting steady-state refresh is roughly **1.64 + 5.0 ≈ 6.6 s** — a laggy, multi-second-refresh
+  prototype, by design, never real-time. The separator (`SpleeterSourceSeparator`) and the stem-routing
+  table (`MultiStemRouting.Build()`, Transkun + one shared Basic Pitch) are each constructed exactly ONCE
+  per `LivePolyphonicView` session and reused across every tick, disposed on session end — never reloaded
+  per tick, mirroring the existing non-separated `_transcriber` field's lifecycle.
+- **Capture-then-pianize on Stop** (`LivePolyphonicView.FinalPianizeAndWrite`): the final save does NOT use
+  the bounded window — it wraps the WHOLE captured take in a `PcmAudioSource` and runs it through
+  `PianizeCommand.PianizeSource` (a new reusable core extracted from `PianizeCommand.Run`, which is now a
+  thin file-reading wrapper over it), the exact same batch pipeline `claudio pianize <file.wav>` uses. This
+  is the real deliverable: full-quality separation + per-stem transcription over the entire recording,
+  writing the 5 stem WAVs, `multitrack.mid`, `score.mid`/`score.musicxml`, and `recreation.wav` — and
+  deliberately **no `raw.mid`**, since there is no single "raw" engine in separated mode; `multitrack.mid`
+  IS the faithful per-instrument raw view, exactly as for `pianize` itself.
+
+**Other decisions:**
+- **`--include-vocals` passes through** from `listen --separate` to the final `PianizeSource` call and to
+  the tick's stem merge, exactly mirroring `pianize --include-vocals` (vocals excluded from the merged piano
+  score/recreation by default; always present in `multitrack.mid` regardless).
+- **`--record`'s recreation.wav render is skipped in separated mode.** `FinalPianizeAndWrite` already wrote
+  `recreation.wav` (always, not gated behind `--record` — matching `pianize`'s own unconditional behavior);
+  `ListenAppCommand.FinalizePolyphonicRecording` would otherwise redundantly re-render the same notes a
+  second time for no benefit (rendering is deterministic, R8.2). `input.wav` (the raw captured mic audio)
+  is still written when `--record` is set, unchanged.
+- **Known limitation, not fixed here: time signature.** `PianizeCommand` always quantizes in 4/4 (it never
+  accepted a time-signature parameter); the separated final save inherits that, so a take's own
+  `--time-signature`/browser Time selector is silently NOT honored in separated mode's `score.mid`/
+  `score.musicxml`. This is inherited from `pianize`'s existing scope, not a regression introduced here —
+  fixing it means teaching `PianizeCommand` a time signature, deferred as a follow-up.
+- **The non-separated path is untouched.** `separate: false` (the default) is byte-for-byte the prior
+  behavior — same fields, same code paths, same artifacts, verified by the full existing test suite passing
+  unchanged.
+- **Testability over reflection tricks.** `BuildSeparatedGrandStaff` is `internal`, not `private`, with a
+  matching `InternalsVisibleTo` added to `AudioClaudio.Cli.csproj` for `AudioClaudio.Tests` — a file-backed
+  `IAudioSource` drains far faster than real time, so the real ~1.64 s background timer loop essentially
+  never fires within a test; calling the tick's build method directly against a fixture buffer is the
+  boring, reliable alternative to racing a timer. `LivePolyphonicViewSeparatedTests` covers both the tick
+  build (asserts a non-null `GrandStaffScore`, notes at 44100 Hz) and the full `Run()` drain-to-final path
+  (asserts the pianize artifact set, and the absence of `raw.mid`); `PianizeCommandTests` gained a
+  buffer-based test proving `PianizeSource` behaves identically to `Run` from a `PcmAudioSource` instead of
+  a file. As always, the real microphone device itself remains manual-acceptance-only — CI has no audio
+  device (Step 10 precedent).

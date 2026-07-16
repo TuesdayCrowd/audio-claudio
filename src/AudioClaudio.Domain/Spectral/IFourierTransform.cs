@@ -16,4 +16,13 @@ public interface IFourierTransform
     /// same length (bins 0..N−1); callers keep the 0..N/2 half for real signals.
     /// </summary>
     Complex[] Forward(double[] samples);
+
+    /// <summary>
+    /// Inverse DFT. <paramref name="spectrum"/> length MUST be a power of two, else
+    /// <see cref="System.ArgumentException"/>. Returns the full complex time-domain
+    /// signal of the same length; for a spectrum produced by <see cref="Forward"/> of
+    /// real samples, the result's real parts recover those samples (imaginary parts
+    /// are ~0 up to floating-point error).
+    /// </summary>
+    Complex[] Inverse(Complex[] spectrum);
 }

@@ -1,0 +1,35 @@
+{
+  "purpose": "End-to-end golden for the C# Spleeter front-end + adapter tests.",
+  "input_wav": "test_input_mono.wav (mono 16-bit PCM 44100Hz, 2.0s, deterministic tones)",
+  "read_convention": "WavAudioSource reads int16/32768 -> mono float; adapter upmixes L=R before STFT",
+  "magnitude_file": "magnitude_nhwc.f32",
+  "magnitude_shape_nhwc": [
+    1,
+    512,
+    1024,
+    2
+  ],
+  "masked_files": {
+    "vocals": "masked_vocals_nhwc.f32",
+    "piano": "masked_piano_nhwc.f32",
+    "drums": "masked_drums_nhwc.f32",
+    "bass": "masked_bass_nhwc.f32",
+    "other": "masked_other_nhwc.f32"
+  },
+  "masked_shape_nhwc": [
+    1,
+    512,
+    1024,
+    2
+  ],
+  "stems": [
+    "vocals",
+    "piano",
+    "drums",
+    "bass",
+    "other"
+  ],
+  "dtype": "float32",
+  "order": "C",
+  "note": "magnitude=Spleeter STFT of upmixed input (strided_slice_3). masked_{stem}={stem}_spectrogram/mul=softmax(logits)*magnitude. Validates C# STFT front-end and softmax+mask spectral path. iSTFT validated separately by round-trip."
+}

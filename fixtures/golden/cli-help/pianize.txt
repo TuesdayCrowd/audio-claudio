@@ -1,0 +1,18 @@
+Usage:
+  claudio pianize <mix.wav> [options]
+
+Arguments:
+  <mix.wav>   the mixed recording to pianize
+
+Options:
+  --out-dir <PATH>     directory to write the stems, multitrack.mid, score.mid/musicxml, recreation.wav (default: out)
+  --model <PATH>       explicit Spleeter model directory override
+  --tempo <DOUBLE>     declared tempo in BPM (auto-estimated if omitted)
+  --key <INT>          override the auto-detected key signature (sharps +, flats -)
+  --include-vocals     fold the vocal stem into the piano score.mid/score.musicxml/recreation.wav (always a multitrack.mid track regardless)
+  --note-names         print a scientific-pitch-name lyric under each note
+  --triplets           engrave eighth-note triplets
+  --soundfont <PATH>   explicit SoundFont for recreation.wav (auto-discovered otherwise)
+
+Example:
+  claudio pianize band-mix.wav --out-dir out

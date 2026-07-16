@@ -1,0 +1,125 @@
+{
+  "seed": 20230821,
+  "waveform_generator": "np.random.RandomState(20230821).rand(60*44100).astype(np.float32).reshape(-1, 2)",
+  "input_magnitude_shape_nhwc": [
+    1,
+    512,
+    1024,
+    2
+  ],
+  "input_magnitude_file": "input_magnitude_nhwc.f32",
+  "stems": [
+    "vocals",
+    "piano",
+    "drums",
+    "bass",
+    "other"
+  ],
+  "logit_shape_nhwc": [
+    1,
+    512,
+    1024,
+    2
+  ],
+  "logit_files": {
+    "vocals": "vocals_logit_nhwc.f32",
+    "piano": "piano_logit_nhwc.f32",
+    "drums": "drums_logit_nhwc.f32",
+    "bass": "bass_logit_nhwc.f32",
+    "other": "other_logit_nhwc.f32"
+  },
+  "dtype": "float32",
+  "order": "C",
+  "per_branch_torch_vs_tf_logit_error": {
+    "vocals": {
+      "max_abs_err": 0.00054931640625,
+      "mean_abs_err": 8.64697722136043e-06,
+      "tf_value_range": [
+        -481.70947265625,
+        1069.52392578125
+      ]
+    },
+    "piano": {
+      "max_abs_err": 0.00042724609375,
+      "mean_abs_err": 5.842096925334772e-06,
+      "tf_value_range": [
+        -442.5079650878906,
+        979.4769287109375
+      ]
+    },
+    "drums": {
+      "max_abs_err": 0.00042724609375,
+      "mean_abs_err": 4.7132484723988455e-06,
+      "tf_value_range": [
+        -472.9284362792969,
+        1048.28662109375
+      ]
+    },
+    "bass": {
+      "max_abs_err": 0.00048828125,
+      "mean_abs_err": 4.114574949198868e-06,
+      "tf_value_range": [
+        -479.9110107421875,
+        1065.0679931640625
+      ]
+    },
+    "other": {
+      "max_abs_err": 0.00048828125,
+      "mean_abs_err": 4.472041382541647e-06,
+      "tf_value_range": [
+        -450.50933837890625,
+        1106.7679443359375
+      ]
+    }
+  },
+  "onnx_vs_torch_logit_error": {
+    "vocals": {
+      "max_abs_err": 0.00064849853515625,
+      "mean_abs_err": 8.735546543903183e-06
+    },
+    "piano": {
+      "max_abs_err": 0.00054931640625,
+      "mean_abs_err": 6.480628144345246e-06
+    },
+    "drums": {
+      "max_abs_err": 0.0005950927734375,
+      "mean_abs_err": 5.400175723480061e-06
+    },
+    "bass": {
+      "max_abs_err": 0.0005035400390625,
+      "mean_abs_err": 4.914244527753908e-06
+    },
+    "other": {
+      "max_abs_err": 0.000579833984375,
+      "mean_abs_err": 5.426512871054001e-06
+    }
+  },
+  "full_path_softmax_mag_vs_tf_mul_error": {
+    "vocals": {
+      "max_abs_err": 0.02984619140625,
+      "mean_abs_err": 8.899949079932412e-07
+    },
+    "piano": {
+      "max_abs_err": 0.053070068359375,
+      "mean_abs_err": 1.7286093907387112e-06
+    },
+    "drums": {
+      "max_abs_err": 0.03955078125,
+      "mean_abs_err": 1.0851529623323586e-05
+    },
+    "bass": {
+      "max_abs_err": 0.014190673828125,
+      "mean_abs_err": 8.1695026210582e-07
+    },
+    "other": {
+      "max_abs_err": 0.0531005859375,
+      "mean_abs_err": 1.2614302249858156e-05
+    }
+  },
+  "notes": [
+    "logit = raw pre-softmax UNet output per branch (NHWC, channels=2 audio channels).",
+    "To reconstruct Spleeter's mask*mag output in C#: stack the 5 branch logits on a new stem axis, softmax across that axis, multiply elementwise by input_magnitude.",
+    "Architecture note: this checkpoint uses ELU activation throughout (not LeakyReLU/ReLU as in the k2-fsa/sherpa-onnx 2-stem reference unet.py), and the decoder order is deconv -> ELU -> BN (not deconv -> crop -> ReLU -> BN). The bottleneck BN (batch_normalization_{12k+5}) is confirmed dead code in the TF graph and is not used."
+  ],
+  "fixture_note": "Committed fixture truncated to num_splits=1 (first split) to bound repo size; export_spleeter.py regenerates the full num_splits=3 set. Parity numbers below were measured on num_splits=3."
+}

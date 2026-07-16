@@ -26,7 +26,7 @@ public class HelpGoldenTests
     {
         new object[] { "transcribe" }, new object[] { "notate" }, new object[] { "render" },
         new object[] { "play" }, new object[] { "evaluate" }, new object[] { "evaluate-audio" },
-        new object[] { "listen" },
+        new object[] { "listen" }, new object[] { "separate" }, new object[] { "pianize" },
     };
 
     [Fact]

@@ -18,6 +18,28 @@ Claude Code: read all of it before touching anything.
 
 ## Where the project is right now (read this first)
 
+**Multi-instrument → all-notes-on-piano (in progress on branch `stage-1-source-separation`, NOT yet on
+`main`, 2026-07-15).** A new capability: take a mixed recording (mic or WAV), separate it into instruments,
+transcribe each, and emit both a faithful **multi-track MIDI** (one track per instrument) and an **"all
+notes on piano"** rendering (grand-staff `score.mid`/`score.musicxml` + a piano `recreation.wav`). Built in
+stages behind ports: **Stage 1** = source separation via the committed **Spleeter 5-stem** ONNX
+(`SpleeterSourceSeparator`, `claudio separate`; chosen because it is the only field model with a piano stem
+whose weights clear the §1.7 license bar; fp32, never quantized; mono input, stereo flattened to L=R; gated
+by a *statistical* SI-SDR closed-loop, `docs/CORPUS.md` "Corpus 3"). **Stage 2** = per-stem routed
+transcription (`MultiStemTranscriber`: **Transkun** on the piano stem, **Basic Pitch** on bass/other/vocals;
+drums dropped) reconciled to one 44100 Hz rate. **Stage 3** = `multitrack.mid` (`MultiTrackMidiWriter`) +
+the combined grand-staff piano score (the existing `PolyphonicQuantizer`→`GrandStaffMusicXmlWriter` path).
+The batch payoff is **`claudio pianize <mix.wav>`**; the live payoff is **`listen --separate`** — a
+bounded-window (~7 s, ~6.6 s laggy refresh) live view PROTOTYPE plus full-quality **capture-then-pianize on
+Stop**. Vocals are excluded from the *piano* arrangement unless `--include-vocals`, but are always a track
+in `multitrack.mid`. **This whole capability is ranked as a *statistical* tier — separation (lossy) ×
+per-stem transcription (~80 % F1) — strictly BELOW the guarantee hierarchy (mono bit-exact / poly-batch F1 /
+Transkun ≥99 % parity), never flattened into "proven."** A dense/faithful "all notes on piano" rendering,
+NOT a playable reduction (Stage 4, deferred). **Open human gate:** does the piano `recreation.wav` from a
+real multi-instrument recording render a *recognizable* tune (the acceptance question separation+merge can't
+self-certify)? See `DECISIONS.md` "Multi-instrument -> piano" and "Live-separated `listen --separate`
+prototype", and `docs/plans/2026-07-15-stage2plus-multi-instrument-piano.md`.
+
 **The 0.2.x development cycle is in progress (started 2026-07-10).** The plan is
 [`docs/plans/2026-07-10-v2-release-workplan.md`](docs/plans/2026-07-10-v2-release-workplan.md);
 its job is to realize the Phase-2 vision (§8) with v1's discipline — every new capability *proven* on a
@@ -713,10 +735,12 @@ Commit: `docs: README; v0.1.0`.
 
 ```
 claudio transcribe <in.wav> [--tempo 120] [--out-dir out] [--note-names] [--mono] [--model <path>] [--key <fifths>] [--onset-threshold <v>] [--frame-threshold <v>] [--min-note-len <frames>]   # → raw.mid, score.mid, score.musicxml; POLYPHONIC (Basic Pitch, grand staff) by default, --mono for monophonic YIN (which auto-estimates tempo when --tempo is omitted); --note-names adds a scientific-pitch-name lyric under each note; --key declares the key signature for enharmonic spelling; the three thresholds tune note density; --out-dir defaults to `out` (also true of `notate`)
-claudio listen [--tempo 100] [--out-dir out] [--view] [--record] [--note-names] [--time-signature 4/4] [--mono] [--soundfont <path>]  # live; as of 0.2.1 POLYPHONIC (Basic Pitch) by default — a near-real-time PROTOTYPE (see "Where the project is right now"): re-transcribes the whole mic buffer ~every 1.6s and streams the score to --view; fixed 120 BPM unless --tempo is given (no auto-estimate); --mono selects the proven ~41ms monophonic path instead (auto-estimates tempo if --tempo omitted); writes the same trio on Stop/Ctrl+C; --record also writes input.wav + recreation.wav (each session archived under <out-dir>/<YYYYMMDD_HHMMSS>/); --note-names shows each note's name (e.g. C4) beneath it in --view and score.musicxml; --time-signature sets the saved score's meter (a --view take uses its own browser selector instead); --skip-silence was REMOVED in 0.2.1
+claudio listen [--tempo 100] [--out-dir out] [--view] [--record] [--note-names] [--time-signature 4/4] [--mono] [--separate] [--include-vocals] [--soundfont <path>]  # live; as of 0.2.1 POLYPHONIC (Basic Pitch) by default — a near-real-time PROTOTYPE (see "Where the project is right now"): re-transcribes the whole mic buffer ~every 1.6s and streams the score to --view; fixed 120 BPM unless --tempo is given (no auto-estimate); --mono selects the proven ~41ms monophonic path instead (auto-estimates tempo if --tempo omitted); writes the same trio on Stop/Ctrl+C; --record also writes input.wav + recreation.wav (each session archived under <out-dir>/<YYYYMMDD_HHMMSS>/); --note-names shows each note's name (e.g. C4) beneath it in --view and score.musicxml; --time-signature sets the saved score's meter (a --view take uses its own browser selector instead); --skip-silence was REMOVED in 0.2.1. --separate is a SECOND-tier PROTOTYPE atop the poly one: the live --view tick re-separates+re-transcribes only the last ~7s of the buffer (bounded so cost doesn't degrade; ~6.6s laggy refresh, never real-time), and on Stop the WHOLE take runs the batch `pianize` pipeline → multitrack.mid + piano score.mid/score.musicxml + recreation.wav (NO raw.mid); --include-vocals folds vocals into the piano score/recreation (always a multitrack track regardless). Inherits pianize's 4/4-only quantization, so --time-signature is ignored under --separate
+claudio pianize <mix.wav> [--tempo <bpm>] [--out-dir out] [--key <fifths>] [--include-vocals] [--note-names] [--triplets] [--model <dir>] [--soundfont <path>]  # BATCH multi-instrument→all-notes-on-piano: separate (Spleeter) → transcribe each pitched stem (Transkun on piano / Basic Pitch on bass/other/vocals; drums dropped) → writes the 5 stem WAVs + multitrack.mid (one track per instrument, vocals always present) + a combined grand-staff piano score.mid/score.musicxml + recreation.wav (all included notes rendered on piano). A dense/faithful "all notes on piano" rendering, NOT a playable reduction (that is the deferred Stage 4); --include-vocals folds vocals into the three piano artifacts. Tempo/key declared or auto-derived from the merged set. Ranked as a *statistical* capability (separation × ~80% F1), never "proven"
 claudio play <file.mid>                                 # MeltySynth playback
 claudio render <file.mid> <out.wav>                     # deterministic render
 claudio evaluate <candidate.mid> <reference.mid> [--onset-tolerance-ms 50] [--align|--warp]  # note-level precision/recall/F1 of a transcription vs a reference; --align cancels a global tempo ratio, --warp (DTW) also removes local rubato and wins if both are given
+claudio separate <mix.wav> [--out-dir out] [--model <dir>]  # split a mixed recording into 5 stem WAVs (vocals/piano/drums/bass/other) via the committed Spleeter 5-stem ONNX; writes {stem}.wav to the out-dir root at 44100 Hz. Stage 1 of the multi-instrument→piano-reduction feature; a *statistical* SI-SDR regression gate (docs/CORPUS.md "Corpus 3"), ranked BELOW the transcription tiers, never flattened. Mono input (stereo flattened to L=R — accepted ceiling); piano is Spleeter's weakest stem
 ```
 
 The CLI is the only place adapters are constructed and wired to ports.
