@@ -11,5 +11,6 @@ Commands:
   evaluate         Score a candidate transcription against a reference note-set.
   evaluate-audio   Compare two WAVs by pitch-content (chroma) similarity.
   listen           Transcribe live from the microphone.
+  separate         Split a mixed recording into instrument stem WAVs.
 
 Run 'claudio <command> --help' for details on a command.

@@ -1,0 +1,12 @@
+Usage:
+  claudio separate <mix.wav> [options]
+
+Arguments:
+  <mix.wav>   the mixed recording to separate
+
+Options:
+  --out-dir <PATH>   directory to write the 5 stem WAVs (default: out)
+  --model <PATH>     explicit Spleeter model directory override
+
+Example:
+  claudio separate mix.wav --out-dir out

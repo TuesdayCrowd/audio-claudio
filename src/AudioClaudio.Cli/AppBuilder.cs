@@ -296,6 +296,22 @@ public static class AppBuilder
             .WithExample("claudio listen --view --record");
         app.Register(listen, (p, stdout, stderr) => ListenAppCommand.Run(p, stdout, stderr, logBuffer));
 
+        var separate = new CliCommand("separate", "Split a mixed recording into instrument stem WAVs.")
+            .WithArgument(new CliArgument("mix.wav", "the mixed recording to separate"))
+            .WithOption(new CliOption("--out-dir", OptionKind.Path, "directory to write the 5 stem WAVs", defaultValue: "out"))
+            .WithOption(new CliOption("--model", OptionKind.Path, "explicit Spleeter model directory override"))
+            .WithExample("claudio separate mix.wav --out-dir out");
+        app.Register(separate, (p, stdout, stderr) =>
+        {
+            if (!TryRequireFile(p.Argument("mix.wav"), stderr, styler)) return 1;
+
+            string outDir = p.Path("out-dir") ?? "out";
+            var stems = SeparateCommand.Run(p.Argument("mix.wav"), outDir, p.Path("model"));
+            foreach (var stem in stems)
+                stdout.WriteLine($"{stem.Name} -> {Path.Combine(outDir, stem.Name + ".wav")}");
+            return 0;
+        });
+
         return app;
     }
 }
